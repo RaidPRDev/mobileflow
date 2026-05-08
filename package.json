@@ -1,0 +1,28 @@
+{
+  "name": "mobileflow",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@8.15.6",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @mobileflow/web dev",
+    "dev:api": "pnpm --filter @mobileflow/api dev",
+    "dev:docs": "pnpm --filter @mobileflow/docs dev",
+    "build:docs": "pnpm --filter @mobileflow/docs build",
+    "dev:db": "docker compose -f infra/.docker/dev.yml up -d",
+    "dev:db:down": "docker compose -f infra/.docker/dev.yml down",
+    "dev:db:reset": "docker compose -f infra/.docker/dev.yml down -v && docker compose -f infra/.docker/dev.yml up -d",
+    "db:push": "pnpm --filter @mobileflow/api db:push",
+    "db:seed": "pnpm --filter @mobileflow/api db:seed",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5"
+  }
+}

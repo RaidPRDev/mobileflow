@@ -1,0 +1,50 @@
+# deps
+node_modules
+.pnpm-store
+
+# build output
+dist
+build
+.next
+out
+target
+
+# tauri
+src-tauri/target
+src-tauri/gen
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# editor / os
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+
+# tooling caches
+.eslintcache
+.turbo
+.rspack
+.cache
+
+# coverage
+coverage
+
+# References folder is checked in but local artifacts are ignored
+References/
+References/**/node_modules
+References/**/dist
+References/**/.tmp
+References/**/uploads

@@ -1,0 +1,30 @@
+{
+  "name": "@mobileflow/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rspack serve",
+    "build": "rspack build",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1"
+  },
+  "devDependencies": {
+    "@rspack/cli": "^0.7.5",
+    "@rspack/core": "^0.7.5",
+    "@rspack/plugin-react-refresh": "^0.7.5",
+    "@types/node": "^20.14.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "less": "^4.2.0",
+    "less-loader": "^12.2.0",
+    "react-refresh": "^0.18.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5"
+  }
+}

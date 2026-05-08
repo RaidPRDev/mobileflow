@@ -1,0 +1,240 @@
+@import "./variables.less";
+
+// Reset & Base
+// -------------------------------------------------
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: @font-sans;
+  font-size: @font-size-base;
+  line-height: @line-height-normal;
+  color: @color-text;
+  background: @color-background;
+  transition: background @transition-base, color @transition-base;
+}
+
+// Theme: Dark
+// -------------------------------------------------
+[data-theme="dark"] {
+  body {
+    color: @color-text-dark;
+    background: @color-background-dark;
+  }
+}
+
+// Typography
+// -------------------------------------------------
+h1, h2, h3, h4, h5, h6 {
+  font-weight: @font-weight-semibold;
+  line-height: @line-height-tight;
+  letter-spacing: -0.025em;
+}
+
+h1 { font-size: @font-size-4xl; }
+h2 { font-size: @font-size-3xl; margin-top: @space-2xl; margin-bottom: @space-lg; }
+h3 { font-size: @font-size-2xl; margin-top: @space-xl; margin-bottom: @space-md; }
+h4 { font-size: @font-size-xl; margin-top: @space-lg; margin-bottom: @space-md; }
+
+// Heading anchor links
+.doc-article h2,
+.doc-article h3 {
+  position: relative;
+  scroll-margin-top: calc(@topnav-height + @space-lg);
+
+  &:hover .anchor-link {
+    opacity: 1;
+  }
+}
+
+.anchor-link {
+  position: absolute;
+  left: -1.5em;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  padding: @space-xs;
+  color: @color-text-muted;
+  text-decoration: none;
+  transition: opacity @transition-fast, color @transition-fast;
+  font-weight: @font-weight-normal;
+  font-size: @font-size-lg;
+  line-height: 1;
+
+  &:hover {
+    color: @color-primary;
+    text-decoration: none;
+  }
+}
+
+[data-theme="dark"] .anchor-link {
+  color: @color-text-muted-dark;
+
+  &:hover {
+    color: @color-primary-dark;
+  }
+}
+
+@media (max-width: 768px) {
+  .anchor-link {
+    display: none;
+  }
+}
+
+p {
+  margin-bottom: @space-md;
+  line-height: @line-height-relaxed;
+}
+
+a {
+  color: @color-primary;
+  text-decoration: none;
+  transition: color @transition-fast;
+
+  &:hover {
+    color: @color-primary-light;
+    text-decoration: underline;
+  }
+}
+
+[data-theme="dark"] a {
+  color: @color-primary-dark;
+
+  &:hover {
+    color: lighten(@color-primary-dark, 10%);
+  }
+}
+
+// Lists
+// -------------------------------------------------
+ul, ol {
+  margin-bottom: @space-md;
+  padding-left: @space-xl;
+}
+
+li {
+  margin-bottom: @space-sm;
+  line-height: @line-height-relaxed;
+}
+
+// Code & Pre
+// -------------------------------------------------
+code {
+  font-family: @font-mono;
+  font-size: 0.9em;
+  background: @color-code-bg;
+  color: @color-code-text;
+  padding: @space-xs @space-sm;
+  border-radius: @radius-sm;
+  word-break: break-word;
+}
+
+[data-theme="dark"] code {
+  background: @color-code-bg-dark;
+  color: @color-code-text-dark;
+}
+
+pre {
+  font-family: @font-mono;
+  font-size: @font-size-sm;
+  background: @color-code-bg;
+  color: @color-code-text;
+  padding: @space-lg;
+  border-radius: @radius-lg;
+  overflow-x: auto;
+  margin-bottom: @space-lg;
+  line-height: @line-height-normal;
+
+  code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+}
+
+[data-theme="dark"] pre {
+  background: @color-code-bg-dark;
+  color: @color-code-text-dark;
+}
+
+// Tables
+// -------------------------------------------------
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: @space-lg;
+  font-size: @font-size-sm;
+}
+
+th, td {
+  text-align: left;
+  padding: @space-sm @space-md;
+  border-bottom: 1px solid @color-border;
+}
+
+th {
+  font-weight: @font-weight-semibold;
+  color: @color-text-secondary;
+  font-size: @font-size-xs;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+[data-theme="dark"] th,
+[data-theme="dark"] td {
+  border-bottom-color: @color-border-dark;
+}
+
+[data-theme="dark"] th {
+  color: @color-text-secondary-dark;
+}
+
+// Scrollbar
+// -------------------------------------------------
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: @color-border;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: @color-text-muted;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: @color-border-dark;
+}
+
+// Selection
+// -------------------------------------------------
+::selection {
+  background: fade(@color-primary, 20%);
+  color: inherit;
+}

@@ -1,0 +1,9 @@
+export { HomePage } from "./HomePage";
+export { InstallationPage } from "./InstallationPage";
+export { GettingStartedPage } from "./GettingStartedPage";
+export { ArchitecturePage } from "./ArchitecturePage";
+export { FeaturesPage } from "./FeaturesPage";
+export { BuildPipelinePage } from "./BuildPipelinePage";
+export { DeploymentPage } from "./DeploymentPage";
+export { PlansPage } from "./PlansPage";
+export { DataModelPage } from "./DataModelPage";
