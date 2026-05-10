@@ -18,7 +18,13 @@ export async function getOrgPlan(orgId: string) {
   return row ?? null;
 }
 
-export async function assertCanCreateApp(orgId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+type GateOpts = { isSuperadmin?: boolean };
+
+export async function assertCanCreateApp(
+  orgId: string,
+  opts: GateOpts = {},
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (opts.isSuperadmin) return { ok: true };
   const plan = await getOrgPlan(orgId);
   if (!plan) return { ok: false, reason: "No active subscription" };
   if (plan.maxApps == null) return { ok: true }; // unlimited
@@ -28,7 +34,11 @@ export async function assertCanCreateApp(orgId: string): Promise<{ ok: true } | 
   return { ok: true };
 }
 
-export async function assertCanStartBuild(orgId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function assertCanStartBuild(
+  orgId: string,
+  opts: GateOpts = {},
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (opts.isSuperadmin) return { ok: true };
   const plan = await getOrgPlan(orgId);
   if (!plan) return { ok: false, reason: "No active subscription" };
   if (!plan.canBuild) return { ok: false, reason: "Your plan does not include builds. Upgrade to start building." };

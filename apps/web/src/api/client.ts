@@ -6,13 +6,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const hasBody = init.body != null;
   const res = await fetch(`/api${path}`, {
     credentials: "include",
+    ...init,
     headers: {
-      "content-type": "application/json",
+      ...(hasBody ? { "content-type": "application/json" } : {}),
       ...(init.headers ?? {}),
     },
-    ...init,
   });
   const text = await res.text();
   const body = text ? safeParse(text) : null;

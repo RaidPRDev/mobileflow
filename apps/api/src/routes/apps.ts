@@ -50,7 +50,9 @@ export async function appsRoutes(app: FastifyInstance) {
     await requireOrgMember(req, reply, req.params.orgId);
     if (reply.sent) return;
     const body = CreateBody.parse(req.body);
-    const gate = await assertCanCreateApp(req.params.orgId);
+    const gate = await assertCanCreateApp(req.params.orgId, {
+      isSuperadmin: req.auth?.isSuperadmin,
+    });
     if (!gate.ok) return reply.code(402).send({ error: "PlanLimitExceeded", message: gate.reason });
 
     if (body.gitConnectionId) {

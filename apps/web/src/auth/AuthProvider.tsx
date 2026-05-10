@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setMe(null);
       setStatus("anonymous");
+      window.location.replace("/login");
     }
   }, []);
 

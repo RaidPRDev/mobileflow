@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "rspack serve",
+    "dev": "node scripts/dev.mjs",
     "build": "rspack build",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"

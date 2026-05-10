@@ -11,6 +11,7 @@
         "editor.minimap.enabled": false,
         "workbench.tree.indent": 24,
         "files.exclude": {},
-        "debug.javascript.terminalOptions": {}
+        "debug.javascript.terminalOptions": {},
+        "workbench.browser.openLocalhostLinks": false
 	}
 }

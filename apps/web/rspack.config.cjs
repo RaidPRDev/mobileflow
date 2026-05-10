@@ -1,8 +1,21 @@
 const path = require("node:path");
+const fs = require("node:fs");
 const { rspack } = require("@rspack/core");
 const ReactRefreshPlugin = require("@rspack/plugin-react-refresh");
 
 const isDev = process.env.NODE_ENV !== "production";
+
+function isWsl() {
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
+  try {
+    const v = fs.readFileSync("/proc/version", "utf8").toLowerCase();
+    return v.includes("microsoft") || v.includes("wsl");
+  } catch {
+    return false;
+  }
+}
+const wsl = isWsl();
+if (isDev && wsl) console.log("[rspack] WSL detected — using polling file watcher");
 
 /** @type {import('@rspack/cli').Configuration} */
 module.exports = {
@@ -65,4 +78,7 @@ module.exports = {
       },
     ],
   },
+  watchOptions: wsl
+    ? { poll: 300, aggregateTimeout: 200, ignored: /node_modules/ }
+    : undefined,
 };

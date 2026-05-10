@@ -35,6 +35,7 @@ const Schema = z.object({
   DATABASE_URL: z.string().url(),
   COOKIE_SECRET: z.string().min(16),
   SUPERADMIN_EMAIL: z.string().email().optional(),
+  SUPERADMIN_PASSWORD: z.string().min(1).default("mobileflow"),
   API_BASE_URL: z.string().url().default("http://127.0.0.1:4000"),
   WEB_BASE_URL: z.string().url().default("http://127.0.0.1:5173"),
   GOOGLE_CLIENT_ID: z.string().optional(),

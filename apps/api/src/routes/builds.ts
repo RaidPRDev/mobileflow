@@ -46,7 +46,9 @@ export async function buildsRoutes(app: FastifyInstance) {
     if (!stack) return reply.badRequest("Unknown stack");
     if (stack.platform !== body.target) return reply.badRequest("Stack platform does not match target");
 
-    const gate = await assertCanStartBuild(a.orgId);
+    const gate = await assertCanStartBuild(a.orgId, {
+      isSuperadmin: req.auth?.isSuperadmin,
+    });
     if (!gate.ok) return reply.code(402).send({ error: "PlanLimitExceeded", message: gate.reason });
 
     const [created] = await db

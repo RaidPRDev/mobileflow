@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Button,
   Card,
@@ -13,7 +12,6 @@ import {
 import { ApiError, api } from "../api/client";
 
 export function LoginPage() {
-  const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -32,14 +30,12 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       if (signupMode) {
-        const res = await api.signup({ email: identifier.trim(), password });
-        navigate(`/org/${res.org.id}/apps`);
+        await api.signup({ email: identifier.trim(), password });
       } else {
         await api.login({ email: identifier.trim(), password });
-        const me = await api.me();
-        const org = me.organizations[0];
-        navigate(org ? `/org/${org.orgId}/apps` : "/");
       }
+      window.location.replace("/");
+      return;
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError("Network error");

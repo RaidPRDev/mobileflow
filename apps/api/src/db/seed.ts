@@ -1,5 +1,11 @@
+import { eq } from "drizzle-orm";
 import { db } from "./client.js";
-import { buildStacks, plans } from "./schema.js";
+import { buildStacks, organizations, orgMembers, plans, subscriptions, users } from "./schema.js";
+import { hashPassword } from "../auth/password.js";
+import { env } from "../env.js";
+
+const ADMIN_ORG_SLUG = "mf-admin";
+const ADMIN_ORG_NAME = "MobileFlow Admin";
 
 const seedPlans = [
   { id: "naboria", name: "Naboria", priceCents: 0, maxApps: 0, maxSeats: 1, maxConcurrentBuilds: 0, canBuild: false, isInternal: false, sortOrder: 0 },
@@ -46,6 +52,65 @@ export async function seed() {
       });
   }
   console.log(`Seeded ${stacks.length} build stacks`);
+
+  await seedSuperadmin();
+}
+
+async function seedSuperadmin() {
+  if (!env.SUPERADMIN_EMAIL) {
+    console.log("SUPERADMIN_EMAIL not set — skipping superadmin seed");
+    return;
+  }
+  const email = env.SUPERADMIN_EMAIL;
+
+  const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  let userId: string;
+  if (existing) {
+    userId = existing.id;
+    if (!existing.isSuperadmin) {
+      await db.update(users).set({ isSuperadmin: true }).where(eq(users.id, userId));
+      console.log(`Promoted existing user ${email} to superadmin`);
+    } else {
+      console.log(`Superadmin ${email} already exists`);
+    }
+  } else {
+    const passwordHash = await hashPassword(env.SUPERADMIN_PASSWORD);
+    const [created] = await db
+      .insert(users)
+      .values({ email, name: "Super Admin", passwordHash, isSuperadmin: true })
+      .returning();
+    if (!created) throw new Error("Failed to create superadmin user");
+    userId = created.id;
+    console.log(`Created superadmin ${email} (password from SUPERADMIN_PASSWORD)`);
+  }
+
+  let [adminOrg] = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.slug, ADMIN_ORG_SLUG))
+    .limit(1);
+  if (!adminOrg) {
+    [adminOrg] = await db
+      .insert(organizations)
+      .values({ name: ADMIN_ORG_NAME, slug: ADMIN_ORG_SLUG, ownerUserId: userId })
+      .returning();
+    if (!adminOrg) throw new Error("Failed to create admin org");
+    console.log(`Created admin org "${ADMIN_ORG_SLUG}"`);
+  }
+
+  await db
+    .insert(orgMembers)
+    .values({ orgId: adminOrg.id, userId, role: "owner" })
+    .onConflictDoNothing();
+
+  await db
+    .insert(subscriptions)
+    .values({ orgId: adminOrg.id, planId: "unlimited", status: "active" })
+    .onConflictDoUpdate({
+      target: subscriptions.orgId,
+      set: { planId: "unlimited", status: "active" },
+    });
+  console.log(`Admin org subscribed to "unlimited" plan`);
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}`) {
