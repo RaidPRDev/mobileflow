@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
+    "baseUrl": ".",
     "paths": { "@/*": ["src/*"] },
     "types": ["node"]
   },

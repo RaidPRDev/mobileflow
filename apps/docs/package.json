@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "rspack serve",
     "dev": "rspack serve",
     "build": "rspack build",
     "typecheck": "tsc --noEmit",

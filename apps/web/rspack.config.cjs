@@ -1,5 +1,6 @@
 const path = require("node:path");
 const { rspack } = require("@rspack/core");
+const ReactRefreshPlugin = require("@rspack/plugin-react-refresh");
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -48,7 +49,8 @@ module.exports = {
       template: "./public/index.html",
       title: "MobileFlow",
     }),
-  ],
+    isDev && new ReactRefreshPlugin(),
+  ].filter(Boolean),
   devServer: {
     port: 5173,
     historyApiFallback: true,
