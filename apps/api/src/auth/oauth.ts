@@ -14,7 +14,7 @@ export interface OAuthProviderConfig {
   scopes: string;
   clientId: string;
   clientSecret: string;
-  fetchProfile: (accessToken: string) => Promise<{ subject: string; email: string | null; name: string | null }>;
+  fetchProfile: (accessToken: string) => Promise<{ subject: string; email: string | null; name: string | null; avatarUrl: string | null }>;
 }
 
 export const OAUTH_STATE_COOKIE = "mf_oauth_state";
@@ -68,8 +68,8 @@ export const googleProvider = (clientId: string, clientSecret: string): OAuthPro
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`google userinfo failed: ${res.status}`);
-    const j = (await res.json()) as { sub: string; email?: string; name?: string };
-    return { subject: j.sub, email: j.email ?? null, name: j.name ?? null };
+    const j = (await res.json()) as { sub: string; email?: string; name?: string; picture?: string };
+    return { subject: j.sub, email: j.email ?? null, name: j.name ?? null, avatarUrl: j.picture ?? null };
   },
 });
 
@@ -85,8 +85,8 @@ export const gitlabProvider = (clientId: string, clientSecret: string, scopes: s
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`gitlab /user failed: ${res.status}`);
-    const j = (await res.json()) as { id: number; username: string; name: string | null; email: string | null };
-    return { subject: String(j.id), email: j.email ?? null, name: j.name ?? j.username };
+    const j = (await res.json()) as { id: number; username: string; name: string | null; email: string | null; avatar_url: string | null };
+    return { subject: String(j.id), email: j.email ?? null, name: j.name ?? j.username, avatarUrl: j.avatar_url ?? null };
   },
 });
 
@@ -100,11 +100,11 @@ export const bitbucketProvider = (clientId: string, clientSecret: string, scopes
   async fetchProfile(token) {
     const u = await fetch("https://api.bitbucket.org/2.0/user", { headers: { authorization: `Bearer ${token}` } });
     if (!u.ok) throw new Error(`bitbucket /user failed: ${u.status}`);
-    const user = (await u.json()) as { uuid: string; display_name: string | null; username: string };
+    const user = (await u.json()) as { uuid: string; display_name: string | null; username: string; links?: { avatar?: { href?: string } } };
     const e = await fetch("https://api.bitbucket.org/2.0/user/emails", { headers: { authorization: `Bearer ${token}` } });
     const emails = e.ok ? ((await e.json()) as { values: { email: string; is_primary: boolean; is_confirmed: boolean }[] }).values : [];
     const primary = emails.find((x) => x.is_primary && x.is_confirmed)?.email ?? null;
-    return { subject: user.uuid, email: primary, name: user.display_name ?? user.username };
+    return { subject: user.uuid, email: primary, name: user.display_name ?? user.username, avatarUrl: user.links?.avatar?.href ?? null };
   },
 });
 
@@ -119,13 +119,13 @@ export const githubProvider = (clientId: string, clientSecret: string, scopes = 
     const [u, emails] = await Promise.all([
       fetch("https://api.github.com/user", {
         headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
-      }).then((r) => (r.ok ? (r.json() as Promise<{ id: number; login: string; name: string | null; email: string | null }>) : Promise.reject(new Error(`github /user ${r.status}`)))),
+      }).then((r) => (r.ok ? (r.json() as Promise<{ id: number; login: string; name: string | null; email: string | null; avatar_url: string | null }>) : Promise.reject(new Error(`github /user ${r.status}`)))),
       fetch("https://api.github.com/user/emails", {
         headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
       }).then((r) => (r.ok ? (r.json() as Promise<{ email: string; primary: boolean; verified: boolean }[]>) : [])),
     ]);
     const primary = emails.find((e) => e.primary && e.verified)?.email ?? u.email ?? null;
-    return { subject: String(u.id), email: primary, name: u.name ?? u.login };
+    return { subject: String(u.id), email: primary, name: u.name ?? u.login, avatarUrl: u.avatar_url ?? null };
   },
 });
 

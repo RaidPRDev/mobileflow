@@ -11,19 +11,14 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { RUNTIME_IDS } from "@mobileflow/shared";
 
 export const orgRole = pgEnum("org_role", ["owner", "admin", "member"]);
 export const ssoProvider = pgEnum("sso_provider", ["google", "github"]);
 export const gitProvider = pgEnum("git_provider", ["github", "gitlab", "bitbucket"]);
 export const oauthAppKind = pgEnum("oauth_app_kind", ["signin", "git"]);
 export const oauthAppProvider = pgEnum("oauth_app_provider", ["google", "github", "gitlab", "bitbucket"]);
-export const appRuntime = pgEnum("app_runtime", [
-  "capacitor",
-  "cordova",
-  "react_native",
-  "ios_native",
-  "android_native",
-]);
+export const appRuntime = pgEnum("app_runtime", RUNTIME_IDS);
 export const buildTarget = pgEnum("build_target", ["ios", "android", "web"]);
 export const buildStatus = pgEnum("build_status", [
   "queued",
@@ -193,6 +188,7 @@ export const gitConnections = pgTable("git_connections", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   provider: gitProvider("provider").notNull(),
   accountLogin: text("account_login").notNull(),
+  accountAvatarUrl: text("account_avatar_url"),
   accessTokenEnc: text("access_token_enc").notNull(),
   refreshTokenEnc: text("refresh_token_enc"),
   expiresAt: timestamp("expires_at", { withTimezone: true }),

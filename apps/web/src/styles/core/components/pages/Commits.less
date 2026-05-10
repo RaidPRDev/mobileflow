@@ -1,0 +1,244 @@
+.commits-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.commits-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0 var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-xs);
+}
+
+.commits-page__title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.commits-page__status {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  padding: var(--space-md) 0;
+
+  &.is-error {
+    color: var(--color-danger);
+  }
+}
+
+.commits-search {
+  position: relative;
+  width: 360px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.commits-search__icon {
+  position: absolute;
+  left: 12px;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+
+.commits-search__input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 13px;
+
+  &::placeholder {
+    color: var(--color-fg-subtle);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+  }
+}
+
+.commits-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.commit-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 14px var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.commit-row__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.commit-row__avatar-fallback {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.commit-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.commit-row__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.commit-row__sha {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-accent);
+  text-decoration: none;
+  flex-shrink: 0;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.commit-row__sha-text {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.commit-row__message {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.commit-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  min-width: 0;
+}
+
+.commit-row__author {
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.commit-row__sep {
+  color: var(--color-fg-subtle);
+}
+
+.commit-row__date {
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.commit-row__from {
+  color: var(--color-fg-subtle);
+}
+
+.commit-row__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.commit-row__action {
+  flex-shrink: 0;
+}
+
+.commits-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) 0 var(--space-lg);
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
+.commits-footer__count {
+  color: var(--color-fg-muted);
+}
+
+.commits-footer__pager {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.commits-empty {
+  max-width: 480px;
+  margin: var(--space-2xl) auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-md);
+  padding: var(--space-2xl) var(--space-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+}
+
+.commits-empty__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.commits-empty__body {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+}

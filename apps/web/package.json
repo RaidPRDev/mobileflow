@@ -10,6 +10,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@mobileflow/shared": "workspace:*",
     "@mobileflow/ui": "workspace:*",
     "@tanstack/react-query": "^5.40.0",
     "clsx": "^2.1.1",

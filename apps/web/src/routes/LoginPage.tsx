@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Button, Input, Label } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
+import googleIcon from "../../../../assets/icons/google-icon.svg";
+import githubIcon from "../../../../assets/icons/github-icon.svg";
 
 export function LoginPage() {
   const [identifier, setIdentifier] = useState("");
@@ -56,7 +58,9 @@ export function LoginPage() {
               window.location.href = "/api/auth/oauth/google/start";
             }}
           >
-            <span className="svc-icon is-google" aria-hidden>G</span>
+            <span className="svc-icon is-google" aria-hidden>
+              <img src={googleIcon} alt="" />
+            </span>
             Continue with Google
           </Button>
           <Button
@@ -66,7 +70,9 @@ export function LoginPage() {
               window.location.href = "/api/auth/oauth/github/start";
             }}
           >
-            <span className="svc-icon is-github" aria-hidden>GH</span>
+            <span className="svc-icon is-github" aria-hidden>
+              <img src={githubIcon} alt="" />
+            </span>
             Continue with GitHub
           </Button>
         </div>

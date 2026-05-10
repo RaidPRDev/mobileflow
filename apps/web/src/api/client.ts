@@ -39,7 +39,8 @@ function safeParse(text: string): unknown {
   }
 }
 
-export type Runtime = "capacitor" | "cordova" | "react_native" | "ios_native" | "android_native";
+import type { Runtime } from "@mobileflow/shared";
+export type { Runtime };
 export type GitProvider = "github" | "gitlab" | "bitbucket";
 
 export interface MeResponse {
@@ -63,6 +64,7 @@ export interface GitConnectionRow {
   id: string;
   provider: GitProvider;
   accountLogin: string;
+  accountAvatarUrl: string | null;
   createdAt: string;
 }
 
@@ -82,6 +84,16 @@ export interface CommitRow {
   avatarUrl: string | null;
   date: string;
   url: string;
+}
+
+export interface CommitsPageResponse {
+  items: CommitRow[];
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+  totalCount: number | null;
+  accountLogin: string | null;
+  accountAvatarUrl: string | null;
 }
 
 export type BuildTarget = "ios" | "android" | "web";
@@ -152,8 +164,14 @@ export const api = {
   deleteGitConnection: (id: string) => request<void>(`/git-connections/${id}`, { method: "DELETE" }),
   listRepos: (connectionId: string) => request<RepoRow[]>(`/git-connections/${connectionId}/repos`),
 
-  listCommits: (appId: string, branch?: string) =>
-    request<CommitRow[]>(`/apps/${appId}/commits${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`),
+  listCommits: (appId: string, opts: { branch?: string; page?: number; perPage?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.branch) params.set("branch", opts.branch);
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.perPage) params.set("per_page", String(opts.perPage));
+    const qs = params.toString();
+    return request<CommitsPageResponse>(`/apps/${appId}/commits${qs ? `?${qs}` : ""}`);
+  },
 
   listBuilds: (appId: string) => request<BuildRow[]>(`/apps/${appId}/builds`),
   startBuild: (

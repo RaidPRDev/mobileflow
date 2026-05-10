@@ -77,7 +77,9 @@ export function GitConnectPage() {
             </p>
             <Button
               onClick={() => {
-                window.location.href = `/api/orgs/git-connections/${tab}/start?orgId=${encodeURIComponent(orgId)}`;
+                const returnTo = `/app/${appId}/git`;
+                const qs = new URLSearchParams({ orgId, returnTo }).toString();
+                window.location.href = `/api/orgs/git-connections/${tab}/start?${qs}`;
               }}
             >
               Connect {PROVIDERS.find((p) => p.id === tab)?.label}

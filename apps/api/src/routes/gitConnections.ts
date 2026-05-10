@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { gitConnections } from "../db/schema.js";
@@ -12,6 +12,14 @@ const GIT_PROVIDERS = ["github", "gitlab", "bitbucket"] as const;
 type GitProvider = (typeof GIT_PROVIDERS)[number];
 const GIT_STATE_COOKIE = "mf_git_state";
 const GIT_ORG_COOKIE = "mf_git_org";
+const GIT_RETURN_COOKIE = "mf_git_return";
+
+// Same-origin path: must start with "/" but not "//" or "/\" (open-redirect guard).
+const safeReturnPath = z
+  .string()
+  .max(200)
+  .regex(/^\/(?![/\\])/)
+  .optional();
 
 interface RepoOut {
   id: string | number;
@@ -96,6 +104,7 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
         id: gitConnections.id,
         provider: gitConnections.provider,
         accountLogin: gitConnections.accountLogin,
+        accountAvatarUrl: gitConnections.accountAvatarUrl,
         createdAt: gitConnections.createdAt,
       })
       .from(gitConnections)
@@ -125,11 +134,12 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
     }
   });
 
-  server.get<{ Params: { provider: GitProvider }; Querystring: { orgId: string } }>(
+  server.get<{ Params: { provider: GitProvider }; Querystring: { orgId: string; returnTo?: string } }>(
     "/orgs/git-connections/:provider/start",
     async (req, reply) => {
       if (!GIT_PROVIDERS.includes(req.params.provider)) return reply.notFound();
       const orgId = z.string().uuid().parse(req.query.orgId);
+      const returnTo = safeReturnPath.parse(req.query.returnTo);
       await requireOrgMember(req, reply, orgId);
       if (reply.sent) return;
       const p = await resolveProvider(req.params.provider as OAuthProviderId, "git");
@@ -138,6 +148,8 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
       const opts = { httpOnly: true, secure: env.isProd, sameSite: "lax" as const, path: "/", maxAge: 600 };
       reply.setCookie(GIT_STATE_COOKIE, state, opts);
       reply.setCookie(GIT_ORG_COOKIE, orgId, opts);
+      if (returnTo) reply.setCookie(GIT_RETURN_COOKIE, returnTo, opts);
+      else reply.clearCookie(GIT_RETURN_COOKIE, { path: "/" });
       const redirect = `${env.API_BASE_URL}/api/orgs/git-connections/${req.params.provider}/callback`;
       const params = new URLSearchParams({
         client_id: p.clientId,
@@ -160,26 +172,55 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
       if (!p) return reply.notFound();
       const stateCookie = req.cookies[GIT_STATE_COOKIE];
       const orgId = req.cookies[GIT_ORG_COOKIE];
+      const returnTo = req.cookies[GIT_RETURN_COOKIE];
       reply.clearCookie(GIT_STATE_COOKIE, { path: "/" });
       reply.clearCookie(GIT_ORG_COOKIE, { path: "/" });
+      reply.clearCookie(GIT_RETURN_COOKIE, { path: "/" });
+      const back = (params: Record<string, string>) => {
+        const base = returnTo && /^\/(?![/\\])/.test(returnTo)
+          ? returnTo
+          : orgId
+            ? `/org/${orgId}/apps`
+            : "/";
+        const sep = base.includes("?") ? "&" : "?";
+        const qs = new URLSearchParams(params).toString();
+        return `${env.WEB_BASE_URL}${base}${qs ? sep + qs : ""}`;
+      };
       if (req.query.error || !req.query.code || !req.query.state || !stateCookie || req.query.state !== stateCookie || !orgId) {
-        return reply.redirect(`${env.WEB_BASE_URL}/?git_error=invalid_state`);
+        return reply.redirect(back({ git_error: "invalid_state" }));
       }
       try {
         const redirect = `${env.API_BASE_URL}/api/orgs/git-connections/${req.params.provider}/callback`;
         const { accessToken, refreshToken } = await exchangeCode(p, req.query.code, redirect);
         const profile = await p.fetchProfile(accessToken);
-        await db.insert(gitConnections).values({
-          orgId,
-          provider: req.params.provider,
-          accountLogin: profile.name ?? req.params.provider,
-          accessTokenEnc: encryptString(accessToken),
-          refreshTokenEnc: refreshToken ? encryptString(refreshToken) : null,
-        });
-        return reply.redirect(`${env.WEB_BASE_URL}/auth/callback?git=${req.params.provider}`);
+        const accountLogin = profile.name ?? req.params.provider;
+        const accountAvatarUrl = profile.avatarUrl;
+        const accessTokenEnc = encryptString(accessToken);
+        const refreshTokenEnc = refreshToken ? encryptString(refreshToken) : null;
+        const [existing] = await db
+          .select({ id: gitConnections.id })
+          .from(gitConnections)
+          .where(and(eq(gitConnections.orgId, orgId), eq(gitConnections.provider, req.params.provider)))
+          .limit(1);
+        if (existing) {
+          await db
+            .update(gitConnections)
+            .set({ accountLogin, accountAvatarUrl, accessTokenEnc, refreshTokenEnc })
+            .where(eq(gitConnections.id, existing.id));
+        } else {
+          await db.insert(gitConnections).values({
+            orgId,
+            provider: req.params.provider,
+            accountLogin,
+            accountAvatarUrl,
+            accessTokenEnc,
+            refreshTokenEnc,
+          });
+        }
+        return reply.redirect(back({ git_connected: req.params.provider }));
       } catch (err) {
         server.log.error({ err }, "git connection callback failed");
-        return reply.redirect(`${env.WEB_BASE_URL}/?git_error=exchange_failed`);
+        return reply.redirect(back({ git_error: "exchange_failed" }));
       }
     },
   );

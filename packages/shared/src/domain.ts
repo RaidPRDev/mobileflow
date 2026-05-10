@@ -1,13 +1,7 @@
 import { z } from "zod";
+import { RUNTIME_IDS } from "./runtimes";
 
-export const RuntimeSchema = z.enum([
-  "capacitor",
-  "cordova",
-  "react_native",
-  "ios_native",
-  "android_native",
-]);
-export type Runtime = z.infer<typeof RuntimeSchema>;
+export const RuntimeSchema = z.enum(RUNTIME_IDS);
 
 export const GitProviderSchema = z.enum(["github", "gitlab", "bitbucket"]);
 export type GitProvider = z.infer<typeof GitProviderSchema>;

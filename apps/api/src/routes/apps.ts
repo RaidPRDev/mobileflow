@@ -2,12 +2,11 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { RuntimeSchema } from "@mobileflow/shared";
 import { db } from "../db/client.js";
 import { apps, gitConnections } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { assertCanCreateApp } from "../plans/gate.js";
-
-const RuntimeSchema = z.enum(["capacitor", "cordova", "react_native", "ios_native", "android_native"]);
 
 const CreateBody = z.object({
   name: z.string().min(1).max(80),

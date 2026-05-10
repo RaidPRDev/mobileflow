@@ -47,7 +47,7 @@ PK (org_id, user_id)`}
 org_id uuid -> organizations
 name text
 icon_url text
-runtime text — capacitor | cordova | react_native | ios_native | android_native
+runtime text — capacitor | cordova | react_native | tauri | ios_native | android_native
 git_provider text — github | gitlab | bitbucket
 git_repo_full_name text
 git_default_branch text
