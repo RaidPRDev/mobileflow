@@ -11,11 +11,11 @@ export function RootRedirect() {
     return <Navigate to="/admin" replace />;
   }
   return (
-    <div className="grid gap-2">
-      <h1 className="text-xl font-semibold">No organization</h1>
-      <p className="text-sm text-muted-foreground">
-        Your account isn't a member of any organization yet.
-      </p>
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">No organization</h1>
+      </div>
+      <p className="page-subtitle">Your account isn't a member of any organization yet.</p>
     </div>
   );
 }

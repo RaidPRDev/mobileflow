@@ -1,0 +1,139 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  white-space: nowrap;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0 var(--space-md);
+  height: 36px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-fg);
+  cursor: default;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+// Variants
+.btn-default {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-color: var(--color-accent);
+}
+
+.btn-default:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.btn-destructive {
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+  border-color: var(--color-danger);
+}
+
+.btn-destructive:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.btn-outline {
+  background: var(--color-bg-elevated);
+  color: var(--color-fg);
+  border-color: var(--color-border-strong);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--color-bg-muted);
+}
+
+.btn-secondary {
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+  border-color: transparent;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-fg);
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-bg-muted);
+}
+
+.btn-link {
+  background: transparent;
+  color: var(--color-accent);
+  border-color: transparent;
+  height: auto;
+  padding: 0;
+}
+
+.btn-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+// Sizes
+.btn-sm {
+  height: 32px;
+  padding: 0 var(--space-md);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-lg {
+  height: 44px;
+  padding: 0 var(--space-xl);
+  font-size: 15px;
+}
+
+.btn-icon {
+  height: 36px;
+  width: 36px;
+  padding: 0;
+}
+
+.btn-icon-sm {
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.btn-loading {
+  opacity: 0.7;
+}
+
+// Split button caret
+.btn-caret {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--space-xs);
+  opacity: 0.85;
+}

@@ -1,0 +1,158 @@
+.page {
+  display: grid;
+  gap: var(--space-xl);
+  max-width: 980px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: var(--color-fg-muted);
+  margin-top: 4px;
+}
+
+.page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.page-section {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: var(--space-2xl);
+  text-align: center;
+  color: var(--color-fg-muted);
+  font-size: 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+}
+
+.list-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-row-title {
+  font-weight: 500;
+  font-size: 14px;
+  .text-truncate();
+}
+
+.list-row-meta {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  .text-truncate();
+}
+
+.row-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.stack-sm {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.stack-lg {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.row-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.text-error {
+  font-size: 13px;
+  color: var(--color-danger);
+}
+
+.text-help {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  line-height: 1.5;
+}
+
+.text-help code {
+  background: var(--color-bg-muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+}
+
+.link {
+  color: var(--color-accent);
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  width: 100%;
+  border: 0;
+}

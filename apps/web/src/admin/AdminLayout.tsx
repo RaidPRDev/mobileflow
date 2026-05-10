@@ -6,18 +6,21 @@ import { ThemeToggle } from "../theme/ThemeToggle";
 export function AdminLayout() {
   const { status, me, signOut } = useAuth();
   if (status === "loading") {
-    return <div className="min-h-full grid place-items-center text-sm text-muted-foreground">Loading…</div>;
+    return (
+      <div className="app-shell">
+        <div className="empty-state" style={{ margin: "auto" }}>
+          Loading…
+        </div>
+      </div>
+    );
   }
   if (!me?.user.isSuperadmin) return <Navigate to="/" replace />;
 
   return (
-    <div className="flex h-full bg-background">
-      <aside
-        className="shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        style={{ width: 230 }}
-      >
-        <div className="px-4 py-3 text-xs uppercase tracking-wide text-muted-foreground">Admin</div>
-        <nav className="px-2 grid gap-1">
+    <div className="app-shell">
+      <aside className="app-rail-inner app-scroll">
+        <div className="app-rail-section-title">Admin</div>
+        <nav className="app-rail-nav">
           <Item to="/admin" end label="Overview" />
           <Item to="/admin/orgs" label="Organizations" />
           <Item to="/admin/users" label="Users" />
@@ -26,21 +29,21 @@ export function AdminLayout() {
           <Item to="/admin/hosts" label="Build hosts" />
           <Item to="/admin/oauth-apps" label="OAuth apps" />
         </nav>
-        <div className="mt-6 px-2">
-          <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-            <NavLink to="/">Back to app</NavLink>
+        <div className="app-rail-nav" style={{ marginTop: 16 }}>
+          <Button asChild variant="ghost" size="sm" className="admin-back-btn">
+            <NavLink to="/">← Back to app</NavLink>
           </Button>
         </div>
       </aside>
-      <main className="flex-1 min-w-0 overflow-auto">
-        <header className="h-14 border-b flex items-center justify-end px-4 gap-3">
+      <main className="app-main">
+        <header className="app-header">
           <ThemeToggle />
-          <span className="text-sm text-muted-foreground hidden sm:inline">{me.user.email}</span>
+          <span className="app-header-user">{me.user.email}</span>
           <Button variant="ghost" size="sm" onClick={signOut}>
             Sign out
           </Button>
         </header>
-        <div className="p-6">
+        <div className="app-content app-scroll">
           <Outlet />
         </div>
       </main>
@@ -53,9 +56,7 @@ function Item({ to, label, end }: { to: string; label: string; end?: boolean }) 
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) =>
-        cn("px-3 py-1.5 rounded-md text-sm", isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/60")
-      }
+      className={({ isActive }) => cn("app-rail-nav-item", isActive && "is-active")}
     >
       {label}
     </NavLink>

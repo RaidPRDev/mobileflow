@@ -19,8 +19,8 @@ export function OAuthCallbackPage() {
   }, [navigate, params, refresh]);
 
   return (
-    <div className="min-h-full grid place-items-center text-sm text-muted-foreground">
-      Finishing sign-in…
+    <div className="login-page">
+      <div className="empty-state">Finishing sign-in…</div>
     </div>
   );
 }

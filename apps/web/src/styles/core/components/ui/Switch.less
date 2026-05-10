@@ -1,0 +1,36 @@
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.switch-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+.switch[data-state="checked"] .switch-track {
+  background: var(--color-accent);
+}
+
+.switch[data-state="checked"] .switch-track::after {
+  transform: translateX(16px);
+}

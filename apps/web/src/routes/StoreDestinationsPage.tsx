@@ -1,13 +1,31 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@mobileflow/ui";
+import { Apple, MoreVertical, Smartphone } from "lucide-react";
+import {
+  Badge,
+  Button,
+  Combobox,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  IconButton,
+  Input,
+  Label,
+  type ComboboxOption,
+} from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
 
 type DestType = "app_store" | "testflight" | "play_store" | "play_internal";
 
 const TYPE_LABEL: Record<DestType, string> = {
-  app_store: "App Store",
+  app_store: "Apple App Store",
   testflight: "TestFlight",
   play_store: "Google Play (Production)",
   play_internal: "Google Play (Internal)",
@@ -20,10 +38,28 @@ const TYPE_PLATFORM: Record<DestType, "ios" | "android"> = {
   play_internal: "android",
 };
 
+function destIcon(type: DestType) {
+  switch (type) {
+    case "app_store":
+      return <span className="svc-icon is-app-store">A</span>;
+    case "testflight":
+      return <span className="svc-icon is-testflight">TF</span>;
+    case "play_store":
+      return <span className="svc-icon is-google-play">P</span>;
+    case "play_internal":
+      return <span className="svc-icon is-google-play-internal">PI</span>;
+  }
+}
+
+const DEST_OPTIONS: ComboboxOption<DestType>[] = (Object.keys(TYPE_LABEL) as DestType[]).map(
+  (t) => ({ value: t, label: TYPE_LABEL[t], icon: destIcon(t) }),
+);
+
 export function StoreDestinationsPage() {
   const { appId } = useParams();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; name: string; type: DestType } | null>(null);
 
   const q = useQuery({
     queryKey: ["destinations", appId],
@@ -37,147 +73,257 @@ export function StoreDestinationsPage() {
   });
 
   return (
-    <div className="grid gap-4 max-w-3xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Store destinations</h1>
-        <Button onClick={() => setOpen((s) => !s)}>{open ? "Cancel" : "New store destination"}</Button>
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">Store destinations</h1>
+        <div className="page-actions">
+          <Button onClick={() => { setEditing(null); setOpen(true); }}>Add destination</Button>
+        </div>
       </div>
 
-      {open && <NewDestCard appId={appId!} onDone={() => setOpen(false)} />}
+      {open && (
+        <DestDialog
+          appId={appId!}
+          editing={editing}
+          onClose={() => setOpen(false)}
+        />
+      )}
 
-      <div className="grid gap-2">
-        {q.data?.map((d) => (
-          <div key={d.id} className="rounded-md border bg-card p-3 flex items-center gap-3">
-            <span className="text-xs uppercase rounded-full px-2 py-0.5 bg-muted">{TYPE_PLATFORM[d.type as DestType]}</span>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{d.name}</div>
-              <div className="text-xs text-muted-foreground">
-                {TYPE_LABEL[d.type as DestType]}
-                {d.bundleId ? ` · ${d.bundleId}` : ""}
-                {d.trackOrChannel ? ` · ${d.trackOrChannel}` : ""}
-              </div>
-            </div>
-            <Button size="sm" variant="ghost" onClick={() => remove.mutate(d.id)}>
-              Delete
-            </Button>
-          </div>
-        ))}
-        {q.data?.length === 0 && <p className="text-sm text-muted-foreground">No destinations yet.</p>}
+      <div className="page-section">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Platform</th>
+              <th>Identifier</th>
+              <th className="col-actions" aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {q.data?.map((d) => {
+              const platform = TYPE_PLATFORM[d.type as DestType];
+              return (
+                <tr key={d.id}>
+                  <td>
+                    <div className="data-row-name">{d.name}</div>
+                    {d.trackOrChannel && (
+                      <div className="data-row-meta">{d.trackOrChannel}</div>
+                    )}
+                  </td>
+                  <td>
+                    <span className="row" style={{ gap: 8 }}>
+                      {destIcon(d.type as DestType)}
+                      <span>{TYPE_LABEL[d.type as DestType]}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="data-row-platform">
+                      <span className={`data-row-platform-icon is-${platform}`}>
+                        {platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
+                      </span>
+                      <span>{platform === "ios" ? "iOS" : "Android"}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="data-row-meta">{d.bundleId ?? "—"}</span>
+                  </td>
+                  <td className="col-actions">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <IconButton variant="menu" aria-label="More actions">
+                          <MoreVertical size={16} />
+                        </IconButton>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditing({ id: d.id, name: d.name, type: d.type as DestType });
+                            setOpen(true);
+                          }}
+                        >
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          destructive
+                          onSelect={() => remove.mutate(d.id)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {q.data?.length === 0 && <div className="empty-state">No destinations yet.</div>}
       </div>
     </div>
   );
 }
 
-function NewDestCard({ appId, onDone }: { appId: string; onDone: () => void }) {
+function DestDialog({
+  appId,
+  editing,
+  onClose,
+}: {
+  appId: string;
+  editing: { id: string; name: string; type: DestType } | null;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
-  const [type, setType] = useState<DestType>("testflight");
-  const [name, setName] = useState("");
+  const [type, setType] = useState<DestType>(editing?.type ?? "testflight");
+  const [name, setName] = useState(editing?.name ?? "");
   const [bundleId, setBundleId] = useState("");
   const [track, setTrack] = useState<string>("internal");
-  // iOS App Store Connect API key
   const [issuerId, setIssuerId] = useState("");
   const [keyId, setKeyId] = useState("");
   const [p8, setP8] = useState("");
-  // Android service account JSON
   const [serviceAccountJson, setServiceAccountJson] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const platform = TYPE_PLATFORM[type];
 
   const create = useMutation({
     mutationFn: () => {
       const config =
-        TYPE_PLATFORM[type] === "ios"
+        platform === "ios"
           ? { issuerId, keyId, privateKeyP8: p8 }
           : { serviceAccountJson };
       return api.createDestination(appId, {
         name: name.trim(),
         type,
         bundleId: bundleId.trim() || null,
-        trackOrChannel: TYPE_PLATFORM[type] === "android" ? track : null,
+        trackOrChannel: platform === "android" ? track : null,
         config,
       });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["destinations", appId] });
-      onDone();
+      onClose();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">New store destination</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(TYPE_LABEL) as DestType[]).map((t) => (
-            <Button key={t} size="sm" variant={type === t ? "default" : "outline"} onClick={() => setType(t)}>
-              {TYPE_LABEL[t]}
-            </Button>
-          ))}
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <div>
+            <DialogTitle>{editing ? "Edit store destination" : "Add Store Destination"}</DialogTitle>
+          </div>
+        </DialogHeader>
+        <div className="dialog-body">
+          <div className="field-group">
+            <Label htmlFor="dest-name">Name</Label>
+            <Input
+              id="dest-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My production destination"
+            />
+          </div>
+
+          <div className="field-group">
+            <Label htmlFor="dest-type">Type</Label>
+            <Combobox<DestType>
+              id="dest-type"
+              value={type}
+              onChange={setType}
+              options={DEST_OPTIONS}
+              placeholder="Select destination type"
+            />
+          </div>
+
+          {platform === "ios" ? (
+            <>
+              <div className="field-group">
+                <Label htmlFor="bundle-id">Bundle ID</Label>
+                <Input
+                  id="bundle-id"
+                  value={bundleId}
+                  onChange={(e) => setBundleId(e.target.value)}
+                  placeholder="com.acme.myapp"
+                />
+              </div>
+              <div className="field-group">
+                <Label htmlFor="issuer">App Store Connect — Issuer ID</Label>
+                <Input
+                  id="issuer"
+                  value={issuerId}
+                  onChange={(e) => setIssuerId(e.target.value)}
+                />
+              </div>
+              <div className="field-group">
+                <Label htmlFor="key-id">Key ID</Label>
+                <Input id="key-id" value={keyId} onChange={(e) => setKeyId(e.target.value)} />
+              </div>
+              <div className="field-group">
+                <Label htmlFor="p8">Private key (.p8)</Label>
+                <textarea
+                  id="p8"
+                  className="textarea"
+                  value={p8}
+                  onChange={(e) => setP8(e.target.value)}
+                  placeholder="-----BEGIN PRIVATE KEY-----..."
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field-group">
+                <Label htmlFor="app-id">Application ID</Label>
+                <Input
+                  id="app-id"
+                  value={bundleId}
+                  onChange={(e) => setBundleId(e.target.value)}
+                  placeholder="com.acme.myapp"
+                />
+              </div>
+              <div className="field-group">
+                <Label htmlFor="track">Track</Label>
+                <Combobox
+                  id="track"
+                  value={track}
+                  onChange={setTrack}
+                  options={[
+                    { value: "internal", label: "Internal" },
+                    { value: "alpha", label: "Alpha" },
+                    { value: "beta", label: "Beta" },
+                    { value: "production", label: "Production" },
+                  ]}
+                />
+              </div>
+              <div className="field-group">
+                <Label htmlFor="sa-json">Service account JSON</Label>
+                <textarea
+                  id="sa-json"
+                  className="textarea"
+                  value={serviceAccountJson}
+                  onChange={(e) => setServiceAccountJson(e.target.value)}
+                  placeholder='{"type":"service_account",...}'
+                />
+              </div>
+            </>
+          )}
+
+          {error && <p className="text-error">{error}</p>}
         </div>
-        <Field label="Display name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label={TYPE_PLATFORM[type] === "ios" ? "Bundle ID" : "Application ID"}>
-          <Input value={bundleId} onChange={(e) => setBundleId(e.target.value)} placeholder={TYPE_PLATFORM[type] === "ios" ? "com.acme.myapp" : "com.acme.myapp"} />
-        </Field>
-
-        {TYPE_PLATFORM[type] === "ios" ? (
-          <>
-            <Field label="App Store Connect — Issuer ID">
-              <Input value={issuerId} onChange={(e) => setIssuerId(e.target.value)} />
-            </Field>
-            <Field label="Key ID">
-              <Input value={keyId} onChange={(e) => setKeyId(e.target.value)} />
-            </Field>
-            <Field label="Private key (.p8)">
-              <textarea
-                className="h-32 rounded-md border border-input bg-background p-2 text-xs font-mono"
-                value={p8}
-                onChange={(e) => setP8(e.target.value)}
-                placeholder="-----BEGIN PRIVATE KEY-----..."
-              />
-            </Field>
-          </>
-        ) : (
-          <>
-            <Field label="Track">
-              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={track} onChange={(e) => setTrack(e.target.value)}>
-                <option value="internal">internal</option>
-                <option value="alpha">alpha</option>
-                <option value="beta">beta</option>
-                <option value="production">production</option>
-              </select>
-            </Field>
-            <Field label="Service account JSON">
-              <textarea
-                className="h-32 rounded-md border border-input bg-background p-2 text-xs font-mono"
-                value={serviceAccountJson}
-                onChange={(e) => setServiceAccountJson(e.target.value)}
-                placeholder='{"type":"service_account",...}'
-              />
-            </Field>
-          </>
-        )}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onDone}>Cancel</Button>
-          <Button onClick={() => create.mutate()} loading={create.isPending} disabled={!name.trim()}>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => create.mutate()}
+            loading={create.isPending}
+            disabled={!name.trim() || !!editing}
+          >
             Save
           </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid gap-1.5">
-      <Label className="text-xs">{label}</Label>
-      {children}
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

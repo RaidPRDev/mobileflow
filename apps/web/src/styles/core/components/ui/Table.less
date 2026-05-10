@@ -1,0 +1,72 @@
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table thead th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-subtle);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table tbody td {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table .col-actions {
+  width: 1%;
+  text-align: right;
+}
+
+.data-table .col-shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.data-row-name {
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.data-row-meta {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.data-row-platform {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-row-platform-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.data-row-platform-icon.is-ios {
+  background: #0a0a0a;
+  color: #fff;
+}
+
+.data-row-platform-icon.is-android {
+  background: #34a853;
+  color: #fff;
+}

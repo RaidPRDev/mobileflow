@@ -47,12 +47,26 @@ module.exports = {
         type: "javascript/auto",
       },
       {
-        test: /\.css$/,
-        use: ["postcss-loader"],
+        test: /\.less$/,
+        use: [
+          {
+            loader: "less-loader",
+            options: {
+              lessOptions: {
+                math: "always",
+                relativeUrls: true,
+              },
+            },
+          },
+        ],
         type: "css",
       },
       {
-        test: /\.(png|jpg|jpeg|gif|svg|webp)$/,
+        test: /\.css$/,
+        type: "css",
+      },
+      {
+        test: /\.(png|jpg|jpeg|gif|svg|webp|woff2?)$/,
         type: "asset",
       },
     ],

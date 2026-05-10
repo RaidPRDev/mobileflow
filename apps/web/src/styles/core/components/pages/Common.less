@@ -1,0 +1,115 @@
+// Page-specific helpers shared across multiple routes.
+
+.kv {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--space-sm) var(--space-md);
+  font-size: 13px;
+}
+
+.kv-key {
+  color: var(--color-fg-muted);
+}
+
+.kv-value {
+  color: var(--color-fg);
+  word-break: break-word;
+}
+
+.code-snippet {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+.platform-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+// Provider/store icons used in dropdowns
+.svc-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.svc-icon.is-app-store {
+  background: #007aff;
+}
+
+.svc-icon.is-testflight {
+  background: #007aff;
+}
+
+.svc-icon.is-google-play {
+  background: #00897b;
+}
+
+.svc-icon.is-google-play-internal {
+  background: #34a853;
+}
+
+.svc-icon.is-google {
+  background: #fff;
+  color: #4285f4;
+  border: 1px solid var(--color-border);
+}
+
+.svc-icon.is-github {
+  background: #24292e;
+  color: #fff;
+}
+
+.svc-icon.is-gitlab {
+  background: #fc6d26;
+  color: #fff;
+}
+
+.svc-icon.is-bitbucket {
+  background: #0052cc;
+  color: #fff;
+}
+
+.svc-icon.is-ios {
+  background: #0a0a0a;
+  color: #fff;
+}
+
+.svc-icon.is-android {
+  background: #34a853;
+  color: #fff;
+}

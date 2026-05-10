@@ -1,8 +1,23 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@mobileflow/ui";
+import { Apple, ChevronDown, MoreVertical, Smartphone } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  FileDrop,
+  IconButton,
+  Input,
+  Label,
+} from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -13,7 +28,11 @@ export function CertificatesPage() {
   const { me } = useAuth();
   const qc = useQueryClient();
 
-  const appQ = useQuery({ queryKey: ["app", appId], queryFn: () => api.getApp(appId!), enabled: !!appId });
+  const appQ = useQuery({
+    queryKey: ["app", appId],
+    queryFn: () => api.getApp(appId!),
+    enabled: !!appId,
+  });
   const orgId = appQ.data?.orgId ?? me?.organizations[0]?.orgId ?? null;
 
   const certsQ = useQuery({
@@ -27,55 +46,126 @@ export function CertificatesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["certs", orgId] }),
   });
 
-  const [open, setOpen] = useState(false);
+  const [openPlatform, setOpenPlatform] = useState<Platform | null>(null);
 
   return (
-    <div className="max-w-3xl grid gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Signing Certificates</h1>
-        <Button onClick={() => setOpen(true)}>Add certificate</Button>
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">Signing Certificates</h1>
+        <div className="page-actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                Add certificate
+                <ChevronDown size={14} className="btn-caret" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                icon={<Apple size={14} />}
+                onSelect={() => setOpenPlatform("ios")}
+              >
+                iOS
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                icon={<Smartphone size={14} />}
+                onSelect={() => setOpenPlatform("android")}
+              >
+                Android
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {open && orgId && <AddCertCard orgId={orgId} onClose={() => setOpen(false)} />}
+      {openPlatform && orgId && (
+        <AddCertDialog
+          orgId={orgId}
+          platform={openPlatform}
+          onClose={() => setOpenPlatform(null)}
+        />
+      )}
 
-      {certsQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {certsQ.error && <p className="text-sm text-destructive">{(certsQ.error as ApiError).message}</p>}
+      {certsQ.isLoading && <p className="text-help">Loading…</p>}
+      {certsQ.error && <p className="text-error">{(certsQ.error as ApiError).message}</p>}
 
-      <div className="grid gap-2">
-        {certsQ.data?.map((c) => (
-          <div key={c.id} className="rounded-md border bg-card p-3 flex items-center gap-3">
-            <span className="text-xs uppercase rounded-full px-2 py-0.5 bg-muted">{c.platform}</span>
-            <span className="text-xs uppercase rounded-full px-2 py-0.5 bg-muted">{c.kind}</span>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{c.label}</div>
-              <div className="text-xs text-muted-foreground truncate">{c.fileName}</div>
-            </div>
-            <Button size="sm" variant="ghost" onClick={() => remove.mutate(c.id)}>
-              Delete
-            </Button>
-          </div>
-        ))}
+      <div className="page-section">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Platform</th>
+              <th>File</th>
+              <th className="col-actions" aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {certsQ.data?.map((c) => (
+              <tr key={c.id}>
+                <td>
+                  <div className="data-row-name">{c.label}</div>
+                </td>
+                <td>
+                  <span className="data-row-meta">{c.kind}</span>
+                </td>
+                <td>
+                  <span className="data-row-platform">
+                    <span className={`data-row-platform-icon is-${c.platform}`}>
+                      {c.platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
+                    </span>
+                    <span>{c.platform === "ios" ? "iOS" : "Android"}</span>
+                  </span>
+                </td>
+                <td>
+                  <span className="data-row-meta is-truncate">{c.fileName}</span>
+                </td>
+                <td className="col-actions">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton variant="menu" aria-label="More actions">
+                        <MoreVertical size={16} />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem disabled>Edit</DropdownMenuItem>
+                      <DropdownMenuItem destructive onSelect={() => remove.mutate(c.id)}>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         {certsQ.data?.length === 0 && (
-          <p className="text-sm text-muted-foreground">No certificates yet.</p>
+          <div className="empty-state">No certificates yet.</div>
         )}
       </div>
     </div>
   );
 }
 
-function AddCertCard({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+function AddCertDialog({
+  orgId,
+  platform,
+  onClose,
+}: {
+  orgId: string;
+  platform: Platform;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
-  const [platform, setPlatform] = useState<Platform>("android");
+  const isIos = platform === "ios";
   const [label, setLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [provisionFiles, setProvisionFiles] = useState<File[]>([]);
   const [password, setPassword] = useState("");
   const [alias, setAlias] = useState("");
-  const [provisionId, setProvisionId] = useState("");
-  const [provisionName, setProvisionName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const isIos = platform === "ios";
-  const kind = isIos ? "p12" : "keystore"; // alpha: one cert at a time
+  const kind = isIos ? "p12" : "keystore";
 
   const create = useMutation({
     mutationFn: async () => {
@@ -87,7 +177,7 @@ function AddCertCard({ orgId, onClose }: { orgId: string; onClose: () => void })
           .join(""),
       );
       const metadata: Record<string, string> = isIos
-        ? { provisionId, provisionName }
+        ? { provisionCount: String(provisionFiles.length) }
         : { alias };
       return api.createCertificate(orgId, {
         platform,
@@ -107,67 +197,121 @@ function AddCertCard({ orgId, onClose }: { orgId: string; onClose: () => void })
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Add certificate</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="flex gap-2">
-          <Button size="sm" variant={platform === "ios" ? "default" : "outline"} onClick={() => setPlatform("ios")}>
-            iOS
-          </Button>
-          <Button size="sm" variant={platform === "android" ? "default" : "outline"} onClick={() => setPlatform("android")}>
-            Android
-          </Button>
-        </div>
-
-        <div className="grid gap-1.5">
-          <Label htmlFor="cert-label">Label</Label>
-          <Input id="cert-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={isIos ? "iOS Distribution" : "Production keystore"} />
-        </div>
-
-        <div className="grid gap-1.5">
-          <Label htmlFor="cert-file">{isIos ? ".p12 file" : "Keystore (.jks / .keystore)"}</Label>
-          <input
-            id="cert-file"
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
-            accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
-          />
-        </div>
-
-        <div className="grid gap-1.5">
-          <Label htmlFor="cert-pass">{isIos ? "Certificate password" : "Keystore password"}</Label>
-          <Input id="cert-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-
-        {isIos ? (
-          <>
-            <div className="grid gap-1.5">
-              <Label htmlFor="prov-id">Provisioning profile ID (optional)</Label>
-              <Input id="prov-id" value={provisionId} onChange={(e) => setProvisionId(e.target.value)} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="prov-name">Provisioning profile name (optional)</Label>
-              <Input id="prov-name" value={provisionName} onChange={(e) => setProvisionName(e.target.value)} />
-            </div>
-          </>
-        ) : (
-          <div className="grid gap-1.5">
-            <Label htmlFor="alias">Key alias</Label>
-            <Input id="alias" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="key0" />
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <div>
+            <DialogTitle>Add signing certificate</DialogTitle>
           </div>
-        )}
+        </DialogHeader>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => create.mutate()} disabled={!file || !label.trim() || create.isPending} loading={create.isPending}>
-            Save
-          </Button>
+        <div className="dialog-body">
+          <div className="field-group">
+            <Label htmlFor="cert-label">Name</Label>
+            <Input
+              id="cert-label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder={isIos ? "iOS Distribution" : "Production keystore"}
+            />
+          </div>
+
+          <div className="card cert-platform-card">
+            <div className="card-content">
+              <div className="row" style={{ gap: 12 }}>
+                <span className={`svc-icon is-${platform}`} aria-hidden style={{ width: 32, height: 32 }}>
+                  {isIos ? <Apple size={16} /> : <Smartphone size={16} />}
+                </span>
+                <div>
+                  <div className="data-row-name">{isIos ? "iOS" : "Android"}</div>
+                  <div className="data-row-meta">
+                    Credentials for signing {isIos ? "iOS" : "Android"} apps.{" "}
+                    <a className="link" href="#" onClick={(e) => e.preventDefault()}>
+                      View docs
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <div className="field-group">
+                <Label className="is-small">
+                  {isIos ? "App development / Store certificate" : "Keystore (.jks / .keystore)"}
+                </Label>
+                <FileDrop
+                  accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
+                  value={file}
+                  onChange={(files) => setFile(files[0] ?? null)}
+                  hint={
+                    <>
+                      Drop file here or <span className="filedrop-link">browse</span>
+                    </>
+                  }
+                />
+              </div>
+
+              {isIos && (
+                <div className="field-group">
+                  <Label className="is-small">Provisioning profiles</Label>
+                  <p className="text-help">
+                    Upload the profile for your main app. Optionally include additional profiles if
+                    you are building app extensions.
+                  </p>
+                  <FileDrop
+                    accept=".mobileprovision"
+                    multiple
+                    value={provisionFiles}
+                    onChange={setProvisionFiles}
+                    hint={
+                      <>
+                        Drop files here or <span className="filedrop-link">browse</span>
+                      </>
+                    }
+                  />
+                </div>
+              )}
+
+              <div className="field-group">
+                <Label htmlFor="cert-pass" className="is-small">
+                  {isIos ? "Certificate password" : "Keystore password"}
+                </Label>
+                <Input
+                  id="cert-pass"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+
+              {!isIos && (
+                <div className="field-group">
+                  <Label htmlFor="alias" className="is-small">Key alias</Label>
+                  <Input
+                    id="alias"
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    placeholder="key0"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {error && <p className="text-error">{error}</p>}
         </div>
-      </CardContent>
-    </Card>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={!file || !label.trim() || create.isPending}
+            loading={create.isPending}
+          >
+            Add certificate
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

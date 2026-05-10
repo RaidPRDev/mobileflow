@@ -1,0 +1,52 @@
+.text-truncate() {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scroll-y() {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.focus-ring() {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.is-truncate {
+  .text-truncate();
+}
+
+.is-mono {
+  font-family: var(--font-mono);
+}
+
+.is-muted {
+  color: var(--color-fg-muted);
+}
+
+.is-subtle {
+  color: var(--color-fg-subtle);
+}
+
+.is-danger {
+  color: var(--color-danger);
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.is-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
