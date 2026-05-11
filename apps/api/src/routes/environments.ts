@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { apps, environmentVars, environments } from "../db/schema.js";
@@ -25,13 +25,45 @@ async function appOrFail(appId: string) {
 export async function environmentRoutes(server: FastifyInstance) {
   server.addHook("preHandler", requireUser);
 
-  server.get<{ Params: { appId: string } }>("/apps/:appId/environments", async (req, reply) => {
-    const a = await appOrFail(req.params.appId);
-    if (!a) return reply.notFound();
-    await requireOrgMember(req, reply, a.orgId);
-    if (reply.sent) return;
-    return db.select().from(environments).where(eq(environments.appId, a.id)).orderBy(asc(environments.createdAt));
-  });
+  server.get<{ Params: { appId: string }; Querystring: { include?: string } }>(
+    "/apps/:appId/environments",
+    async (req, reply) => {
+      const a = await appOrFail(req.params.appId);
+      if (!a) return reply.notFound();
+      await requireOrgMember(req, reply, a.orgId);
+      if (reply.sent) return;
+
+      const envs = await db
+        .select()
+        .from(environments)
+        .where(eq(environments.appId, a.id))
+        .orderBy(asc(environments.createdAt));
+
+      if (req.query.include !== "vars" || envs.length === 0) return envs;
+
+      const envIds = envs.map((e) => e.id);
+      const allVars = await db
+        .select()
+        .from(environmentVars)
+        .where(inArray(environmentVars.environmentId, envIds));
+
+      const byEnv = new Map<string, { id: string; key: string; isSecret: boolean; value: string }[]>();
+      for (const v of allVars) {
+        const list = byEnv.get(v.environmentId) ?? [];
+        list.push({
+          id: v.id,
+          key: v.key,
+          isSecret: v.isSecret,
+          value: v.isSecret ? SECRET_PLACEHOLDER : decryptString(v.valueEnc),
+        });
+        byEnv.set(v.environmentId, list);
+      }
+      return envs.map((e) => ({
+        ...e,
+        vars: (byEnv.get(e.id) ?? []).sort((a, b) => a.key.localeCompare(b.key)),
+      }));
+    },
+  );
 
   server.post<{ Params: { appId: string } }>("/apps/:appId/environments", async (req, reply) => {
     const a = await appOrFail(req.params.appId);

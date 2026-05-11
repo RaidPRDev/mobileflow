@@ -58,6 +58,24 @@ export interface CertificateGroup extends CertificateRow {
   provisioningProfiles: CertificateRow[];
 }
 
+export interface EnvironmentRow {
+  id: string;
+  appId: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface EnvVarRow {
+  id: string;
+  key: string;
+  isSecret: boolean;
+  value: string; // "********" for secrets
+}
+
+export interface EnvironmentWithVars extends EnvironmentRow {
+  vars: EnvVarRow[];
+}
+
 export interface MeResponse {
   user: { id: string; email: string; name: string | null; isSuperadmin: boolean };
   organizations: { orgId: string; slug: string; name: string; role: "owner" | "admin" | "member" }[];
@@ -225,18 +243,25 @@ export const api = {
 
   // Environments
   listEnvironments: (appId: string) =>
-    request<{ id: string; appId: string; name: string; createdAt: string }[]>(`/apps/${appId}/environments`),
+    request<EnvironmentRow[]>(`/apps/${appId}/environments`),
+  listEnvironmentsWithVars: (appId: string) =>
+    request<EnvironmentWithVars[]>(`/apps/${appId}/environments?include=vars`),
   createEnvironment: (appId: string, name: string) =>
     request<{ id: string; name: string }>(`/apps/${appId}/environments`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  updateEnvironment: (envId: string, body: { name: string }) =>
+    request<{ id: string; name: string }>(`/environments/${envId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   deleteEnvironment: (envId: string) =>
     request<void>(`/environments/${envId}`, { method: "DELETE" }),
   listEnvVars: (envId: string) =>
-    request<{ id: string; key: string; isSecret: boolean; value: string }[]>(`/environments/${envId}/vars`),
+    request<EnvVarRow[]>(`/environments/${envId}/vars`),
   createEnvVar: (envId: string, body: { key: string; value: string; isSecret?: boolean }) =>
-    request<{ id: string; key: string; isSecret: boolean; value: string }>(`/environments/${envId}/vars`, {
+    request<EnvVarRow>(`/environments/${envId}/vars`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

@@ -1,26 +1,36 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@mobileflow/ui";
-import { ApiError, api } from "../api/client";
+import { MoreVertical, Plus, Trash2 } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  IconButton,
+  Input,
+  Label,
+} from "@mobileflow/ui";
+import { ApiError, api, type EnvVarRow, type EnvironmentWithVars } from "../api/client";
+
+const MAX_PREVIEW = 10;
+const SECRET_PLACEHOLDER = "********";
 
 export function EnvironmentsPage() {
   const { appId } = useParams();
   const qc = useQueryClient();
-  const [newName, setNewName] = useState("");
 
   const envsQ = useQuery({
-    queryKey: ["envs", appId],
-    queryFn: () => api.listEnvironments(appId!),
+    queryKey: ["envs", appId, "withVars"],
+    queryFn: () => api.listEnvironmentsWithVars(appId!),
     enabled: !!appId,
-  });
-
-  const create = useMutation({
-    mutationFn: (name: string) => api.createEnvironment(appId!, name),
-    onSuccess: () => {
-      setNewName("");
-      qc.invalidateQueries({ queryKey: ["envs", appId] });
-    },
   });
 
   const remove = useMutation({
@@ -28,98 +38,452 @@ export function EnvironmentsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["envs", appId] }),
   });
 
+  const [openCreate, setOpenCreate] = useState(false);
+  const [editing, setEditing] = useState<EnvironmentWithVars | null>(null);
+  const [duplicating, setDuplicating] = useState<EnvironmentWithVars | null>(null);
+
   return (
-    <div className="max-w-3xl grid gap-4">
-      <h1 className="text-2xl font-semibold">Environments</h1>
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">Environments</h1>
+        <div className="page-actions">
+          <Button onClick={() => setOpenCreate(true)}>New environment</Button>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">New environment</CardTitle>
-        </CardHeader>
-        <CardContent className="flex gap-2 items-end">
-          <div className="grid gap-1.5 flex-1">
-            <Label htmlFor="env-name">Name</Label>
-            <Input id="env-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="staging, production…" />
-          </div>
-          <Button onClick={() => create.mutate(newName.trim())} disabled={!newName.trim() || create.isPending} loading={create.isPending}>
-            Create
-          </Button>
-        </CardContent>
-      </Card>
+      {envsQ.isLoading && <p className="text-help">Loading…</p>}
+      {envsQ.error && <p className="text-error">{(envsQ.error as ApiError).message}</p>}
 
-      {envsQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {envsQ.error && <p className="text-sm text-destructive">{(envsQ.error as ApiError).message}</p>}
+      <div className="page-section">
+        <table className="data-table envs-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Secrets</th>
+              <th>Variables</th>
+              <th className="col-actions" aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {envsQ.data?.map((env) => {
+              const secrets = env.vars.filter((v) => v.isSecret);
+              const variables = env.vars.filter((v) => !v.isSecret);
+              return (
+                <tr key={env.id}>
+                  <td>
+                    <div className="data-row-name">{env.name}</div>
+                  </td>
+                  <td>
+                    <KvPreview rows={secrets} />
+                  </td>
+                  <td>
+                    <KvPreview rows={variables} />
+                  </td>
+                  <td className="col-actions">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <IconButton variant="menu" aria-label="More actions">
+                          <MoreVertical size={16} />
+                        </IconButton>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onSelect={() => setEditing(env)}>Edit</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setDuplicating(env)}>Duplicate</DropdownMenuItem>
+                        <DropdownMenuItem destructive onSelect={() => remove.mutate(env.id)}>
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {envsQ.data?.length === 0 && <div className="empty-state">No environments yet.</div>}
+      </div>
 
-      {envsQ.data?.map((env) => <EnvCard key={env.id} envId={env.id} name={env.name} onDelete={() => remove.mutate(env.id)} />)}
+      {openCreate && appId && (
+        <NewEnvironmentDialog appId={appId} onClose={() => setOpenCreate(false)} />
+      )}
+
+      {editing && (
+        <EditEnvironmentDialog env={editing} onClose={() => setEditing(null)} />
+      )}
+
+      {duplicating && appId && (
+        <DuplicateEnvironmentDialog appId={appId} source={duplicating} onClose={() => setDuplicating(null)} />
+      )}
     </div>
   );
 }
 
-function EnvCard({ envId, name, onDelete }: { envId: string; name: string; onDelete: () => void }) {
+function KvPreview({ rows }: { rows: EnvVarRow[] }) {
+  if (rows.length === 0) return <span className="env-empty">--</span>;
+  const shown = rows.slice(0, MAX_PREVIEW);
+  return (
+    <div className="env-kv-mini">
+      {shown.map((r) => (
+        <div className="env-kv-mini__row" key={r.id}>
+          <code className="env-kv-mini__key">{r.key}</code>
+          <code className="env-kv-mini__val">{r.value}</code>
+        </div>
+      ))}
+      {rows.length > MAX_PREVIEW && (
+        <div className="env-kv-mini__more">+{rows.length - MAX_PREVIEW} more</div>
+      )}
+    </div>
+  );
+}
+
+// ─── New Environment (name only) ─────────────────────────────────────────────
+
+function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const [k, setK] = useState("");
-  const [v, setV] = useState("");
-  const [secret, setSecret] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const varsQ = useQuery({
-    queryKey: ["env-vars", envId],
-    queryFn: () => api.listEnvVars(envId),
-  });
-
-  const addVar = useMutation({
-    mutationFn: () => api.createEnvVar(envId, { key: k.trim(), value: v, isSecret: secret }),
+  const create = useMutation({
+    mutationFn: () => api.createEnvironment(appId, name.trim()),
     onSuccess: () => {
-      setK("");
-      setV("");
-      setSecret(false);
-      qc.invalidateQueries({ queryKey: ["env-vars", envId] });
+      qc.invalidateQueries({ queryKey: ["envs", appId] });
+      onClose();
     },
-  });
-  const delVar = useMutation({
-    mutationFn: (id: string) => api.deleteEnvVar(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["env-vars", envId] }),
+    onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
   });
 
   return (
-    <Card>
-      <CardHeader className="flex-row justify-between items-center">
-        <CardTitle className="text-base">{name}</CardTitle>
-        <Button variant="ghost" size="sm" onClick={onDelete}>
-          Delete
-        </Button>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="grid gap-2">
-          {varsQ.data?.map((row) => (
-            <div key={row.id} className="flex items-center gap-2 text-sm">
-              <code className="font-mono">{row.key}</code>
-              <span className="text-muted-foreground flex-1 truncate">{row.value}</span>
-              {row.isSecret && <span className="text-xs uppercase text-muted-foreground">secret</span>}
-              <Button size="sm" variant="ghost" onClick={() => delVar.mutate(row.id)}>
-                Remove
-              </Button>
-            </div>
-          ))}
-          {varsQ.data?.length === 0 && <p className="text-xs text-muted-foreground">No variables yet.</p>}
-        </div>
-        <div className="grid grid-cols-[1fr,1fr,auto,auto] gap-2 items-end pt-2 border-t">
-          <div className="grid gap-1">
-            <Label htmlFor={`k-${envId}`} className="text-xs">Key</Label>
-            <Input id={`k-${envId}`} value={k} onChange={(e) => setK(e.target.value.toUpperCase())} placeholder="API_BASE_URL" />
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="new-env-dialog">
+        <DialogHeader>
+          <DialogTitle>New Environment</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div className="new-env-field">
+            <Label htmlFor="new-env-name">Name</Label>
+            <Input
+              id="new-env-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              placeholder="staging, production…"
+            />
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor={`v-${envId}`} className="text-xs">Value</Label>
-            <Input id={`v-${envId}`} value={v} onChange={(e) => setV(e.target.value)} type={secret ? "password" : "text"} />
-          </div>
-          <label className="text-xs flex items-center gap-1 mb-2">
-            <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} />
-            secret
-          </label>
-          <Button onClick={() => addVar.mutate()} disabled={!k.trim() || !v || addVar.isPending} loading={addVar.isPending}>
-            Add
+          {error && <p className="new-env-error">{error}</p>}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={create.isPending}>
+            Cancel
           </Button>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={!name.trim() || create.isPending}
+            loading={create.isPending}
+          >
+            Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit Environment (full layout: name + secrets + variables) ──────────────
+
+interface FormKV {
+  // For existing rows, id holds the DB id; new rows have id = null.
+  id: string | null;
+  key: string;
+  value: string;
+  isSecret: boolean;
+  // For secret rows: the value field starts as the placeholder. We only treat
+  // it as "changed" when the user actually types something different.
+  originalValue: string;
+}
+
+function toFormRows(env: EnvironmentWithVars): { secrets: FormKV[]; variables: FormKV[] } {
+  const secrets: FormKV[] = [];
+  const variables: FormKV[] = [];
+  for (const v of env.vars) {
+    const row: FormKV = {
+      id: v.id,
+      key: v.key,
+      value: v.value,
+      isSecret: v.isSecret,
+      originalValue: v.value,
+    };
+    if (v.isSecret) secrets.push(row);
+    else variables.push(row);
+  }
+  return { secrets, variables };
+}
+
+function blankRow(isSecret: boolean): FormKV {
+  return { id: null, key: "", value: "", isSecret, originalValue: "" };
+}
+
+function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onClose: () => void }) {
+  const qc = useQueryClient();
+  const initial = useMemo(() => toFormRows(env), [env]);
+  const [name, setName] = useState(env.name);
+  const [secrets, setSecrets] = useState<FormKV[]>(initial.secrets.length ? initial.secrets : [blankRow(true)]);
+  const [variables, setVariables] = useState<FormKV[]>(initial.variables.length ? initial.variables : [blankRow(false)]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Name is required");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      // 1. Name
+      if (trimmedName !== env.name) {
+        await api.updateEnvironment(env.id, { name: trimmedName });
+      }
+
+      // 2. Diff vars: delete removed, create new/changed.
+      const submitted = [...secrets, ...variables].filter((r) => r.key.trim());
+      const submittedExistingIds = new Set(submitted.filter((r) => r.id).map((r) => r.id!));
+
+      // Deletes: existing rows the user removed entirely.
+      const allOriginalIds = env.vars.map((v) => v.id);
+      const toDelete = allOriginalIds.filter((id) => !submittedExistingIds.has(id));
+      for (const id of toDelete) {
+        await api.deleteEnvVar(id);
+      }
+
+      for (const row of submitted) {
+        const trimmedKey = row.key.trim().toUpperCase();
+        // Secret rows whose value is still the placeholder are unchanged — skip.
+        if (row.isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
+          // But: maybe the user renamed the key. If yes, we need to replace.
+          const original = env.vars.find((v) => v.id === row.id);
+          if (original && original.key === trimmedKey) continue;
+          // key changed — recreate (no value-only PATCH endpoint exists).
+          await api.deleteEnvVar(row.id);
+          await api.createEnvVar(env.id, { key: trimmedKey, value: original?.value ?? "", isSecret: true });
+          continue;
+        }
+        if (row.id) {
+          const original = env.vars.find((v) => v.id === row.id);
+          if (original && original.key === trimmedKey && original.value === row.value && original.isSecret === row.isSecret) {
+            continue; // truly unchanged
+          }
+          await api.deleteEnvVar(row.id);
+          await api.createEnvVar(env.id, { key: trimmedKey, value: row.value, isSecret: row.isSecret });
+        } else {
+          await api.createEnvVar(env.id, { key: trimmedKey, value: row.value, isSecret: row.isSecret });
+        }
+      }
+
+      qc.invalidateQueries({ queryKey: ["envs"] });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="new-env-dialog">
+        <DialogHeader>
+          <DialogTitle>Edit Environment</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div className="new-env-field">
+            <Label htmlFor="edit-env-name">Name</Label>
+            <Input
+              id="edit-env-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <KvSection
+            title="Secrets"
+            description="Encrypted values available only to your build at runtime."
+            rows={secrets}
+            isSecret
+            onChange={setSecrets}
+          />
+          <KvSection
+            title="Variables"
+            description="Values available to your builds at runtime. Use secrets (above) for sensitive data."
+            rows={variables}
+            isSecret={false}
+            onChange={setVariables}
+          />
+
+          {error && <p className="new-env-error">{error}</p>}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={submitting}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function KvSection({
+  title,
+  description,
+  rows,
+  isSecret,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  rows: FormKV[];
+  isSecret: boolean;
+  onChange: (rows: FormKV[]) => void;
+}) {
+  const update = (i: number, patch: Partial<FormKV>) =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const remove = (i: number) =>
+    onChange(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : [blankRow(isSecret)]);
+  const add = () => onChange([...rows, blankRow(isSecret)]);
+
+  return (
+    <div className="new-env-section">
+      <div className="new-env-section__title">{title}</div>
+      <p className="new-env-section__desc">{description}</p>
+      <div className="new-env-kv">
+        <div className="new-env-kv__head">
+          <span>KEY</span>
+          <span>VALUE</span>
+          <span></span>
         </div>
-      </CardContent>
-    </Card>
+        {rows.map((row, i) => (
+          <div key={i} className="new-env-kv__row">
+            <Input
+              placeholder="Key"
+              value={row.key}
+              onChange={(e) => update(i, { key: e.target.value })}
+            />
+            <Input
+              placeholder="Value"
+              type={isSecret ? "password" : "text"}
+              value={row.value}
+              onChange={(e) => update(i, { value: e.target.value })}
+              onFocus={() => {
+                // For existing secret rows, clear the placeholder so the user
+                // can type a new value. The original is tracked via originalValue.
+                if (isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
+                  update(i, { value: "" });
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="new-env-kv__remove"
+              aria-label="Remove row"
+              onClick={() => remove(i)}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="new-build-link-button" onClick={add}>
+          <Plus size={12} /> Add another
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Duplicate (create new env + copy non-secret vars) ──────────────────────
+
+function DuplicateEnvironmentDialog({
+  appId,
+  source,
+  onClose,
+}: {
+  appId: string;
+  source: EnvironmentWithVars;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(`${source.name} (copy)`);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setName(`${source.name} (copy)`);
+  }, [source.name]);
+
+  const run = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Name is required");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const created = await api.createEnvironment(appId, trimmed);
+      // Copy non-secret vars verbatim. Secrets can't be duplicated because the
+      // server only returns a placeholder for them — we surface a note below.
+      for (const v of source.vars) {
+        if (v.isSecret) continue;
+        await api.createEnvVar(created.id, { key: v.key, value: v.value, isSecret: false });
+      }
+      qc.invalidateQueries({ queryKey: ["envs", appId] });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const hasSecrets = source.vars.some((v) => v.isSecret);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="new-env-dialog">
+        <DialogHeader>
+          <DialogTitle>Duplicate Environment</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div className="new-env-field">
+            <Label htmlFor="dup-env-name">Name</Label>
+            <Input
+              id="dup-env-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <p className="text-help">
+            Variables will be copied. {hasSecrets && "Secrets will not be copied — re-enter them on the new environment."}
+          </p>
+          {error && <p className="new-env-error">{error}</p>}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={run}
+            disabled={!name.trim() || submitting}
+            loading={submitting}
+          >
+            Duplicate
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

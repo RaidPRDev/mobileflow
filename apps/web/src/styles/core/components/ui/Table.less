@@ -70,3 +70,53 @@
   background: #34a853;
   color: #fff;
 }
+
+// ─── Environments table: mini key/value preview inside cells ─────────────────
+
+.envs-table td {
+  vertical-align: top;
+}
+
+.env-empty {
+  color: var(--color-fg-subtle);
+}
+
+.env-kv-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  max-width: 480px;
+}
+
+.env-kv-mini__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.env-kv-mini__key,
+.env-kv-mini__val {
+  padding: 4px 10px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.env-kv-mini__key {
+  color: var(--color-fg);
+  border-right: 1px solid var(--color-border);
+}
+
+.env-kv-mini__val {
+  color: var(--color-fg-muted);
+}
+
+.env-kv-mini__more {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  padding: 2px 4px;
+}

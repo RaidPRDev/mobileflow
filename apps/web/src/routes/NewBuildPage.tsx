@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Button,
+  Combobox,
   Dialog,
   DialogBody,
   DialogContent,
@@ -352,31 +353,23 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
 
         <div className="new-build-section">
           <Label className="new-build-label" htmlFor="build-stack">Build stack</Label>
-          <select
+          <Combobox
             id="build-stack"
-            className="new-build-select"
             value={stackId}
-            onChange={(e) => setStackId(e.target.value)}
-          >
-            {STACKS[target].map((s) => (
-              <option key={s.id} value={s.id}>{s.label}</option>
-            ))}
-          </select>
+            onChange={setStackId}
+            options={STACKS[target].map((s) => ({ value: s.id, label: s.label }))}
+          />
         </div>
 
         {BUILD_TYPES[target] && (
           <div className="new-build-section">
             <Label className="new-build-label" htmlFor="build-type">Build type</Label>
-            <select
+            <Combobox
               id="build-type"
-              className="new-build-select"
               value={buildType}
-              onChange={(e) => setBuildType(e.target.value)}
-            >
-              {BUILD_TYPES[target]!.map((bt) => (
-                <option key={bt.id} value={bt.id}>{bt.label}</option>
-              ))}
-            </select>
+              onChange={setBuildType}
+              options={BUILD_TYPES[target]!.map((bt) => ({ value: bt.id, label: bt.label }))}
+            />
           </div>
         )}
 
@@ -384,16 +377,12 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
           <div className="new-build-section">
             <Label className="new-build-label" htmlFor="signing-cert">Signing certificate</Label>
             {platformCerts.length > 0 ? (
-              <select
+              <Combobox
                 id="signing-cert"
-                className="new-build-select"
                 value={certificateId}
-                onChange={(e) => setCertificateId(e.target.value)}
-              >
-                {platformCerts.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
+                onChange={setCertificateId}
+                options={platformCerts.map((c) => ({ value: c.id, label: c.label }))}
+              />
             ) : (
               <p className="new-build-help">
                 No {target === "ios" ? "iOS" : "Android"} certificate on file.{" "}
@@ -411,17 +400,15 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
             Environment <span className="new-build-label__hint">(optional)</span>
           </Label>
           <p className="new-build-help">The group of environment variables exposed to your build.</p>
-          <select
+          <Combobox
             id="env"
-            className="new-build-select"
             value={environmentId}
-            onChange={(e) => setEnvironmentId(e.target.value)}
-          >
-            <option value="">None</option>
-            {envsQ.data?.map((env) => (
-              <option key={env.id} value={env.id}>{env.name}</option>
-            ))}
-          </select>
+            onChange={setEnvironmentId}
+            options={[
+              { value: "", label: "None" },
+              ...(envsQ.data?.map((env) => ({ value: env.id, label: env.name })) ?? []),
+            ]}
+          />
           <button
             type="button"
             className="new-build-link-button"
