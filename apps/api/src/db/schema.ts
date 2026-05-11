@@ -293,6 +293,9 @@ export const builds = pgTable("builds", {
   logText: text("log_text").notNull().default(""),
   errorMessage: text("error_message"),
   artifacts: jsonb("artifacts").$type<{ kind: string; url: string; sizeBytes?: number }[]>().default(sql`'[]'::jsonb`),
+  // If set, the worker queues a deployment to this destination once the build
+  // succeeds. Null means no auto-deploy.
+  autoDeployDestinationId: uuid("auto_deploy_destination_id"),
   createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),

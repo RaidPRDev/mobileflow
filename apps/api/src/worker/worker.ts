@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { apps, buildSteps, builds, type Build } from "../db/schema.js";
+import { apps, buildSteps, builds, deployments, storeDestinations, type Build } from "../db/schema.js";
 import type { RunnerContext } from "./runner.js";
 import { pickRunner } from "./runners/selector.js";
 import { buildBus } from "./events.js";
@@ -72,6 +72,7 @@ async function runOne(buildId: string) {
     await ctx.log(`Build complete. ${artifacts.length} artifact(s) ready.`);
     buildBus.emit(b.id, { type: "artifacts", artifacts });
     buildBus.emit(b.id, { type: "status", status: "success" });
+    await maybeQueueAutoDeploy(b, ctx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === "cancelled") {
@@ -82,6 +83,34 @@ async function runOne(buildId: string) {
       await ctx.log(`Build failed: ${msg}`);
       buildBus.emit(b.id, { type: "status", status: "failed", errorMessage: msg });
     }
+  }
+}
+
+async function maybeQueueAutoDeploy(b: Build, ctx: RunnerContext) {
+  if (!b.autoDeployDestinationId) return;
+  try {
+    const [dest] = await db
+      .select({ id: storeDestinations.id, name: storeDestinations.name })
+      .from(storeDestinations)
+      .where(eq(storeDestinations.id, b.autoDeployDestinationId))
+      .limit(1);
+    if (!dest) {
+      await ctx.log("Auto-deploy: destination no longer exists, skipping.");
+      return;
+    }
+    const [created] = await db
+      .insert(deployments)
+      .values({
+        buildId: b.id,
+        destinationId: dest.id,
+        status: "queued",
+        createdByUserId: b.createdByUserId,
+      })
+      .returning({ id: deployments.id });
+    await ctx.log(`Auto-deploy queued to ${dest.name} (deployment ${created?.id.slice(0, 8)}).`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await ctx.log(`Auto-deploy failed to queue: ${msg}`);
   }
 }
 

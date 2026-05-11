@@ -42,7 +42,11 @@ export function Combobox<T extends string = string>({
   const selected = options.find((o) => o.value === value);
   return (
     <div className={cn("combobox", className)}>
-      <DropdownMenuPrimitive.Root>
+      {/* modal={false}: when a Combobox is rendered inside a Radix Dialog, both
+          primitives default to modal=true, which leaves the dropdown's portaled
+          content inert (Dialog blocks pointer events outside its content). The
+          symptom is "click the combobox trigger and nothing opens." */}
+      <DropdownMenuPrimitive.Root modal={false}>
         <DropdownMenuPrimitive.Trigger asChild>
           <button
             id={id}

@@ -137,7 +137,7 @@ export interface BuildDeploymentSummary {
   buildId: string;
   destinationId: string;
   destinationName: string | null;
-  destinationType: "app_store" | "testflight" | "play_store" | "play_internal" | null;
+  destinationType: "app_store" | "play_store" | null;
   status: "queued" | "running" | "success" | "failed" | "cancelled";
   createdAt: string;
 }
@@ -234,6 +234,7 @@ export const api = {
       buildType?: string;
       environmentId?: string;
       certificateId?: string;
+      autoDeployDestinationId?: string;
     },
   ) => request<BuildRow>(`/apps/${appId}/builds`, { method: "POST", body: JSON.stringify(body) }),
   getBuild: (buildId: string, sinceOffset = 0) =>
@@ -297,14 +298,14 @@ export const api = {
 
   // Deployments
   listDestinations: (appId: string) =>
-    request<{ id: string; appId: string; name: string; type: "app_store" | "testflight" | "play_store" | "play_internal"; bundleId: string | null; trackOrChannel: string | null; createdAt: string }[]>(
+    request<{ id: string; appId: string; name: string; type: "app_store" | "play_store"; bundleId: string | null; trackOrChannel: string | null; createdAt: string }[]>(
       `/apps/${appId}/destinations`,
     ),
   createDestination: (
     appId: string,
     body: {
       name: string;
-      type: "app_store" | "testflight" | "play_store" | "play_internal";
+      type: "app_store" | "play_store";
       bundleId?: string | null;
       trackOrChannel?: string | null;
       config: Record<string, unknown>;

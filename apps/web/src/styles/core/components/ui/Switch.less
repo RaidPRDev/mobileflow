@@ -1,36 +1,59 @@
 .switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
-}
-
-.switch-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
+  justify-content: flex-start;
+  width: 58px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
   border-radius: var(--radius-pill);
   background: var(--color-border);
+  cursor: pointer;
   transition: background var(--transition-fast);
   flex-shrink: 0;
 }
 
-.switch-track::after {
-  content: "";
+.switch.is-on {
+  background: #22c55e;
+  justify-content: flex-end;
+}
+
+.switch.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.switch-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  line-height: 1;
+  user-select: none;
+}
+
+.switch:not(.is-on) .switch-label {
+  color: var(--color-fg-muted);
+}
+
+.switch-thumb {
   position: absolute;
   top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-fast);
+  transition: left var(--transition-fast);
+  left: 2px;
 }
 
-.switch[data-state="checked"] .switch-track {
-  background: var(--color-accent);
+.switch.is-on .switch-thumb {
+  left: calc(100% - 26px);
 }
 
-.switch[data-state="checked"] .switch-track::after {
-  transform: translateX(16px);
+.switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
 }

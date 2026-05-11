@@ -23,6 +23,9 @@ const StartBody = z.object({
   buildType: z.enum(["debug", "release", "development", "adhoc", "appstore"]).optional(),
   environmentId: z.string().uuid().optional(),
   certificateId: z.string().uuid().optional(),
+  // When set, the worker auto-creates a deployment to this destination on
+  // successful build (see worker.ts).
+  autoDeployDestinationId: z.string().uuid().optional(),
 });
 
 export async function buildsRoutes(app: FastifyInstance) {
@@ -104,6 +107,16 @@ export async function buildsRoutes(app: FastifyInstance) {
     });
     if (!gate.ok) return reply.code(402).send({ error: "PlanLimitExceeded", message: gate.reason });
 
+    // Validate the auto-deploy destination if supplied — must belong to this app.
+    if (body.autoDeployDestinationId) {
+      const [dest] = await db
+        .select({ id: storeDestinations.id })
+        .from(storeDestinations)
+        .where(and(eq(storeDestinations.id, body.autoDeployDestinationId), eq(storeDestinations.appId, a.id)))
+        .limit(1);
+      if (!dest) return reply.badRequest("autoDeployDestinationId does not belong to this app");
+    }
+
     const [created] = await db
       .insert(builds)
       .values({
@@ -116,6 +129,7 @@ export async function buildsRoutes(app: FastifyInstance) {
         buildType: body.buildType ?? null,
         environmentId: body.environmentId ?? null,
         certificateId: body.certificateId ?? null,
+        autoDeployDestinationId: body.autoDeployDestinationId ?? null,
         status: "queued",
         createdByUserId: req.auth?.userId ?? null,
       })

@@ -6,7 +6,10 @@ import { apps, builds, deployments, storeDestinations } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { encryptString } from "../lib/crypto.js";
 
-const StoreType = z.enum(["app_store", "testflight", "play_store", "play_internal"]);
+// Going forward only "app_store" and "play_store" are accepted on creation.
+// (Legacy "testflight" / "play_internal" values may still exist in the enum
+// for any old rows but the create UI consolidates them under these two.)
+const StoreType = z.enum(["app_store", "play_store"]);
 
 const StoreBody = z.object({
   name: z.string().min(1).max(80),

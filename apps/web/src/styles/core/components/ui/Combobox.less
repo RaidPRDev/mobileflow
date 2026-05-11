@@ -79,7 +79,9 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: var(--space-xs);
-  z-index: 90;
+  // Dialog overlay is at 100 and content at 101; the combobox menu must stack
+  // above both so it remains visible (and clickable) when used inside a dialog.
+  z-index: 200;
   min-width: var(--radix-popper-anchor-width, 180px);
   max-height: 320px;
   overflow-y: auto;

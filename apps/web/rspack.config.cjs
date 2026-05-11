@@ -28,7 +28,10 @@ module.exports = {
   },
   resolve: {
     extensions: ["...", ".ts", ".tsx"],
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+      "@assets": path.resolve(__dirname, "../../assets"),
+    },
   },
   module: {
     rules: [

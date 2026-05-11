@@ -3,7 +3,6 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Apple, MoreVertical, Smartphone } from "lucide-react";
 import {
-  Badge,
   Button,
   Combobox,
   Dialog,
@@ -15,51 +14,56 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  FileDrop,
   IconButton,
   Input,
   Label,
+  RadioGroup,
   type ComboboxOption,
 } from "@mobileflow/ui";
+import appStoreIcon from "@assets/icons/app-store-icon.svg";
+import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
 import { ApiError, api } from "../api/client";
 
-type DestType = "app_store" | "testflight" | "play_store" | "play_internal";
+type DestType = "app_store" | "play_store";
 
 const TYPE_LABEL: Record<DestType, string> = {
   app_store: "Apple App Store",
-  testflight: "TestFlight",
-  play_store: "Google Play (Production)",
-  play_internal: "Google Play (Internal)",
+  play_store: "Google Play Store",
 };
 
 const TYPE_PLATFORM: Record<DestType, "ios" | "android"> = {
   app_store: "ios",
-  testflight: "ios",
   play_store: "android",
-  play_internal: "android",
 };
 
-function destIcon(type: DestType) {
-  switch (type) {
-    case "app_store":
-      return <span className="svc-icon is-app-store">A</span>;
-    case "testflight":
-      return <span className="svc-icon is-testflight">TF</span>;
-    case "play_store":
-      return <span className="svc-icon is-google-play">P</span>;
-    case "play_internal":
-      return <span className="svc-icon is-google-play-internal">PI</span>;
-  }
+const TYPE_ICON_SRC: Record<DestType, string> = {
+  app_store: appStoreIcon,
+  play_store: googlePlayIcon,
+};
+
+function destIcon(type: DestType, size = 18) {
+  return <img src={TYPE_ICON_SRC[type]} alt="" width={size} height={size} className="dest-icon" />;
 }
 
 const DEST_OPTIONS: ComboboxOption<DestType>[] = (Object.keys(TYPE_LABEL) as DestType[]).map(
-  (t) => ({ value: t, label: TYPE_LABEL[t], icon: destIcon(t) }),
+  (t) => ({ value: t, label: TYPE_LABEL[t], icon: destIcon(t, 16) }),
 );
+
+const TRACK_OPTIONS: ComboboxOption<string>[] = [
+  { value: "internal", label: "internal" },
+  { value: "alpha", label: "alpha" },
+  { value: "beta", label: "beta" },
+  { value: "production", label: "production" },
+];
+
+type AppleAuthMode = "api_key" | "altool";
+type AndroidArtifactKind = "aab" | "apk";
 
 export function StoreDestinationsPage() {
   const { appId } = useParams();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<{ id: string; name: string; type: DestType } | null>(null);
 
   const q = useQuery({
     queryKey: ["destinations", appId],
@@ -77,17 +81,11 @@ export function StoreDestinationsPage() {
       <div className="page-header">
         <h1 className="page-title">Store destinations</h1>
         <div className="page-actions">
-          <Button onClick={() => { setEditing(null); setOpen(true); }}>Add destination</Button>
+          <Button onClick={() => setOpen(true)}>Add destination</Button>
         </div>
       </div>
 
-      {open && (
-        <DestDialog
-          appId={appId!}
-          editing={editing}
-          onClose={() => setOpen(false)}
-        />
-      )}
+      {open && <DestDialog appId={appId!} onClose={() => setOpen(false)} />}
 
       <div className="page-section">
         <table className="data-table">
@@ -102,19 +100,18 @@ export function StoreDestinationsPage() {
           </thead>
           <tbody>
             {q.data?.map((d) => {
-              const platform = TYPE_PLATFORM[d.type as DestType];
+              const type = d.type as DestType;
+              const platform = TYPE_PLATFORM[type];
               return (
                 <tr key={d.id}>
                   <td>
                     <div className="data-row-name">{d.name}</div>
-                    {d.trackOrChannel && (
-                      <div className="data-row-meta">{d.trackOrChannel}</div>
-                    )}
+                    {d.trackOrChannel && <div className="data-row-meta">{d.trackOrChannel}</div>}
                   </td>
                   <td>
                     <span className="row" style={{ gap: 8 }}>
-                      {destIcon(d.type as DestType)}
-                      <span>{TYPE_LABEL[d.type as DestType]}</span>
+                      {destIcon(type)}
+                      <span>{TYPE_LABEL[type] ?? type}</span>
                     </span>
                   </td>
                   <td>
@@ -136,18 +133,7 @@ export function StoreDestinationsPage() {
                         </IconButton>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            setEditing({ id: d.id, name: d.name, type: d.type as DestType });
-                            setOpen(true);
-                          }}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          destructive
-                          onSelect={() => remove.mutate(d.id)}
-                        >
+                        <DropdownMenuItem destructive onSelect={() => remove.mutate(d.id)}>
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -164,41 +150,61 @@ export function StoreDestinationsPage() {
   );
 }
 
-function DestDialog({
-  appId,
-  editing,
-  onClose,
-}: {
-  appId: string;
-  editing: { id: string; name: string; type: DestType } | null;
-  onClose: () => void;
-}) {
+function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const [type, setType] = useState<DestType>(editing?.type ?? "testflight");
-  const [name, setName] = useState(editing?.name ?? "");
-  const [bundleId, setBundleId] = useState("");
-  const [track, setTrack] = useState<string>("internal");
+  const [type, setType] = useState<DestType>("app_store");
+  const [name, setName] = useState("");
+
+  // Apple fields
+  const [appleAuthMode, setAppleAuthMode] = useState<AppleAuthMode>("altool");
+  const [appleId, setAppleId] = useState("");
+  const [appSpecificPassword, setAppSpecificPassword] = useState("");
+  const [appAppleId, setAppAppleId] = useState("");
+  const [teamId, setTeamId] = useState("");
   const [issuerId, setIssuerId] = useState("");
   const [keyId, setKeyId] = useState("");
   const [p8, setP8] = useState("");
-  const [serviceAccountJson, setServiceAccountJson] = useState("");
+
+  // Android fields
+  const [track, setTrack] = useState<string>("internal");
+  const [packageName, setPackageName] = useState("");
+  const [artifactKind, setArtifactKind] = useState<AndroidArtifactKind>("aab");
+  const [jsonKeyFile, setJsonKeyFile] = useState<File | null>(null);
+
   const [error, setError] = useState<string | null>(null);
 
-  const platform = TYPE_PLATFORM[type];
+  const readFileText = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error("Could not read file"));
+      fr.onload = () => resolve(String(fr.result ?? ""));
+      fr.readAsText(file);
+    });
 
   const create = useMutation({
-    mutationFn: () => {
-      const config =
-        platform === "ios"
-          ? { issuerId, keyId, privateKeyP8: p8 }
-          : { serviceAccountJson };
-      return api.createDestination(appId, {
-        name: name.trim(),
-        type,
-        bundleId: bundleId.trim() || null,
-        trackOrChannel: platform === "android" ? track : null,
-        config,
-      });
+    mutationFn: async () => {
+      if (type === "app_store") {
+        const config =
+          appleAuthMode === "api_key"
+            ? { authMode: "api_key", issuerId, keyId, privateKeyP8: p8 }
+            : { authMode: "altool", appleId, appSpecificPassword, appAppleId, teamId };
+        return api.createDestination(appId, {
+          name: name.trim(),
+          type,
+          bundleId: appAppleId.trim() || null,
+          trackOrChannel: null,
+          config,
+        });
+      } else {
+        const serviceAccountJson = jsonKeyFile ? await readFileText(jsonKeyFile) : "";
+        return api.createDestination(appId, {
+          name: name.trim(),
+          type,
+          bundleId: packageName.trim() || null,
+          trackOrChannel: track,
+          config: { serviceAccountJson, artifactKind },
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["destinations", appId] });
@@ -207,23 +213,26 @@ function DestDialog({
     onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
   });
 
+  const canSubmit = (() => {
+    if (!name.trim()) return false;
+    if (type === "app_store") {
+      return appleAuthMode === "api_key"
+        ? issuerId.trim() && keyId.trim() && p8.trim().length > 0
+        : appleId.trim() && appSpecificPassword.length > 0;
+    }
+    return packageName.trim() && jsonKeyFile != null;
+  })();
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <div>
-            <DialogTitle>{editing ? "Edit store destination" : "Add Store Destination"}</DialogTitle>
-          </div>
+          <DialogTitle>Add Store Destination</DialogTitle>
         </DialogHeader>
         <div className="dialog-body">
           <div className="field-group">
             <Label htmlFor="dest-name">Name</Label>
-            <Input
-              id="dest-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My production destination"
-            />
+            <Input id="dest-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
           <div className="field-group">
@@ -233,80 +242,39 @@ function DestDialog({
               value={type}
               onChange={setType}
               options={DEST_OPTIONS}
-              placeholder="Select destination type"
             />
           </div>
 
-          {platform === "ios" ? (
-            <>
-              <div className="field-group">
-                <Label htmlFor="bundle-id">Bundle ID</Label>
-                <Input
-                  id="bundle-id"
-                  value={bundleId}
-                  onChange={(e) => setBundleId(e.target.value)}
-                  placeholder="com.acme.myapp"
-                />
-              </div>
-              <div className="field-group">
-                <Label htmlFor="issuer">App Store Connect — Issuer ID</Label>
-                <Input
-                  id="issuer"
-                  value={issuerId}
-                  onChange={(e) => setIssuerId(e.target.value)}
-                />
-              </div>
-              <div className="field-group">
-                <Label htmlFor="key-id">Key ID</Label>
-                <Input id="key-id" value={keyId} onChange={(e) => setKeyId(e.target.value)} />
-              </div>
-              <div className="field-group">
-                <Label htmlFor="p8">Private key (.p8)</Label>
-                <textarea
-                  id="p8"
-                  className="textarea"
-                  value={p8}
-                  onChange={(e) => setP8(e.target.value)}
-                  placeholder="-----BEGIN PRIVATE KEY-----..."
-                />
-              </div>
-            </>
+          {type === "app_store" ? (
+            <AppleFields
+              authMode={appleAuthMode}
+              setAuthMode={setAppleAuthMode}
+              appleId={appleId}
+              setAppleId={setAppleId}
+              appSpecificPassword={appSpecificPassword}
+              setAppSpecificPassword={setAppSpecificPassword}
+              appAppleId={appAppleId}
+              setAppAppleId={setAppAppleId}
+              teamId={teamId}
+              setTeamId={setTeamId}
+              issuerId={issuerId}
+              setIssuerId={setIssuerId}
+              keyId={keyId}
+              setKeyId={setKeyId}
+              p8={p8}
+              setP8={setP8}
+            />
           ) : (
-            <>
-              <div className="field-group">
-                <Label htmlFor="app-id">Application ID</Label>
-                <Input
-                  id="app-id"
-                  value={bundleId}
-                  onChange={(e) => setBundleId(e.target.value)}
-                  placeholder="com.acme.myapp"
-                />
-              </div>
-              <div className="field-group">
-                <Label htmlFor="track">Track</Label>
-                <Combobox
-                  id="track"
-                  value={track}
-                  onChange={setTrack}
-                  options={[
-                    { value: "internal", label: "Internal" },
-                    { value: "alpha", label: "Alpha" },
-                    { value: "beta", label: "Beta" },
-                    { value: "production", label: "Production" },
-                  ]}
-                />
-              </div>
-              <div className="field-group">
-                <Label htmlFor="sa-json">Service account JSON</Label>
-                <textarea
-                  id="sa-json"
-                  className="textarea"
-                  value={serviceAccountJson}
-                  onChange={(e) => setServiceAccountJson(e.target.value)}
-                  placeholder='{"type":"service_account",...}'
-                />
-              </div>
-            </>
+            <GoogleFields
+              track={track}
+              setTrack={setTrack}
+              packageName={packageName}
+              setPackageName={setPackageName}
+              artifactKind={artifactKind}
+              setArtifactKind={setArtifactKind}
+              jsonKeyFile={jsonKeyFile}
+              setJsonKeyFile={setJsonKeyFile}
+            />
           )}
 
           {error && <p className="text-error">{error}</p>}
@@ -315,11 +283,7 @@ function DestDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={() => create.mutate()}
-            loading={create.isPending}
-            disabled={!name.trim() || !!editing}
-          >
+          <Button onClick={() => create.mutate()} loading={create.isPending} disabled={!canSubmit}>
             Save
           </Button>
         </DialogFooter>
@@ -327,3 +291,126 @@ function DestDialog({
     </Dialog>
   );
 }
+
+interface AppleFieldsProps {
+  authMode: AppleAuthMode;
+  setAuthMode: (m: AppleAuthMode) => void;
+  appleId: string; setAppleId: (v: string) => void;
+  appSpecificPassword: string; setAppSpecificPassword: (v: string) => void;
+  appAppleId: string; setAppAppleId: (v: string) => void;
+  teamId: string; setTeamId: (v: string) => void;
+  issuerId: string; setIssuerId: (v: string) => void;
+  keyId: string; setKeyId: (v: string) => void;
+  p8: string; setP8: (v: string) => void;
+}
+
+function AppleFields(p: AppleFieldsProps) {
+  return (
+    <>
+      <div className="field-group">
+        <Label htmlFor="apple-auth-mode">Authentication method</Label>
+        <Combobox<AppleAuthMode>
+          id="apple-auth-mode"
+          value={p.authMode}
+          onChange={p.setAuthMode}
+          options={[
+            { value: "altool", label: "Apple ID + app-specific password" },
+            { value: "api_key", label: "App Store Connect API key (.p8)" },
+          ]}
+        />
+      </div>
+
+      {p.authMode === "altool" ? (
+        <>
+          <div className="field-group">
+            <Label htmlFor="apple-id">Apple ID</Label>
+            <Input id="apple-id" type="email" value={p.appleId} onChange={(e) => p.setAppleId(e.target.value)} placeholder="you@example.com" />
+          </div>
+          <div className="field-group">
+            <Label htmlFor="asp">App-specific password</Label>
+            <Input id="asp" type="password" value={p.appSpecificPassword} onChange={(e) => p.setAppSpecificPassword(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" />
+          </div>
+          <div className="field-group">
+            <Label htmlFor="app-apple-id">App Apple ID</Label>
+            <Input id="app-apple-id" value={p.appAppleId} onChange={(e) => p.setAppAppleId(e.target.value)} placeholder="1234567890" />
+          </div>
+          <div className="field-group">
+            <Label htmlFor="team-id">Team ID</Label>
+            <Input id="team-id" value={p.teamId} onChange={(e) => p.setTeamId(e.target.value)} placeholder="ABCDE12345" />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="field-group">
+            <Label htmlFor="issuer">Issuer ID</Label>
+            <Input id="issuer" value={p.issuerId} onChange={(e) => p.setIssuerId(e.target.value)} />
+          </div>
+          <div className="field-group">
+            <Label htmlFor="key-id">Key ID</Label>
+            <Input id="key-id" value={p.keyId} onChange={(e) => p.setKeyId(e.target.value)} />
+          </div>
+          <div className="field-group">
+            <Label htmlFor="p8">Private key (.p8)</Label>
+            <textarea
+              id="p8"
+              className="textarea"
+              value={p.p8}
+              onChange={(e) => p.setP8(e.target.value)}
+              placeholder="-----BEGIN PRIVATE KEY-----..."
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+interface GoogleFieldsProps {
+  track: string; setTrack: (v: string) => void;
+  packageName: string; setPackageName: (v: string) => void;
+  artifactKind: AndroidArtifactKind; setArtifactKind: (v: AndroidArtifactKind) => void;
+  jsonKeyFile: File | null; setJsonKeyFile: (v: File | null) => void;
+}
+
+function GoogleFields(p: GoogleFieldsProps) {
+  return (
+    <>
+      <div className="field-group">
+        <Label htmlFor="track">Track</Label>
+        <p className="new-build-help">Google Play track type</p>
+        <Combobox id="track" value={p.track} onChange={p.setTrack} options={TRACK_OPTIONS} />
+      </div>
+
+      <div className="field-group">
+        <Label htmlFor="pkg-name">Package name</Label>
+        <p className="new-build-help">Reverse domain name of the project</p>
+        <Input id="pkg-name" value={p.packageName} onChange={(e) => p.setPackageName(e.target.value)} placeholder="com.acme.myapp" />
+      </div>
+
+      <div className="field-group">
+        <Label>Publishing format</Label>
+        <p className="new-build-help">Specify which type of Android build artifact you'd like to deploy to Google Play.</p>
+        <RadioGroup<AndroidArtifactKind>
+          value={p.artifactKind}
+          onChange={p.setArtifactKind}
+          options={[
+            { value: "aab", label: "Android App Bundles (AAB)" },
+            { value: "apk", label: "APK" },
+          ]}
+        />
+      </div>
+
+      <div className="field-group">
+        <Label htmlFor="sa-json">JSON key file</Label>
+        <p className="new-build-help">JSON file from Google that contains the keys needed to upload.</p>
+        <FileDrop
+          id="sa-json"
+          accept="application/json,.json"
+          value={p.jsonKeyFile}
+          onChange={(files) => p.setJsonKeyFile(files[0] ?? null)}
+        />
+      </div>
+    </>
+  );
+}
+

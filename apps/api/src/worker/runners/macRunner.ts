@@ -262,7 +262,7 @@ async function materializeIosCerts(
 function extractProvisionUuid(buf: Buffer): string | null {
   const text = buf.toString("latin1");
   const m = text.match(/<key>UUID<\/key>\s*<string>([0-9A-Fa-f-]{36})<\/string>/);
-  return m ? m[1] : null;
+  return m && m[1] ? m[1] : null;
 }
 
 async function collectEnvExports(ctx: RunnerContext): Promise<string> {
