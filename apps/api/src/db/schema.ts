@@ -202,6 +202,9 @@ export const certificates = pgTable("certificates", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   platform: certPlatform("platform").notNull(),
   kind: certKind("kind").notNull(),
+  // Provisioning profiles point at their parent p12 here. Top-level certs
+  // (p12, keystore) have parentCertId = null.
+  parentCertId: uuid("parent_cert_id"),
   label: text("label").notNull(),
   fileName: text("file_name").notNull(),
   fileBlobEnc: text("file_blob_enc").notNull(), // base64-encoded encrypted blob (AES-256-GCM)
@@ -284,6 +287,7 @@ export const builds = pgTable("builds", {
     .references(() => buildStacks.id, { onDelete: "restrict" }),
   buildType: buildType("build_type"),
   environmentId: uuid("environment_id").references(() => environments.id, { onDelete: "set null" }),
+  certificateId: uuid("certificate_id").references(() => certificates.id, { onDelete: "set null" }),
   status: buildStatus("status").notNull().default("queued"),
   hostId: text("host_id"),
   logText: text("log_text").notNull().default(""),

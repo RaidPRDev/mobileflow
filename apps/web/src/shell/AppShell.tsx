@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
-import { LayoutGrid, Settings, ShieldCheck } from "lucide-react";
+import { ChevronDown, LayoutGrid, Settings, ShieldCheck } from "lucide-react";
 import { Button, cn } from "@mobileflow/ui";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
@@ -91,13 +91,23 @@ function InnerRail({
         {inAppScope && appId ? (
           <>
             <NavItem to={`/app/${appId}/commits`} label="Commits" />
-            <NavItem to={`/app/${appId}/builds`} label="Builds" />
-            <div className="app-rail-section-divider">Build</div>
-            <NavItem to={`/app/${appId}/builds/environments`} label="Environments" />
-            <NavItem to={`/app/${appId}/builds/certificates`} label="Signing Certificates" />
-            <div className="app-rail-section-divider">Deploy</div>
-            <NavItem to={`/app/${appId}/deploy/deployments`} label="Deployments" />
-            <NavItem to={`/app/${appId}/deploy/destinations`} label="Store Destinations" />
+            <NavSection
+              label="Build"
+              basePath={`/app/${appId}/build`}
+              landingPath={`/app/${appId}/build/builds`}
+            >
+              <NavItem to={`/app/${appId}/build/builds`} label="Builds" sub />
+              <NavItem to={`/app/${appId}/build/environments`} label="Environments" sub />
+              <NavItem to={`/app/${appId}/build/certificates`} label="Signing Certificates" sub />
+            </NavSection>
+            <NavSection
+              label="Deploy"
+              basePath={`/app/${appId}/deploy`}
+              landingPath={`/app/${appId}/deploy/deployments`}
+            >
+              <NavItem to={`/app/${appId}/deploy/deployments`} label="Deployments" sub />
+              <NavItem to={`/app/${appId}/deploy/destinations`} label="Store Destinations" sub />
+            </NavSection>
             <div className="app-rail-section-divider">App</div>
             <NavItem to={`/app/${appId}/settings`} label="Settings" />
           </>
@@ -114,13 +124,44 @@ function InnerRail({
   );
 }
 
-function NavItem({ to, label }: { to: string; label: string }) {
+function NavItem({ to, label, sub }: { to: string; label: string; sub?: boolean }) {
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => cn("app-rail-nav-item", isActive && "is-active")}
+      end
+      className={({ isActive }) =>
+        cn("app-rail-nav-item", sub && "is-sub", isActive && "is-active")
+      }
     >
       {label}
     </NavLink>
+  );
+}
+
+function NavSection({
+  label,
+  basePath,
+  landingPath,
+  children,
+}: {
+  label: string;
+  basePath: string;
+  landingPath: string;
+  children: React.ReactNode;
+}) {
+  const location = useLocation();
+  const open = location.pathname === basePath || location.pathname.startsWith(`${basePath}/`);
+
+  return (
+    <div className={cn("app-rail-nav-section", open && "is-open")}>
+      <NavLink
+        to={landingPath}
+        className={cn("app-rail-nav-item app-rail-nav-section-toggle", open && "is-active")}
+      >
+        <span>{label}</span>
+        <ChevronDown size={14} className="app-rail-nav-section-chev" aria-hidden />
+      </NavLink>
+      {open && <div className="app-rail-nav-section-children">{children}</div>}
+    </div>
   );
 }

@@ -70,7 +70,14 @@ export class MacRunner implements Runner {
 
       // --- installing + building + signing + packaging (handled by main_build.sh) ---
       await ctx.step("installing", "running");
-      const cert = await materializeIosCerts(ssh, orgId, remoteDir, ctx);
+      let cert: IosCertMaterials;
+      try {
+        cert = await materializeIosCerts(ssh, orgId, remoteDir, ctx);
+      } catch (e) {
+        await ctx.log(`Signing certificate error: ${e instanceof Error ? e.message : String(e)}`);
+        await ctx.step("installing", "failed", 1);
+        throw e;
+      }
       const envVarsExports = await collectEnvExports(ctx);
 
       const cmdArgs = [
@@ -160,14 +167,28 @@ async function materializeIosCerts(
   remoteDir: string,
   ctx: RunnerContext,
 ): Promise<IosCertMaterials> {
-  const certs = await db
+  const certificateId = ctx.build.certificateId;
+  if (!certificateId) {
+    throw new Error("No signing certificate selected for this build — pick one when starting the build.");
+  }
+  const [p12] = await db
     .select()
     .from(certificates)
-    .where(and(eq(certificates.orgId, orgId), eq(certificates.platform, "ios")));
-  const p12 = certs.find((c) => c.kind === "p12");
-  const prov = certs.find((c) => c.kind === "provisioning");
-  if (!p12) throw new Error("No iOS .p12 certificate on file for this organization");
-  if (!prov) throw new Error("No iOS provisioning profile on file for this organization");
+    .where(eq(certificates.id, certificateId))
+    .limit(1);
+  if (!p12) throw new Error(`Signing certificate ${certificateId} not found.`);
+  if (p12.orgId !== orgId) throw new Error("Signing certificate does not belong to this app's organization.");
+  if (p12.platform !== "ios") throw new Error(`Selected signing certificate is for ${p12.platform}, not iOS.`);
+  if (p12.kind !== "p12") throw new Error(`Selected signing certificate must be a .p12 (got kind=${p12.kind}).`);
+
+  // Provisioning profile is the child row linked to this p12 (parentCertId).
+  // Multiple are allowed (extensions); we take the first by created_at.
+  const [prov] = await db
+    .select()
+    .from(certificates)
+    .where(and(eq(certificates.parentCertId, p12.id), eq(certificates.kind, "provisioning")))
+    .limit(1);
+  if (!prov) throw new Error("No provisioning profile attached to the selected signing certificate.");
 
   const certsDir = `${remoteDir}/certs/ios`;
   const profilesDir = `${certsDir}/profiles`;

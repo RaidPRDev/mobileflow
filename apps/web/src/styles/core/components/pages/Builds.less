@@ -1,0 +1,306 @@
+.builds-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.builds-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) 0 var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.builds-page__title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.builds-page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.builds-status {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  padding: var(--space-md) 0;
+
+  &.is-error {
+    color: var(--color-danger);
+  }
+}
+
+.builds-empty {
+  max-width: 480px;
+  margin: var(--space-2xl) auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-md);
+  padding: var(--space-2xl) var(--space-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+}
+
+.builds-empty__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.builds-empty__body {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+}
+
+// Table
+.builds-table {
+  display: grid;
+  grid-template-columns:
+    minmax(60px, 0.5fr)         // build number
+    minmax(70px, 0.5fr)         // status
+    minmax(110px, 0.7fr)        // platform
+    minmax(160px, 1fr)          // triggered by
+    minmax(220px, 1.7fr)        // commit
+    minmax(140px, 1fr)          // deployment
+    auto;                       // menu
+  border-top: 1px solid var(--color-border);
+}
+
+.builds-table__head {
+  display: contents;
+
+  > span {
+    padding: 12px var(--space-sm);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-subtle);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.builds-row {
+  display: contents;
+
+  > * {
+    padding: 14px var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  &:hover > * {
+    background: var(--color-bg-subtle);
+  }
+}
+
+.builds-row__build {
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  cursor: default;
+
+  &:hover {
+    color: var(--color-accent);
+  }
+}
+
+.builds-row__status {
+  align-items: center;
+}
+
+.status-icon.is-success {
+  color: var(--color-success);
+}
+
+.status-icon.is-failed {
+  color: var(--color-danger);
+}
+
+.status-pill {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+
+  &.is-running {
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+
+  &.is-failed {
+    color: var(--color-danger);
+    background: rgba(239, 68, 68, 0.12);
+  }
+
+  &.is-cancelled {
+    color: var(--color-fg-muted);
+    background: var(--color-bg-muted);
+  }
+}
+
+.builds-row__platform {
+  gap: var(--space-sm);
+}
+
+.builds-row__platform-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.builds-row__platform-label {
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.builds-row__triggered {
+  gap: var(--space-sm);
+}
+
+.builds-row__triggered-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.builds-row__triggered-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.builds-row__triggered-name {
+  font-size: 13px;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.builds-row__triggered-date {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.builds-row__commit {
+  gap: var(--space-sm);
+}
+
+.builds-row__commit-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.builds-row__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.builds-row__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.builds-row__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.builds-row__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.builds-row__commit-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.builds-row__deployment {
+  font-size: 12px;
+}
+
+.deployment-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.builds-row__deployment-empty {
+  color: var(--color-fg-subtle);
+}
+
+.builds-row__menu {
+  justify-content: flex-end;
+}

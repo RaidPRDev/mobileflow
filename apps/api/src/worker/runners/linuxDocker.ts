@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Client } from "ssh2";
 import { db } from "../../db/client.js";
 import { apps, certificates, environmentVars, gitConnections } from "../../db/schema.js";
@@ -71,11 +71,16 @@ export class LinuxDockerAndroidRunner implements Runner {
 
       if (await ctx.isCancelled()) throw new Error("cancelled");
 
-      // Materialize Android keystore (if any) to the sandbox
-      const keystoreFlags = await materializeAndroidKeystore(ssh, orgId, remoteDir, ctx);
-
       // --- installing + building + signing + packaging (all inside the build container) ---
       await ctx.step("installing", "running");
+      let keystoreFlags: string[];
+      try {
+        keystoreFlags = await materializeAndroidKeystore(ssh, orgId, remoteDir, ctx);
+      } catch (e) {
+        await ctx.log(`Signing certificate error: ${e instanceof Error ? e.message : String(e)}`);
+        await ctx.step("installing", "failed", 1);
+        throw e;
+      }
       const dockerEnv = await collectEnvFlags(ctx);
       const dockerCmd = [
         `docker run --rm`,
@@ -151,10 +156,11 @@ async function collectEnvFlags(ctx: RunnerContext): Promise<string[]> {
 }
 
 /**
- * If the org has an Android keystore certificate, write it into
- * {remoteDir}/certs/google/<fileName> and emit the env flags `main_build.sh`
- * expects (ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASS, ANDROID_ALIAS, ANDROID_ACCOUNT_ID,
- * ANDROID_EMAIL — pulled from metadata).
+ * Materialize the keystore selected on the build (build.certificateId). Writes
+ * it into {remoteDir}/certs/google/<fileName> and emits the env flags
+ * `main_build.sh` expects (ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASS,
+ * ANDROID_ALIAS, ANDROID_ACCOUNT_ID, ANDROID_EMAIL — pulled from metadata).
+ * Throws if no certificate is selected or the selection is invalid.
  */
 async function materializeAndroidKeystore(
   ssh: Client,
@@ -162,15 +168,19 @@ async function materializeAndroidKeystore(
   remoteDir: string,
   ctx: RunnerContext,
 ): Promise<string[]> {
+  const certificateId = ctx.build.certificateId;
+  if (!certificateId) {
+    throw new Error("No signing certificate selected for this build — pick a keystore when starting the build.");
+  }
   const [cert] = await db
     .select()
     .from(certificates)
-    .where(and(eq(certificates.orgId, orgId), eq(certificates.platform, "android"), eq(certificates.kind, "keystore")))
+    .where(eq(certificates.id, certificateId))
     .limit(1);
-  if (!cert) {
-    await ctx.log("No Android keystore on file — release builds will not be signed.");
-    return [];
-  }
+  if (!cert) throw new Error(`Signing certificate ${certificateId} not found.`);
+  if (cert.orgId !== orgId) throw new Error("Signing certificate does not belong to this app's organization.");
+  if (cert.platform !== "android") throw new Error(`Selected signing certificate is for ${cert.platform}, not Android.`);
+  if (cert.kind !== "keystore") throw new Error(`Selected signing certificate must be a keystore (got kind=${cert.kind}).`);
 
   const remotePath = `${remoteDir}/certs/google/${cert.fileName}`;
   const blobBase64 = decryptString(cert.fileBlobEnc);

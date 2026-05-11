@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { apps, buildStacks, builds, buildSteps } from "../db/schema.js";
+import { apps, buildStacks, builds, buildSteps, certificates, deployments, storeDestinations, users } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { assertCanStartBuild } from "../plans/gate.js";
 import { buildBus } from "../worker/events.js";
@@ -22,6 +22,7 @@ const StartBody = z.object({
   stackId: z.string().min(1).max(80),
   buildType: z.enum(["debug", "release", "development", "adhoc", "appstore"]).optional(),
   environmentId: z.string().uuid().optional(),
+  certificateId: z.string().uuid().optional(),
 });
 
 export async function buildsRoutes(app: FastifyInstance) {
@@ -32,7 +33,44 @@ export async function buildsRoutes(app: FastifyInstance) {
     if (!a) return reply.notFound();
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
-    return db.select().from(builds).where(eq(builds.appId, a.id)).orderBy(desc(builds.createdAt)).limit(50);
+    const rows = await db
+      .select({
+        build: builds,
+        triggeredByName: users.name,
+        triggeredByEmail: users.email,
+      })
+      .from(builds)
+      .leftJoin(users, eq(builds.createdByUserId, users.id))
+      .where(eq(builds.appId, a.id))
+      .orderBy(desc(builds.createdAt))
+      .limit(50);
+    if (rows.length === 0) return [];
+    const buildIds = rows.map((r) => r.build.id);
+    const deps = await db
+      .select({
+        buildId: deployments.buildId,
+        destinationId: deployments.destinationId,
+        destinationName: storeDestinations.name,
+        destinationType: storeDestinations.type,
+        status: deployments.status,
+        createdAt: deployments.createdAt,
+      })
+      .from(deployments)
+      .leftJoin(storeDestinations, eq(deployments.destinationId, storeDestinations.id))
+      .where(inArray(deployments.buildId, buildIds))
+      .orderBy(desc(deployments.createdAt));
+    const depsByBuild = new Map<string, typeof deps>();
+    for (const d of deps) {
+      const list = depsByBuild.get(d.buildId) ?? [];
+      list.push(d);
+      depsByBuild.set(d.buildId, list);
+    }
+    return rows.map((r) => ({
+      ...r.build,
+      triggeredByName: r.triggeredByName,
+      triggeredByEmail: r.triggeredByEmail,
+      deployments: depsByBuild.get(r.build.id) ?? [],
+    }));
   });
 
   app.post<{ Params: { appId: string } }>("/apps/:appId/builds", async (req, reply) => {
@@ -45,6 +83,14 @@ export async function buildsRoutes(app: FastifyInstance) {
     const [stack] = await db.select().from(buildStacks).where(eq(buildStacks.id, body.stackId)).limit(1);
     if (!stack) return reply.badRequest("Unknown stack");
     if (stack.platform !== body.target) return reply.badRequest("Stack platform does not match target");
+
+    if (body.certificateId) {
+      if (body.target === "web") return reply.badRequest("Web builds do not use a signing certificate");
+      const [cert] = await db.select().from(certificates).where(eq(certificates.id, body.certificateId)).limit(1);
+      if (!cert) return reply.badRequest("Unknown signing certificate");
+      if (cert.orgId !== a.orgId) return reply.forbidden("Certificate belongs to a different organization");
+      if (cert.platform !== body.target) return reply.badRequest("Certificate platform does not match target");
+    }
 
     const gate = await assertCanStartBuild(a.orgId, {
       isSuperadmin: req.auth?.isSuperadmin,
@@ -62,6 +108,7 @@ export async function buildsRoutes(app: FastifyInstance) {
         stackId: body.stackId,
         buildType: body.buildType ?? null,
         environmentId: body.environmentId ?? null,
+        certificateId: body.certificateId ?? null,
         status: "queued",
         createdByUserId: req.auth?.userId ?? null,
       })

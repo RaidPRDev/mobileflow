@@ -29,7 +29,7 @@ export function AdminBuildsPage() {
           {q.data?.map((b) => (
             <Link
               key={b.id}
-              to={`/app/${b.appId}/builds/${b.id}`}
+              to={`/app/${b.appId}/build/builds/${b.id}`}
               className="flex items-center gap-3 border-b last:border-0 py-2 hover:bg-accent/40 -mx-2 px-2"
             >
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_CLASS[b.status] ?? "bg-muted"}`}>

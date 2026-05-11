@@ -124,6 +124,64 @@ async function fetchCommits(
 
 type CommitsBatch = Pick<CommitsPage, "items" | "page" | "perPage" | "hasNext" | "totalCount">;
 
+async function fetchCommit(
+  provider: "github" | "gitlab" | "bitbucket",
+  repoFullName: string,
+  token: string,
+  sha: string,
+): Promise<CommitOut | null> {
+  if (provider === "github") {
+    const res = await fetch(`https://api.github.com/repos/${repoFullName}/commits/${sha}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`github commit ${res.status}`);
+    const c = (await res.json()) as { sha: string; commit: { message: string; author: { name: string; date: string } }; author: { login: string; avatar_url: string } | null; html_url: string };
+    return {
+      sha: c.sha,
+      message: c.commit.message,
+      authorName: c.commit.author.name,
+      authorLogin: c.author?.login ?? null,
+      avatarUrl: c.author?.avatar_url ?? null,
+      date: c.commit.author.date,
+      url: c.html_url,
+    };
+  }
+  if (provider === "gitlab") {
+    const projectId = encodeURIComponent(repoFullName);
+    const res = await fetch(`https://gitlab.com/api/v4/projects/${projectId}/repository/commits/${sha}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`gitlab commit ${res.status}`);
+    const c = (await res.json()) as { id: string; title: string; message: string; author_name: string; created_at: string; web_url: string };
+    return {
+      sha: c.id,
+      message: c.message ?? c.title,
+      authorName: c.author_name,
+      authorLogin: null,
+      avatarUrl: null,
+      date: c.created_at,
+      url: c.web_url,
+    };
+  }
+  const res = await fetch(`https://api.bitbucket.org/2.0/repositories/${repoFullName}/commit/${sha}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`bitbucket commit ${res.status}`);
+  const c = (await res.json()) as { hash: string; message: string; author: { raw: string; user?: { display_name: string; links: { avatar: { href: string } } } }; date: string; links: { html: { href: string } } };
+  return {
+    sha: c.hash,
+    message: c.message,
+    authorName: c.author.user?.display_name ?? c.author.raw,
+    authorLogin: null,
+    avatarUrl: c.author.user?.links.avatar.href ?? null,
+    date: c.date,
+    url: c.links.html.href,
+  };
+}
+
 export async function commitsRoutes(server: FastifyInstance) {
   server.addHook("preHandler", requireUser);
 
@@ -180,6 +238,33 @@ export async function commitsRoutes(server: FastifyInstance) {
       } catch (err) {
         server.log.warn({ err, provider }, "fetch commits failed");
         return reply.badGateway("Failed to fetch commits");
+      }
+    },
+  );
+
+  server.get<{ Params: { appId: string; sha: string } }>(
+    "/apps/:appId/commits/:sha",
+    async (req, reply) => {
+      const [row] = await db.select().from(apps).where(and(eq(apps.id, req.params.appId), isNull(apps.deletedAt))).limit(1);
+      if (!row) return reply.notFound();
+      await requireOrgMember(req, reply, row.orgId);
+      if (reply.sent) return;
+      if (!row.gitConnectionId || !row.gitRepoFullName) return reply.notFound();
+      const [conn] = await db.select().from(gitConnections).where(eq(gitConnections.id, row.gitConnectionId)).limit(1);
+      if (!conn) return reply.failedDependency("Git connection missing");
+      const provider = conn.provider as "github" | "gitlab" | "bitbucket";
+      try {
+        const token = decryptString(conn.accessTokenEnc);
+        const commit = await fetchCommit(provider, row.gitRepoFullName, token, req.params.sha);
+        if (!commit) return reply.notFound();
+        return {
+          ...commit,
+          accountLogin: conn.accountLogin ?? null,
+          accountAvatarUrl: conn.accountAvatarUrl ?? null,
+        };
+      } catch (err) {
+        server.log.warn({ err, provider }, "fetch single commit failed");
+        return reply.badGateway("Failed to fetch commit");
       }
     },
   );

@@ -43,6 +43,21 @@ import type { Runtime } from "@mobileflow/shared";
 export type { Runtime };
 export type GitProvider = "github" | "gitlab" | "bitbucket";
 
+export interface CertificateRow {
+  id: string;
+  platform: "ios" | "android";
+  kind: "p12" | "provisioning" | "keystore";
+  label: string;
+  fileName: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+  parentCertId: string | null;
+}
+
+export interface CertificateGroup extends CertificateRow {
+  provisioningProfiles: CertificateRow[];
+}
+
 export interface MeResponse {
   user: { id: string; email: string; name: string | null; isSuperadmin: boolean };
   organizations: { orgId: string; slug: string; name: string; role: "owner" | "admin" | "member" }[];
@@ -100,6 +115,15 @@ export type BuildTarget = "ios" | "android" | "web";
 export type BuildStatus = "queued" | "running" | "success" | "failed" | "cancelled";
 export type BuildStepStatus = "pending" | "running" | "success" | "failed" | "skipped";
 
+export interface BuildDeploymentSummary {
+  buildId: string;
+  destinationId: string;
+  destinationName: string | null;
+  destinationType: "app_store" | "testflight" | "play_store" | "play_internal" | null;
+  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  createdAt: string;
+}
+
 export interface BuildRow {
   id: string;
   appId: string;
@@ -117,6 +141,9 @@ export interface BuildRow {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  triggeredByName?: string | null;
+  triggeredByEmail?: string | null;
+  deployments?: BuildDeploymentSummary[];
 }
 
 export interface BuildStepRow {
@@ -172,6 +199,10 @@ export const api = {
     const qs = params.toString();
     return request<CommitsPageResponse>(`/apps/${appId}/commits${qs ? `?${qs}` : ""}`);
   },
+  getCommit: (appId: string, sha: string) =>
+    request<CommitRow & { accountLogin: string | null; accountAvatarUrl: string | null }>(
+      `/apps/${appId}/commits/${sha}`,
+    ),
 
   listBuilds: (appId: string) => request<BuildRow[]>(`/apps/${appId}/builds`),
   startBuild: (
@@ -184,6 +215,7 @@ export const api = {
       stackId: string;
       buildType?: string;
       environmentId?: string;
+      certificateId?: string;
     },
   ) => request<BuildRow>(`/apps/${appId}/builds`, { method: "POST", body: JSON.stringify(body) }),
   getBuild: (buildId: string, sinceOffset = 0) =>
@@ -212,15 +244,7 @@ export const api = {
 
   // Certificates
   listCertificates: (orgId: string) =>
-    request<{
-      id: string;
-      platform: "ios" | "android";
-      kind: "p12" | "provisioning" | "keystore";
-      label: string;
-      fileName: string;
-      metadata: Record<string, string>;
-      createdAt: string;
-    }[]>(`/orgs/${orgId}/certificates`),
+    request<CertificateGroup[]>(`/orgs/${orgId}/certificates`),
   createCertificate: (
     orgId: string,
     body: {
@@ -231,8 +255,19 @@ export const api = {
       fileBase64: string;
       password?: string;
       metadata?: Record<string, string>;
+      parentCertId?: string;
     },
-  ) => request<unknown>(`/orgs/${orgId}/certificates`, { method: "POST", body: JSON.stringify(body) }),
+  ) => request<CertificateRow>(`/orgs/${orgId}/certificates`, { method: "POST", body: JSON.stringify(body) }),
+  updateCertificate: (
+    id: string,
+    body: {
+      label?: string;
+      password?: string | null;
+      metadata?: Record<string, string>;
+      fileName?: string;
+      fileBase64?: string;
+    },
+  ) => request<CertificateRow>(`/certificates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteCertificate: (id: string) => request<void>(`/certificates/${id}`, { method: "DELETE" }),
 
   // Deployments

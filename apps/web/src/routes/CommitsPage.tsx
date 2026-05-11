@@ -66,11 +66,7 @@ export function CommitsPage() {
   const totalCount = commitsQ.data?.totalCount;
   const hasNext = commitsQ.data?.hasNext ?? false;
   const startBuild = (c: CommitRow) =>
-    navigate(
-      `/app/${appId}/builds/new?sha=${c.sha}&message=${encodeURIComponent(
-        c.message.split("\n")[0] ?? "",
-      )}`,
-    );
+    navigate(`/app/${appId}/build/builds/new?commitId=${c.sha}`);
 
   return (
     <div className="commits-page">

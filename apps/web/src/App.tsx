@@ -52,13 +52,15 @@ export function App() {
           <Route path="usage" element={<UsagePage />} />
         </Route>
         <Route path="/app/:appId/commits" element={<CommitsPage />} />
-        <Route path="/app/:appId/builds" element={<BuildsPage />} />
-        <Route path="/app/:appId/builds/new" element={<NewBuildPage />} />
-        <Route path="/app/:appId/builds/:buildId" element={<BuildPage />} />
-        <Route path="/app/:appId/builds/environments" element={<EnvironmentsPage />} />
-        <Route path="/app/:appId/builds/certificates" element={<CertificatesPage />} />
-        <Route path="/app/:appId/deploy/destinations" element={<StoreDestinationsPage />} />
+        <Route path="/app/:appId/build" element={<Navigate to="builds" replace />} />
+        <Route path="/app/:appId/build/builds" element={<BuildsPage />} />
+        <Route path="/app/:appId/build/builds/new" element={<NewBuildPage />} />
+        <Route path="/app/:appId/build/builds/:buildId" element={<BuildPage />} />
+        <Route path="/app/:appId/build/environments" element={<EnvironmentsPage />} />
+        <Route path="/app/:appId/build/certificates" element={<CertificatesPage />} />
+        <Route path="/app/:appId/deploy" element={<Navigate to="deployments" replace />} />
         <Route path="/app/:appId/deploy/deployments" element={<DeploymentsPage />} />
+        <Route path="/app/:appId/deploy/destinations" element={<StoreDestinationsPage />} />
         <Route path="/app/:appId/git" element={<GitConnectPage />} />
       </Route>
 
