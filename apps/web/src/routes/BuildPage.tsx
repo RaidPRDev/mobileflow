@@ -106,12 +106,24 @@ export function BuildPage() {
     return () => ws.close();
   }, [buildId]);
 
+  const [cancelling, setCancelling] = useState(false);
   const cancel = async () => {
-    await api.cancelBuild(buildId!);
-    void qc.invalidateQueries({ queryKey: ["build", buildId] });
+    if (cancelling) return;
+    setCancelling(true);
+    try {
+      await api.cancelBuild(buildId!);
+    } catch (err) {
+      // Already finished (race with the worker) — treat as success and let
+      // the snapshot/poll catch up to the new status.
+      if (!(err instanceof ApiError) || err.message !== "Build is already finished") throw err;
+    } finally {
+      void qc.invalidateQueries({ queryKey: ["build", buildId] });
+    }
   };
 
-  const b = snapshot ?? pollQ.data;
+  // Prefer live WS snapshot while the socket is open; otherwise trust polling,
+  // which keeps progressing after the WS drops.
+  const b = wsConnected ? (snapshot ?? pollQ.data) : (pollQ.data ?? snapshot);
   if (!b && pollQ.isLoading && !wsConnected) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (pollQ.error && !b) return <p className="text-sm text-destructive">{(pollQ.error as ApiError).message}</p>;
   if (!b) return <p className="text-sm text-muted-foreground">Connecting…</p>;
@@ -130,8 +142,8 @@ export function BuildPage() {
           </p>
         </div>
         {live && (
-          <Button variant="destructive" onClick={cancel}>
-            Cancel
+          <Button variant="destructive" onClick={cancel} disabled={cancelling}>
+            {cancelling ? "Cancelling…" : "Cancel"}
           </Button>
         )}
       </div>

@@ -92,8 +92,14 @@ export class MacRunner implements Runner {
       ].map(shq).join(" ");
 
       try {
+        // CocoaPods (Ruby) needs a UTF-8 locale; non-interactive SSH sessions
+        // don't inherit LANG/LC_ALL from the user's profile, so `pod install`
+        // hits "Unicode Normalization not appropriate for ASCII-8BIT" without
+        // these. Set first so user-supplied env vars can still override.
+        const localeExports = `export LANG=en_US.UTF-8 && export LC_ALL=en_US.UTF-8`;
         const fullCmd = [
-          envVarsExports, // exports prefix env vars in the same shell
+          localeExports,
+          envVarsExports, // user env vars take precedence (declared after)
           `bash ${shq(`${macTools}/main_build.sh`)} ${cmdArgs}`,
         ].filter(Boolean).join(" && ");
         await run(`bash -lc ${shq(fullCmd)}`);
@@ -171,6 +177,7 @@ async function materializeIosCerts(
   if (!certificateId) {
     throw new Error("No signing certificate selected for this build — pick one when starting the build.");
   }
+  await ctx.log(`Looking up signing certificate ${certificateId}…`);
   const [p12] = await db
     .select()
     .from(certificates)
@@ -183,6 +190,7 @@ async function materializeIosCerts(
 
   // Provisioning profile is the child row linked to this p12 (parentCertId).
   // Multiple are allowed (extensions); we take the first by created_at.
+  await ctx.log(`Looking up provisioning profile for ${p12.fileName}…`);
   const [prov] = await db
     .select()
     .from(certificates)
@@ -192,18 +200,25 @@ async function materializeIosCerts(
 
   const certsDir = `${remoteDir}/certs/ios`;
   const profilesDir = `${certsDir}/profiles`;
-  await new Promise<void>((resolve, reject) => {
-    ssh.exec(`mkdir -p ${shq(certsDir)} ${shq(profilesDir)}`, (err, stream) => {
-      if (err) return reject(err);
-      stream.on("close", (code: number | null) => (code === 0 ? resolve() : reject(new Error(`mkdir failed (${code})`))));
-    });
-  });
+  await ctx.log(`Creating remote cert dirs: ${certsDir}`);
+  await execDrained(ssh, `mkdir -p ${shq(certsDir)} ${shq(profilesDir)}`, "mkdir certs", 15_000);
 
-  const writeBlob = async (blobBase64: string, dest: string) => {
+  const writeBlob = async (blobBase64: string, dest: string, label: string) => {
+    const sizeKb = Math.round((blobBase64.length * 3) / 4 / 1024);
+    await ctx.log(`Uploading ${label} (~${sizeKb} KB) -> ${dest}`);
     await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`upload ${label} timed out after 60s`)), 60_000);
       ssh.exec(`base64 -D > ${shq(dest)}`, (err, stream) => {
-        if (err) return reject(err);
-        stream.on("close", (code: number | null) => (code === 0 ? resolve() : reject(new Error(`upload failed (${code})`))));
+        if (err) { clearTimeout(timer); return reject(err); }
+        let stderrBuf = "";
+        stream.on("data", () => {}); // drain stdout
+        stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
+        stream.on("close", (code: number | null) => {
+          clearTimeout(timer);
+          if (code === 0) return resolve();
+          reject(new Error(`upload ${label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
+        });
+        stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
         stream.write(blobBase64);
         stream.end();
       });
@@ -211,22 +226,43 @@ async function materializeIosCerts(
   };
 
   const p12Path = `${certsDir}/${p12.fileName}`;
-  await writeBlob(decryptString(p12.fileBlobEnc), p12Path);
+  await writeBlob(decryptString(p12.fileBlobEnc), p12Path, ".p12");
   await ctx.log(`Materialized iOS .p12: ${p12.fileName}`);
 
+  const provisionBase64 = decryptString(prov.fileBlobEnc);
   const provisionMeta = (prov.metadata ?? {}) as Record<string, string>;
   const provisionName = provisionMeta.provisionName ?? prov.fileName.replace(/\.mobileprovision$/, "");
   const provisionPath = `${profilesDir}/${provisionName}.mobileprovision`;
-  await writeBlob(decryptString(prov.fileBlobEnc), provisionPath);
-  await ctx.log(`Materialized provisioning profile: ${provisionName}`);
+  await writeBlob(provisionBase64, provisionPath, "provisioning profile");
+
+  // main_build.sh requires the provisioning profile UUID (PROVISION_ID).
+  // Prefer the value stored at upload time; fall back to parsing it out of the
+  // CMS-signed .mobileprovision (the plist is plaintext inside the envelope).
+  let provisionId = provisionMeta.provisionId ?? "";
+  if (!provisionId) {
+    provisionId = extractProvisionUuid(Buffer.from(provisionBase64, "base64")) ?? "";
+    if (provisionId) await ctx.log(`Extracted provisioning UUID from profile: ${provisionId}`);
+  }
+  if (!provisionId) {
+    throw new Error(
+      "Provisioning profile UUID not found. Re-upload the .mobileprovision so its UUID is recorded.",
+    );
+  }
+  await ctx.log(`Materialized provisioning profile: ${provisionName} (uuid ${provisionId})`);
 
   return {
     p12Path,
     p12Password: p12.passwordEnc ? decryptString(p12.passwordEnc) : "",
-    provisionId: provisionMeta.provisionId ?? "",
+    provisionId,
     provisionPath,
     provisionName,
   };
+}
+
+function extractProvisionUuid(buf: Buffer): string | null {
+  const text = buf.toString("latin1");
+  const m = text.match(/<key>UUID<\/key>\s*<string>([0-9A-Fa-f-]{36})<\/string>/);
+  return m ? m[1] : null;
 }
 
 async function collectEnvExports(ctx: RunnerContext): Promise<string> {
@@ -238,4 +274,27 @@ async function collectEnvExports(ctx: RunnerContext): Promise<string> {
 
 function shq(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * ssh.exec() that always drains stdout+stderr and enforces a timeout. Plain
+ * `ssh.exec` with only a "close" listener can hang if the channel has buffered
+ * stderr nobody is reading — bit us once in the iOS pipeline.
+ */
+function execDrained(ssh: Client, cmd: string, label: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    ssh.exec(cmd, (err, stream) => {
+      if (err) { clearTimeout(timer); return reject(err); }
+      let stderrBuf = "";
+      stream.on("data", () => {}); // drain stdout
+      stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
+      stream.on("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (code === 0) return resolve();
+        reject(new Error(`${label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
+      });
+      stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
+    });
+  });
 }

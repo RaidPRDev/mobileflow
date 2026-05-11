@@ -26,7 +26,14 @@ const StartBody = z.object({
 });
 
 export async function buildsRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", requireUser);
+  // WS routes (currently only /builds/:buildId/stream) do their own session-
+  // cookie check inside the handler. A preHandler that calls
+  // reply.unauthorized() during the upgrade closes the socket "before the
+  // connection is established", which is the symptom we used to see.
+  app.addHook("preHandler", async (req, reply) => {
+    if (req.headers.upgrade?.toLowerCase() === "websocket") return;
+    return requireUser(req, reply);
+  });
 
   app.get<{ Params: { appId: string } }>("/apps/:appId/builds", async (req, reply) => {
     const [a] = await db.select().from(apps).where(and(eq(apps.id, req.params.appId), isNull(apps.deletedAt))).limit(1);
