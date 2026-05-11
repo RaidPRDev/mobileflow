@@ -53,7 +53,7 @@ export class LinuxDockerAndroidRunner implements Runner {
     return await withSsh(host, async (ssh) => {
       const run = async (cmd: string) => {
         const r = await exec(ssh, cmd, (line) => ctx.log(line));
-        if (r.exitCode !== 0) throw new Error(`command failed (exit ${r.exitCode}): ${cmd.split("\n")[0]?.slice(0, 80)}…`);
+        if (r.exitCode !== 0) throw new Error(formatCmdError(cmd, r.exitCode, r.outputTail));
       };
 
       // --- preparing ---
@@ -105,10 +105,13 @@ export class LinuxDockerAndroidRunner implements Runner {
         await ctx.step("signing", "success", 0);
         await ctx.step("packaging", "success", 0);
       } catch (e) {
-        // We can't tell which sub-phase failed without parsing the script's
-        // structured events; mark the latest "running" step failed.
-        for (const name of ["installing", "building", "signing", "packaging"] as const) {
-          await ctx.step(name, "failed", 1);
+        // installing/building/signing/packaging run inside one docker call
+        // (main_build.sh), so we cannot tell which sub-phase actually failed
+        // without instrumenting that script. Mark the entry phase failed and
+        // the remaining phases skipped rather than lying that all four failed.
+        await ctx.step("installing", "failed", 1);
+        for (const name of ["building", "signing", "packaging"] as const) {
+          await ctx.step(name, "skipped");
         }
         throw e;
       }
@@ -209,4 +212,17 @@ async function materializeAndroidKeystore(
 /** Shell-quote a value for safe inclusion in a remote bash command. */
 function shq(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Build an error message that carries the actual failure (output tail) instead
+ * of the bash wrapping. Without this the UI's error banner just shows
+ * "command failed (exit 1): bash -lc 'export …'" while the real cause sits
+ * buried in the streamed logs.
+ */
+function formatCmdError(cmd: string, exitCode: number, outputTail: string): string {
+  const summary = cmd.split("\n")[0]?.slice(0, 80) ?? "";
+  const tail = outputTail.trim();
+  if (!tail) return `Command failed (exit ${exitCode}): ${summary}`;
+  return `Command failed (exit ${exitCode}): ${summary}\n${tail}`;
 }

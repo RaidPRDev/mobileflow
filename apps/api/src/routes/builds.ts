@@ -48,9 +48,11 @@ export async function buildsRoutes(app: FastifyInstance) {
         build: builds,
         triggeredByName: users.name,
         triggeredByEmail: users.email,
+        certificateLabel: certificates.label,
       })
       .from(builds)
       .leftJoin(users, eq(builds.createdByUserId, users.id))
+      .leftJoin(certificates, eq(builds.certificateId, certificates.id))
       .where(eq(builds.appId, a.id))
       .orderBy(desc(builds.createdAt))
       .limit(50);
@@ -79,6 +81,7 @@ export async function buildsRoutes(app: FastifyInstance) {
       ...r.build,
       triggeredByName: r.triggeredByName,
       triggeredByEmail: r.triggeredByEmail,
+      certificateLabel: r.certificateLabel,
       deployments: depsByBuild.get(r.build.id) ?? [],
     }));
   });
@@ -151,9 +154,19 @@ export async function buildsRoutes(app: FastifyInstance) {
     const steps = await db.select().from(buildSteps).where(eq(buildSteps.buildId, b.id)).orderBy(asc(buildSteps.sortOrder));
     const since = Number.isFinite(Number(req.query.since)) ? Math.max(0, Number(req.query.since)) : 0;
     const logTail = since > 0 && since < b.logText.length ? b.logText.slice(since) : since === 0 ? b.logText : "";
+    let certificateLabel: string | null = null;
+    if (b.certificateId) {
+      const [cert] = await db
+        .select({ label: certificates.label })
+        .from(certificates)
+        .where(eq(certificates.id, b.certificateId))
+        .limit(1);
+      certificateLabel = cert?.label ?? null;
+    }
     return {
       ...b,
       logText: undefined,
+      certificateLabel,
       steps,
       log: { offset: since, length: b.logText.length, tail: logTail },
     };
@@ -191,7 +204,23 @@ export async function buildsRoutes(app: FastifyInstance) {
 
       // Hydrate initial state
       const steps = await db.select().from(buildSteps).where(eq(buildSteps.buildId, b.id)).orderBy(asc(buildSteps.sortOrder));
-      socket.send(JSON.stringify({ type: "snapshot", build: { ...b, logText: undefined }, steps, log: b.logText }));
+      let certificateLabel: string | null = null;
+      if (b.certificateId) {
+        const [cert] = await db
+          .select({ label: certificates.label })
+          .from(certificates)
+          .where(eq(certificates.id, b.certificateId))
+          .limit(1);
+        certificateLabel = cert?.label ?? null;
+      }
+      socket.send(
+        JSON.stringify({
+          type: "snapshot",
+          build: { ...b, logText: undefined, certificateLabel },
+          steps,
+          log: b.logText,
+        }),
+      );
 
       const off = buildBus.on(b.id, (e) => {
         try {

@@ -118,7 +118,20 @@ function connect(target: SshTarget): Promise<Client> {
 export interface ExecResult {
   exitCode: number;
   signal: string | null;
+  /**
+   * A best-effort tail of the command output (stdout and stderr interleaved as
+   * seen). Used by callers to surface a meaningful error message when the
+   * command exits non-zero — without this the only failure signal is the bash
+   * wrapping ("command failed (exit 1): bash -lc ..."), which buries the real
+   * cause (e.g. an Xcode signing error or a Transporter upload rejection) in
+   * the streamed logs.
+   */
+  outputTail: string;
 }
+
+// Keep the last ~3KB of output lines for the tail. Plenty for a typical error
+// stanza, small enough to fit in the build row's errorMessage column.
+const TAIL_BUDGET = 3000;
 
 /** Run a command, streaming stdout/stderr lines to `onLine`. Resolves with exit code. */
 export function exec(
@@ -131,11 +144,23 @@ export function exec(
       if (err) return reject(err);
       let stdoutBuf = "";
       let stderrBuf = "";
+      const tailLines: string[] = [];
+      let tailSize = 0;
+      const pushTail = (line: string) => {
+        tailLines.push(line);
+        tailSize += line.length + 1;
+        while (tailSize > TAIL_BUDGET && tailLines.length > 1) {
+          tailSize -= (tailLines.shift()!.length + 1);
+        }
+      };
       const flush = (buf: string, isErr: boolean): string => {
         const lines = buf.split(/\r?\n/);
         const tail = lines.pop() ?? "";
         for (const line of lines) {
-          if (line.length > 0) void onLine(isErr ? `! ${line}` : line);
+          if (line.length > 0) {
+            pushTail(isErr ? `! ${line}` : line);
+            void onLine(isErr ? `! ${line}` : line);
+          }
         }
         return tail;
       };
@@ -144,9 +169,15 @@ export function exec(
           stdoutBuf = flush(stdoutBuf + chunk.toString("utf8"), false);
         })
         .on("close", (code: number | null, signal: string | null) => {
-          if (stdoutBuf) void onLine(stdoutBuf);
-          if (stderrBuf) void onLine(`! ${stderrBuf}`);
-          resolve({ exitCode: code ?? -1, signal });
+          if (stdoutBuf) {
+            pushTail(stdoutBuf);
+            void onLine(stdoutBuf);
+          }
+          if (stderrBuf) {
+            pushTail(`! ${stderrBuf}`);
+            void onLine(`! ${stderrBuf}`);
+          }
+          resolve({ exitCode: code ?? -1, signal, outputTail: tailLines.join("\n") });
         })
         .stderr.on("data", (chunk: Buffer) => {
           stderrBuf = flush(stderrBuf + chunk.toString("utf8"), true);

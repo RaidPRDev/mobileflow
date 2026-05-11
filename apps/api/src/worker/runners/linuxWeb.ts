@@ -40,7 +40,7 @@ export class LinuxDockerWebRunner implements Runner {
     return await withSsh(host, async (ssh) => {
       const run = async (cmd: string) => {
         const r = await exec(ssh, cmd, (line) => ctx.log(line));
-        if (r.exitCode !== 0) throw new Error(`command failed (exit ${r.exitCode}): ${cmd.split("\n")[0]?.slice(0, 80)}…`);
+        if (r.exitCode !== 0) throw new Error(formatCmdError(cmd, r.exitCode, r.outputTail));
       };
 
       await ctx.step("preparing", "running");
@@ -72,8 +72,11 @@ export class LinuxDockerWebRunner implements Runner {
         await ctx.step("installing", "success", 0);
         await ctx.step("building", "success", 0);
       } catch (e) {
+        // installing + building are bundled in one docker call (`npm ci` then
+        // `npm run build` inside the same container). We can't tell which one
+        // failed, so mark the entry phase failed and the rest skipped.
         await ctx.step("installing", "failed", 1);
-        await ctx.step("building", "failed", 1);
+        await ctx.step("building", "skipped");
         throw e;
       }
 
@@ -116,4 +119,11 @@ async function collectEnvFlags(ctx: RunnerContext): Promise<string[]> {
 
 function shq(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+function formatCmdError(cmd: string, exitCode: number, outputTail: string): string {
+  const summary = cmd.split("\n")[0]?.slice(0, 80) ?? "";
+  const tail = outputTail.trim();
+  if (!tail) return `Command failed (exit ${exitCode}): ${summary}`;
+  return `Command failed (exit ${exitCode}): ${summary}\n${tail}`;
 }

@@ -18,21 +18,13 @@ import appStoreIcon from "@assets/icons/app-store-icon.svg";
 import { ArrowLeft, Check, GitBranch, Plus, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type BuildTarget, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
+import { STACKS } from "../lib/stacks";
 
 const TARGETS: { id: BuildTarget; label: string; icon: JSX.Element; iconBg: string }[] = [
   { id: "ios", label: "iOS", icon: <AppleIcon />, iconBg: "#0a0a0a" },
   { id: "android", label: "Android", icon: <AndroidIcon />, iconBg: "#34a853" },
   { id: "web", label: "Web", icon: <WebIcon />, iconBg: "#f7df1e" },
 ];
-
-const STACKS: Record<BuildTarget, { id: string; label: string }[]> = {
-  ios: [
-    { id: "ios-15", label: "Xcode 15" },
-    { id: "ios-16", label: "Xcode 16" },
-  ],
-  android: [{ id: "android-default", label: "Android (default)" }],
-  web: [{ id: "web-default", label: "Web (Node 20)" }],
-};
 
 const BUILD_TYPES: Record<BuildTarget, { id: string; label: string }[] | null> = {
   ios: [

@@ -51,9 +51,20 @@ export class MacRunner implements Runner {
     return await withSsh(host, async (ssh) => {
       const run = async (cmd: string) => {
         const r = await exec(ssh, cmd, (line) => ctx.log(line));
-        if (r.exitCode !== 0) throw new Error(`command failed (exit ${r.exitCode}): ${cmd.split("\n")[0]?.slice(0, 80)}…`);
+        if (r.exitCode !== 0) throw new Error(formatCmdError(cmd, r.exitCode, r.outputTail));
       };
 
+      // Wipe the entire build dir. Used as the error-path cleanup so a failed
+      // build doesn't leave a half-cloned repo / partial Pods install behind.
+      const wipeBuildDir = async () => {
+        try {
+          await exec(ssh, `bash -lc ${shq(`rm -rf ${shq(remoteDir)}`)}`, (line) => ctx.log(line));
+        } catch {
+          /* best-effort */
+        }
+      };
+
+      try {
       // --- preparing ---
       await ctx.step("preparing", "running");
       try {
@@ -89,6 +100,12 @@ export class MacRunner implements Runner {
         cert.provisionId,
         cert.provisionPath,
         cert.provisionName,
+        // UPLOAD_AFTER_BUILD — always "no". App Store uploads are governed by
+        // the user's Destination toggle and run via the deployWorker against a
+        // configured StoreDestination (see worker.ts:maybeQueueAutoDeploy).
+        // The script used to upload unconditionally with hardcoded creds,
+        // which ignored the user's choice.
+        "no",
       ].map(shq).join(" ");
 
       try {
@@ -108,8 +125,13 @@ export class MacRunner implements Runner {
         await ctx.step("signing", "success", 0);
         await ctx.step("packaging", "success", 0);
       } catch (e) {
-        for (const name of ["installing", "building", "signing", "packaging"] as const) {
-          await ctx.step(name, "failed", 1);
+        // installing/building/signing/packaging are bundled inside one
+        // main_build.sh invocation, so we cannot tell which sub-phase failed
+        // without instrumenting that script. Mark the entry phase as failed
+        // and the rest as skipped — better than lying about all four failing.
+        await ctx.step("installing", "failed", 1);
+        for (const name of ["building", "signing", "packaging"] as const) {
+          await ctx.step(name, "skipped");
         }
         throw e;
       }
@@ -146,15 +168,29 @@ export class MacRunner implements Runner {
       await ctx.step("publishing", "success", 0);
 
       // --- cleanup ---
+      // On success, keep only the `ios` folder inside the build dir (handy for
+      // re-builds / debugging) and wipe everything else. Artifacts already live
+      // under `downloadsDir`, so nothing user-facing is lost.
       await ctx.step("cleanup", "running");
       try {
-        await run(`bash -lc ${shq(`rm -rf ${shq(`${remoteDir}/Pods`)} ${shq(`${remoteDir}/build/DerivedData`)}`)}`);
+        await run(
+          `bash -lc ${shq(
+            `set -e; cd ${shq(remoteDir)} && find . -mindepth 1 -maxdepth 1 ! -name ios -exec rm -rf {} +`,
+          )}`,
+        );
       } catch {
-        /* ignore */
+        /* best-effort */
       }
       await ctx.step("cleanup", "success", 0);
 
       return { artifacts };
+      } catch (err) {
+        // Pipeline failure: blow away the entire build dir so we don't pile up
+        // half-cloned repos / partial Pods / orphaned DerivedData on the Mac.
+        await ctx.log("Build failed — cleaning up remote build directory.");
+        await wipeBuildDir();
+        throw err;
+      }
     });
   }
 }
@@ -274,6 +310,18 @@ async function collectEnvExports(ctx: RunnerContext): Promise<string> {
 
 function shq(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Turn a non-zero exit into an error whose message carries the *real* failure
+ * (the tail of the command's output) instead of just the bash wrapping. The
+ * UI surfaces this verbatim in the error banner.
+ */
+function formatCmdError(cmd: string, exitCode: number, outputTail: string): string {
+  const summary = cmd.split("\n")[0]?.slice(0, 80) ?? "";
+  const tail = outputTail.trim();
+  if (!tail) return `Command failed (exit ${exitCode}): ${summary}`;
+  return `Command failed (exit ${exitCode}): ${summary}\n${tail}`;
 }
 
 /**

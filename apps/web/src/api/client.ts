@@ -152,6 +152,8 @@ export interface BuildRow {
   stackId: string;
   buildType: string | null;
   environmentId: string | null;
+  certificateId: string | null;
+  certificateLabel: string | null;
   status: BuildStatus;
   hostId: string | null;
   errorMessage: string | null;
