@@ -4,7 +4,7 @@ import { db } from "../../db/client.js";
 import { apps, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
-import { exec, resolveMacHost, withSsh } from "../ssh.js";
+import { exec, resolveLinuxHost, resolveMacHost, withSsh } from "../ssh.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
 
@@ -44,7 +44,6 @@ export class MacRunner implements Runner {
     const orgId = a.orgId;
     const buildId = ctx.build.id;
     const remoteDir = `${host.remoteBase}/${orgId}/${buildId}`;
-    const downloadsDir = `${host.downloadsBase}/${orgId}/${buildId}`;
     const macTools = host.toolsPath ?? env.MAC_BUILD_TOOLS;
     const cloneUrl = cloneUrlFor(conn.provider as "github" | "gitlab" | "bitbucket", a.gitRepoFullName, token);
 
@@ -68,7 +67,7 @@ export class MacRunner implements Runner {
       // --- preparing ---
       await ctx.step("preparing", "running");
       try {
-        await run(`mkdir -p ${shq(remoteDir)} ${shq(downloadsDir)}`);
+        await run(`mkdir -p ${shq(remoteDir)}`);
         await ctx.log(`Cloning ${a.gitRepoFullName} @ ${ctx.build.commitSha.slice(0, 7)}`);
         await run(`bash -lc ${shq(`set -e; cd ${shq(remoteDir)} && git init -q && git remote add origin ${shq(cloneUrl)} && git fetch --depth 1 origin ${shq(ctx.build.commitSha)} && git checkout -q FETCH_HEAD`)}`);
         await ctx.step("preparing", "success", 0);
@@ -139,45 +138,96 @@ export class MacRunner implements Runner {
       if (await ctx.isCancelled()) throw new Error("cancelled");
 
       // --- publishing ---
+      // Mac disks are small; we push artifacts straight to the Linux box
+      // (xbuilds.raidpr.com) using scp *from the Mac* (not Mac->API->Linux —
+      // that double-hop through WSL was ~17 KB/s on a home uplink). The Linux
+      // SSH key is pre-installed on the Mac at ~/.ssh/raidx_linux_key.
       await ctx.step("publishing", "running");
+      const linuxHost = await resolveLinuxHost();
+      if (!linuxHost) throw new Error("Linux build host is not configured — set LINUX_BUILD_* in env or add a build_hosts row");
+
       const safeAppName = a.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "app";
       const buildDate = new Date().toISOString().slice(0, 10).replaceAll("-", "_");
       const artifactBase = `${safeAppName}_${buildDate}`;
-      // Common output locations from the existing iOS pipeline; we copy whatever is present.
-      const candidates = [
-        { src: `${remoteDir}/build/Export/${a.name}.ipa`, dst: `${downloadsDir}/${artifactBase}.ipa`, kind: "ipa" },
-        { src: `${remoteDir}/build/${a.name}.xcarchive`, dst: `${downloadsDir}/${artifactBase}.xcarchive`, kind: "xcarchive", isDir: true },
-        { src: `${remoteDir}/build/Export/${a.name}.app.dSYM.zip`, dst: `${downloadsDir}/${artifactBase}.dSYM.zip`, kind: "dsym" },
+
+      // build_ios_app.sh writes to ${remoteDir}/ios/build/{ipa/App.ipa,App.xcarchive}.
+      // The dSYM lives inside the xcarchive at dSYMs/. Zip them so each artifact
+      // is a single file scp can push.
+      const macBuildDir = `${remoteDir}/ios/build`;
+      const macIpa = `${macBuildDir}/ipa/App.ipa`;
+      const macArchiveZip = `${macBuildDir}/App.xcarchive.zip`;
+      const macDsymZip = `${macBuildDir}/App.dSYM.zip`;
+
+      await ctx.log("Zipping xcarchive and dSYMs on the Mac…");
+      await run(
+        `bash -lc ${shq(
+          `set -e; ` +
+          `[ -f ${shq(macIpa)} ] || { echo "missing IPA at ${macIpa}" >&2; exit 1; }; ` +
+          `[ -d ${shq(`${macBuildDir}/App.xcarchive`)} ] || { echo "missing xcarchive at ${macBuildDir}/App.xcarchive" >&2; exit 1; }; ` +
+          `cd ${shq(macBuildDir)} && rm -f App.xcarchive.zip App.dSYM.zip && ` +
+          `zip -qr App.xcarchive.zip App.xcarchive && ` +
+          `cd App.xcarchive && zip -qr ${shq(macDsymZip)} dSYMs`,
+        )}`,
+      );
+
+      // SSH options for Mac -> Linux. Key was pre-installed; host pre-trusted
+      // via ssh-keyscan, so StrictHostKeyChecking=yes is safe.
+      const linuxDir = `${linuxHost.downloadsBase}/${orgId}/${buildId}`;
+      const linuxTarget = `${linuxHost.username}@${linuxHost.host}`;
+      const macLinuxKey = "~/.ssh/raidx_linux_key";
+      const sshOpts = `-i ${macLinuxKey} -o StrictHostKeyChecking=yes -o ServerAliveInterval=30`;
+
+      // Create the remote directory on Linux (idempotent).
+      await run(
+        `bash -lc ${shq(
+          `ssh -p ${linuxHost.port} ${sshOpts} ${linuxTarget} ${shq(`mkdir -p ${shq(linuxDir)}`)}`,
+        )}`,
+      );
+
+      const specs = [
+        { kind: "ipa", srcPath: macIpa, dstName: `${artifactBase}.ipa` },
+        { kind: "xcarchive", srcPath: macArchiveZip, dstName: `${artifactBase}.xcarchive.zip` },
+        { kind: "dsym", srcPath: macDsymZip, dstName: `${artifactBase}.dSYM.zip` },
       ];
-      const artifacts: { kind: string; url: string }[] = [];
-      for (const c of candidates) {
-        const flag = c.isDir ? "-d" : "-f";
-        const cp = c.isDir ? `cp -R ${shq(c.src)} ${shq(c.dst)}` : `cp ${shq(c.src)} ${shq(c.dst)}`;
-        const r = await exec(ssh, `bash -lc ${shq(`if [ ${flag} ${shq(c.src)} ]; then ${cp} && echo present; else echo missing; fi`)}`, (line) => ctx.log(line));
-        if (r.exitCode === 0) {
-          // No reliable presence result via stdout in current helper; check existence again.
-          const check = await exec(ssh, `bash -lc ${shq(`[ ${flag} ${shq(c.dst)} ] && echo ok || echo missing`)}`, () => {});
-          if (check.exitCode === 0) {
-            artifacts.push({
-              kind: c.kind,
-              url: `${host.downloadsBaseUrl}/${orgId}/${buildId}/${c.dst.split("/").pop()}`,
-            });
-          }
-        }
+
+      const artifacts: { kind: string; url: string; sizeBytes?: number }[] = [];
+      for (const s of specs) {
+        const dstPath = `${linuxDir}/${s.dstName}`;
+        await ctx.log(`scp ${s.kind}: ${s.srcPath} -> ${linuxHost.host}:${dstPath}`);
+        // Run scp on the Mac. -q suppresses progress (the Mac stderr would be
+        // a control-char mess in our log); we log the size+throughput ourselves.
+        // The trailing block verifies the bytes landed intact: a successful scp
+        // can still write a truncated file if the connection drops at the wrong
+        // moment, so we compare local stat (-f %z on macOS) against remote stat
+        // (-c %s on Linux) over the same key.
+        const cmd =
+          `set -e; ` +
+          `t0=$(date +%s); ` +
+          `scp -q -P ${linuxHost.port} ${sshOpts} ${shq(s.srcPath)} ${linuxTarget}:${shq(dstPath)}; ` +
+          `local_sz=$(stat -f %z ${shq(s.srcPath)}); ` +
+          `remote_sz=$(ssh -p ${linuxHost.port} ${sshOpts} ${linuxTarget} ${shq(`stat -c %s ${shq(dstPath)}`)}); ` +
+          `if [ "$local_sz" != "$remote_sz" ]; then echo "size mismatch: local=$local_sz remote=$remote_sz" >&2; exit 1; fi; ` +
+          `secs=$(( $(date +%s) - t0 )); [ $secs -lt 1 ] && secs=1; ` +
+          `mb=$(awk "BEGIN { printf \\"%.1f\\", $local_sz/1048576 }"); ` +
+          `rate=$(awk "BEGIN { printf \\"%.1f\\", $local_sz/1048576/$secs }"); ` +
+          `echo "  ${s.kind}: $mb MB in ${'$'}{secs}s (${'$'}rate MB/s) — ${'$'}local_sz bytes"`;
+        await run(`bash -lc ${shq(cmd)}`);
+        artifacts.push({
+          kind: s.kind,
+          url: `${linuxHost.downloadsBaseUrl}/${orgId}/${buildId}/${s.dstName}`,
+          // sizeBytes left undefined; could be parsed from the log line above if
+          // we end up needing it in builds.artifacts JSON.
+        });
       }
       await ctx.step("publishing", "success", 0);
 
       // --- cleanup ---
-      // On success, keep only the `ios` folder inside the build dir (handy for
-      // re-builds / debugging) and wipe everything else. Artifacts already live
-      // under `downloadsDir`, so nothing user-facing is lost.
+      // Artifacts now live on the Linux box; the Mac copy is no longer needed.
+      // Wipe the entire build dir so a small Mac disk doesn't fill up across
+      // many builds.
       await ctx.step("cleanup", "running");
       try {
-        await run(
-          `bash -lc ${shq(
-            `set -e; cd ${shq(remoteDir)} && find . -mindepth 1 -maxdepth 1 ! -name ios -exec rm -rf {} +`,
-          )}`,
-        );
+        await run(`bash -lc ${shq(`rm -rf ${shq(remoteDir)}`)}`);
       } catch {
         /* best-effort */
       }

@@ -1,0 +1,28 @@
+services:
+  xbuilds_fileserver:
+    image: nginx:alpine
+    volumes:
+      - /root/RaidX/downloads:/usr/share/nginx/html:ro
+      - /root/RaidX/Tools/android/.docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    deploy:
+      labels:
+        - traefik.enable=true
+
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+
+        - traefik.http.routers.xbuilds-http.rule=Host(`xbuilds.raidpr.com`)
+        - traefik.http.routers.xbuilds-http.entrypoints=http
+        - traefik.http.routers.xbuilds-http.middlewares=https-redirect
+
+        - traefik.http.routers.xbuilds-https.rule=Host(`xbuilds.raidpr.com`)
+        - traefik.http.routers.xbuilds-https.entrypoints=https
+        - traefik.http.routers.xbuilds-https.tls=true
+        - traefik.http.routers.xbuilds-https.tls.certresolver=le
+        - traefik.http.services.xbuilds.loadbalancer.server.port=80
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
