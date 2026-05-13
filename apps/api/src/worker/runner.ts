@@ -23,10 +23,19 @@ export interface Runner {
  */
 export class StubRunner implements Runner {
   async run(ctx: RunnerContext): Promise<{ artifacts: { kind: string; url: string; sizeBytes?: number }[] }> {
+    const hasAutoDeploy = !!ctx.build.autoDeployDestinationId;
     const phases =
       ctx.build.target === "web"
         ? ["preparing", "installing", "building", "packaging", "publishing", "cleanup"]
-        : ["preparing", "installing", "building", "signing", "packaging", "publishing", "cleanup"];
+        : [
+            "preparing",
+            "installing",
+            "building",
+            "signing",
+            "packaging",
+            ...(hasAutoDeploy ? ["publishing"] : []),
+            "cleanup",
+          ];
 
     for (const phase of phases) {
       if (await ctx.isCancelled()) throw new Error("cancelled");

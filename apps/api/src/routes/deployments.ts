@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { apps, builds, deployments, storeDestinations } from "../db/schema.js";
+import { apps, builds, deployments, storeDestinations, users } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { encryptString } from "../lib/crypto.js";
 
@@ -95,6 +95,8 @@ export async function deploymentRoutes(server: FastifyInstance) {
     if (!a) return reply.notFound();
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
+    // Newest-first list including everything the table needs (build target,
+    // commit info, triggered-by) so the page doesn't have to make N+1 lookups.
     const rows = await db
       .select({
         id: deployments.id,
@@ -107,14 +109,36 @@ export async function deploymentRoutes(server: FastifyInstance) {
         createdAt: deployments.createdAt,
         startedAt: deployments.startedAt,
         finishedAt: deployments.finishedAt,
+        triggeredByName: users.name,
+        triggeredByEmail: users.email,
+        buildTarget: builds.target,
+        buildCommitSha: builds.commitSha,
+        buildCommitMessage: builds.commitMessage,
+        buildBranch: builds.branch,
+        buildCreatedAt: builds.createdAt,
       })
       .from(deployments)
       .innerJoin(storeDestinations, eq(storeDestinations.id, deployments.destinationId))
       .innerJoin(builds, eq(builds.id, deployments.buildId))
+      .leftJoin(users, eq(users.id, deployments.createdByUserId))
       .where(eq(builds.appId, a.id))
       .orderBy(desc(deployments.createdAt))
       .limit(50);
-    return rows;
+
+    // The "Build" column shows #N — the sequential build number within the
+    // app. Compute it here so we don't ship build rows to the client.
+    const allBuilds = await db
+      .select({ id: builds.id, createdAt: builds.createdAt })
+      .from(builds)
+      .where(eq(builds.appId, a.id))
+      .orderBy(asc(builds.createdAt));
+    const buildNumberById = new Map<string, number>();
+    allBuilds.forEach((b, i) => buildNumberById.set(b.id, i + 1));
+
+    return rows.map((r) => ({
+      ...r,
+      buildNumber: buildNumberById.get(r.buildId) ?? null,
+    }));
   });
 
   server.post<{ Params: { appId: string } }>("/apps/:appId/deployments", async (req, reply) => {

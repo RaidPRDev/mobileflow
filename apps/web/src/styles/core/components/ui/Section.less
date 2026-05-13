@@ -1,21 +1,47 @@
-.page {
-  display: grid;
-  gap: var(--space-xl);
-  max-width: 980px;
+// Standard page shell: 1100px centered column layout. Shared by the main
+// listing pages so they line up consistently against the sidebar. Add new
+// page wrappers (e.g. `.your-page`) to this selector list to opt in — the
+// page-specific rules (headers, tables, empty states) live alongside their
+// components.
+.page,
+.apps-page,
+.commits-page,
+.builds-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.page-header {
+// Shared page header: the title row above the table/content. Renders a
+// bottom rule so listing pages line up consistently. Add new page-specific
+// `__header` classes here when introducing a new listing page.
+.page-header,
+.apps-page__header,
+.commits-page__header,
+.builds-page__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
   flex-wrap: wrap;
+  padding: var(--space-md) 0 var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-xs);
 }
 
-.page-title {
-  font-size: 24px;
+// Shared page title styling. Matches the listing-page titles so e.g. the
+// "Store destinations" header looks the same as "Builds" or "Commits".
+.page-title,
+.apps-page__title,
+.commits-page__title,
+.builds-page__title {
+  font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
   margin: 0;
 }
 
@@ -41,13 +67,47 @@
   font-weight: 600;
 }
 
-.empty-state {
-  padding: var(--space-2xl);
+// Shared empty-state card. Used by every listing page (Builds, Deployments,
+// Store destinations, Environments, Signing Certificates). The `.builds-empty`
+// alias is kept so existing JSX keeps working — new usages should prefer
+// `.empty-state`. Pages can render just a title, title + body, or title +
+// body + action button (e.g. "New build").
+.empty-state,
+.builds-empty {
+  max-width: 480px;
+  margin: var(--space-2xl) auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  color: var(--color-fg-muted);
-  font-size: 14px;
+  gap: var(--space-md);
+  padding: var(--space-2xl) var(--space-lg);
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+  font-size: 14px;
+}
+
+.empty-state__title,
+.builds-empty__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.empty-state__body,
+.builds-empty__body {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+}
+
+.empty-state__link,
+.builds-empty__link {
+  color: var(--color-accent);
+  text-decoration: underline;
 }
 
 .list {

@@ -197,3 +197,59 @@ export async function withSsh<T>(target: SshTarget, action: (c: Client) => Promi
     client.end();
   }
 }
+
+/**
+ * ssh.exec() that always drains stdout+stderr and enforces a timeout. Plain
+ * `ssh.exec` with only a "close" listener can hang if the channel has buffered
+ * output nobody is reading — bit us once in the iOS pipeline and once in the
+ * Android keystore upload.
+ */
+export function execDrained(ssh: Client, cmd: string, label: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    ssh.exec(cmd, (err, stream) => {
+      if (err) { clearTimeout(timer); return reject(err); }
+      let stderrBuf = "";
+      stream.on("data", () => {}); // drain stdout
+      stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
+      stream.on("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (code === 0) return resolve();
+        reject(new Error(`${label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
+      });
+      stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
+    });
+  });
+}
+
+/**
+ * Upload a base64-encoded blob to a remote file by piping it into
+ * `base64 -d` (Linux) or `base64 -D` (macOS). Drains stdout/stderr and
+ * enforces a timeout — same hang risk as execDrained. The parent
+ * directory must already exist; the caller is expected to mkdir.
+ */
+export function uploadBase64(
+  ssh: Client,
+  opts: { base64: string; remotePath: string; label: string; decoder: "linux" | "mac"; timeoutMs?: number },
+): Promise<void> {
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const flag = opts.decoder === "mac" ? "-D" : "-d";
+  const dest = `'${opts.remotePath.replace(/'/g, `'\\''`)}'`;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`upload ${opts.label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    ssh.exec(`base64 ${flag} > ${dest}`, (err, stream) => {
+      if (err) { clearTimeout(timer); return reject(err); }
+      let stderrBuf = "";
+      stream.on("data", () => {}); // drain stdout
+      stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
+      stream.on("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (code === 0) return resolve();
+        reject(new Error(`upload ${opts.label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
+      });
+      stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
+      stream.write(opts.base64);
+      stream.end();
+    });
+  });
+}

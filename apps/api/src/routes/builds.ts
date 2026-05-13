@@ -8,11 +8,20 @@ import { assertCanStartBuild } from "../plans/gate.js";
 import { buildBus } from "../worker/events.js";
 import { SESSION_COOKIE, getSession } from "../auth/session.js";
 
-const STEP_TEMPLATES: Record<"ios" | "android" | "web", string[]> = {
-  android: ["preparing", "installing", "building", "signing", "packaging", "publishing", "cleanup"],
-  ios: ["preparing", "installing", "building", "signing", "packaging", "publishing", "cleanup"],
-  web: ["preparing", "installing", "building", "packaging", "publishing", "cleanup"],
-};
+/**
+ * Phases shown in the UI and persisted to build_steps. "publishing" is only
+ * included on iOS/Android when the build will upload to a store destination —
+ * if the user didn't pick a destination, the artifact-move-to-downloads work
+ * happens inside "packaging" and there's no separate publishing phase. Web
+ * always shows publishing (its publish step is the web-host deploy, not a
+ * store upload).
+ */
+export function phasesFor(target: "ios" | "android" | "web", hasAutoDeploy: boolean): string[] {
+  if (target === "web") return ["preparing", "installing", "building", "packaging", "publishing", "cleanup"];
+  const signing = target === "ios" || target === "android" ? ["signing"] : [];
+  const publishing = hasAutoDeploy ? ["publishing"] : [];
+  return ["preparing", "installing", "building", ...signing, "packaging", ...publishing, "cleanup"];
+}
 
 const StartBody = z.object({
   commitSha: z.string().min(1).max(120),
@@ -139,7 +148,7 @@ export async function buildsRoutes(app: FastifyInstance) {
       .returning();
     if (!created) return reply.internalServerError();
 
-    const tpl = STEP_TEMPLATES[body.target];
+    const tpl = phasesFor(body.target, !!body.autoDeployDestinationId);
     await db.insert(buildSteps).values(tpl.map((name, i) => ({ buildId: created.id, name, sortOrder: i })));
     return reply.code(201).send(created);
   });

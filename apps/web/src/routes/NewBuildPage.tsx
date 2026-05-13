@@ -15,6 +15,7 @@ import {
   Switch,
 } from "@mobileflow/ui";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
+import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
 import { ArrowLeft, Check, GitBranch, Plus, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type BuildTarget, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
@@ -229,7 +230,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
   const [certificateId, setCertificateId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [envOpen, setEnvOpen] = useState(false);
-  const [appStoreOn, setAppStoreOn] = useState(false);
+  const [destinationOn, setDestinationOn] = useState(false);
   const [autoDeployDestId, setAutoDeployDestId] = useState<string>("");
 
   const appQ = useQuery({
@@ -264,30 +265,42 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
   });
 
   const iosDestinations = useMemo(
-    () => (destsQ.data ?? []).filter((d) => d.type === "app_store"),
+    () => (destsQ.data ?? []).filter((d) => d.type === "app_store" || d.type === "testflight"),
+    [destsQ.data],
+  );
+  const androidDestinations = useMemo(
+    () => (destsQ.data ?? []).filter((d) => d.type === "play_store" || d.type === "play_internal"),
     [destsQ.data],
   );
 
-  // Reset/default the destination selector when toggled on, target changes,
-  // or the list loads.
-  useEffect(() => {
-    if (target !== "ios" || !appStoreOn) {
-      if (autoDeployDestId) setAutoDeployDestId("");
-      return;
-    }
-    if (iosDestinations.length === 0) {
-      if (autoDeployDestId) setAutoDeployDestId("");
-      return;
-    }
-    if (!iosDestinations.some((d) => d.id === autoDeployDestId)) {
-      setAutoDeployDestId(iosDestinations[0]!.id);
-    }
-  }, [target, appStoreOn, iosDestinations, autoDeployDestId]);
+  // Destinations card is gated on platform + build type: iOS only when
+  // buildType=appstore, Android only when buildType=release. Web has no
+  // store destinations.
+  const destinationsVisible =
+    (target === "ios" && buildType === "appstore") ||
+    (target === "android" && buildType === "release");
+  const activeDestinations = target === "ios" ? iosDestinations : target === "android" ? androidDestinations : [];
 
-  // Reset switch when target changes off iOS.
+  // Reset/default the destination selector when toggled on, target/buildType
+  // changes, or the list loads.
   useEffect(() => {
-    if (target !== "ios" && appStoreOn) setAppStoreOn(false);
-  }, [target, appStoreOn]);
+    if (!destinationsVisible || !destinationOn) {
+      if (autoDeployDestId) setAutoDeployDestId("");
+      return;
+    }
+    if (activeDestinations.length === 0) {
+      if (autoDeployDestId) setAutoDeployDestId("");
+      return;
+    }
+    if (!activeDestinations.some((d) => d.id === autoDeployDestId)) {
+      setAutoDeployDestId(activeDestinations[0]!.id);
+    }
+  }, [destinationsVisible, destinationOn, activeDestinations, autoDeployDestId]);
+
+  // Reset switch when destinations card becomes hidden.
+  useEffect(() => {
+    if (!destinationsVisible && destinationOn) setDestinationOn(false);
+  }, [destinationsVisible, destinationOn]);
 
   const branchName = appQ.data?.gitDefaultBranch ?? "main";
 
@@ -331,7 +344,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
         environmentId: environmentId || undefined,
         certificateId: certificateId || undefined,
         autoDeployDestinationId:
-          target === "ios" && appStoreOn && autoDeployDestId ? autoDeployDestId : undefined,
+          destinationsVisible && destinationOn && autoDeployDestId ? autoDeployDestId : undefined,
       }),
     onSuccess: (b) => {
       qc.invalidateQueries({ queryKey: ["builds", appId] });
@@ -448,13 +461,13 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
           </button>
         </div>
 
-        {target === "ios" && (
+        {destinationsVisible && (
           <DestinationsSection
             appId={appId}
-            target={target}
-            destinations={iosDestinations}
-            switchOn={appStoreOn}
-            onSwitchChange={setAppStoreOn}
+            target={target as "ios" | "android"}
+            destinations={activeDestinations}
+            switchOn={destinationOn}
+            onSwitchChange={setDestinationOn}
             selectedDestId={autoDeployDestId}
             onSelectedDestIdChange={setAutoDeployDestId}
           />
@@ -485,7 +498,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
 
 interface DestinationsSectionProps {
   appId: string;
-  target: BuildTarget;
+  target: "ios" | "android";
   destinations: { id: string; name: string; type: string }[];
   switchOn: boolean;
   onSwitchChange: (v: boolean) => void;
@@ -502,23 +515,36 @@ function DestinationsSection({
   selectedDestId,
   onSelectedDestIdChange,
 }: DestinationsSectionProps) {
-  // Only iOS is wired up to a store destination today; Android comes later.
-  if (target !== "ios") return null;
+  const meta = target === "ios"
+    ? {
+        icon: appStoreIcon,
+        title: "App Store",
+        description: "Distribute your builds to the iOS App Store.",
+        ariaLabel: "Toggle App Store deployment",
+        emptyLabel: "App Store",
+      }
+    : {
+        icon: googlePlayIcon,
+        title: "Google Play",
+        description: "Distribute your builds to Google Play.",
+        ariaLabel: "Toggle Google Play deployment",
+        emptyLabel: "Google Play",
+      };
 
   return (
     <div className="new-build-section">
       <Label className="new-build-label">Destinations</Label>
       <div className="dest-card">
         <div className="dest-card__row">
-          <img src={appStoreIcon} alt="" className="dest-card__icon" width={36} height={36} />
+          <img src={meta.icon} alt="" className="dest-card__icon" width={36} height={36} />
           <div className="dest-card__text">
-            <div className="dest-card__title">App Store</div>
-            <div className="dest-card__description">Distribute your builds to the iOS App Store.</div>
+            <div className="dest-card__title">{meta.title}</div>
+            <div className="dest-card__description">{meta.description}</div>
           </div>
           <Switch
             checked={switchOn}
             onCheckedChange={onSwitchChange}
-            ariaLabel="Toggle App Store deployment"
+            ariaLabel={meta.ariaLabel}
           />
         </div>
         {switchOn && (
@@ -533,7 +559,7 @@ function DestinationsSection({
               />
             ) : (
               <p className="new-build-help">
-                No App Store destinations yet.{" "}
+                No {meta.emptyLabel} destinations yet.{" "}
                 <Link to={`/app/${appId}/deploy/destinations`} className="new-build-link">
                   Add one
                 </Link>{" "}

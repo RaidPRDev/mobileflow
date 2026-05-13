@@ -4,7 +4,8 @@ import { db } from "../../db/client.js";
 import { apps, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
-import { exec, resolveLinuxHost, withSsh } from "../ssh.js";
+import { exec, execDrained, resolveLinuxHost, uploadBase64, withSsh } from "../ssh.js";
+import { runInlinePublish } from "../inlinePublish.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
 
@@ -103,12 +104,11 @@ export class LinuxDockerAndroidRunner implements Runner {
         await ctx.step("installing", "success", 0);
         await ctx.step("building", "success", 0);
         await ctx.step("signing", "success", 0);
-        await ctx.step("packaging", "success", 0);
       } catch (e) {
-        // installing/building/signing/packaging run inside one docker call
+        // installing/building/signing run inside one docker call
         // (main_build.sh), so we cannot tell which sub-phase actually failed
         // without instrumenting that script. Mark the entry phase failed and
-        // the remaining phases skipped rather than lying that all four failed.
+        // the remaining phases skipped rather than lying that all three failed.
         await ctx.step("installing", "failed", 1);
         for (const name of ["building", "signing", "packaging"] as const) {
           await ctx.step(name, "skipped");
@@ -118,22 +118,44 @@ export class LinuxDockerAndroidRunner implements Runner {
 
       if (await ctx.isCancelled()) throw new Error("cancelled");
 
-      // --- publishing ---
-      await ctx.step("publishing", "running");
-      const aabSrc = `${remoteDir}/android/app/build/outputs/bundle/release/app-release.aab`;
-      const apkSrc = `${remoteDir}/android/app/build/outputs/apk/release/app-release.apk`;
-      const aabDst = `${downloadsDir}/${artifactBase}.aab`;
-      const apkDst = `${downloadsDir}/${artifactBase}.apk`;
-      await run(`bash -lc ${shq(`set -e; [ -f ${shq(aabSrc)} ] && cp ${shq(aabSrc)} ${shq(aabDst)} || true; [ -f ${shq(apkSrc)} ] && cp ${shq(apkSrc)} ${shq(apkDst)} || true`)}`);
-      await ctx.step("publishing", "success", 0);
-
+      // --- packaging: move artifacts to the downloads server so they're at a
+      // stable URL (the publishing phase, if present, fetches over HTTP). ---
+      await ctx.step("packaging", "running");
       const artifacts: { kind: string; url: string }[] = [];
-      const checkAndAdd = async (path: string, kind: string, urlPath: string) => {
-        const r = await exec(ssh, `[ -f ${shq(path)} ] && echo present || echo missing`, () => {});
-        if (r.exitCode === 0) artifacts.push({ kind, url: `${host.downloadsBaseUrl}${urlPath}` });
-      };
-      await checkAndAdd(aabDst, "aab", `/${orgId}/${buildId}/${artifactBase}.aab`);
-      await checkAndAdd(apkDst, "apk", `/${orgId}/${buildId}/${artifactBase}.apk`);
+      try {
+        const aabSrc = `${remoteDir}/android/app/build/outputs/bundle/release/app-release.aab`;
+        const apkSrc = `${remoteDir}/android/app/build/outputs/apk/release/app-release.apk`;
+        const aabDst = `${downloadsDir}/${artifactBase}.aab`;
+        const apkDst = `${downloadsDir}/${artifactBase}.apk`;
+        await run(`bash -lc ${shq(`set -e; [ -f ${shq(aabSrc)} ] && cp ${shq(aabSrc)} ${shq(aabDst)} || true; [ -f ${shq(apkSrc)} ] && cp ${shq(apkSrc)} ${shq(apkDst)} || true`)}`);
+
+        const checkAndAdd = async (path: string, kind: string, urlPath: string) => {
+          const r = await exec(ssh, `[ -f ${shq(path)} ] && echo present || echo missing`, () => {});
+          if (r.exitCode === 0) artifacts.push({ kind, url: `${host.downloadsBaseUrl}${urlPath}` });
+        };
+        await checkAndAdd(aabDst, "aab", `/${orgId}/${buildId}/${artifactBase}.aab`);
+        await checkAndAdd(apkDst, "apk", `/${orgId}/${buildId}/${artifactBase}.apk`);
+        await ctx.step("packaging", "success", 0);
+      } catch (e) {
+        await ctx.step("packaging", "failed", 1);
+        throw e;
+      }
+
+      if (await ctx.isCancelled()) throw new Error("cancelled");
+
+      // --- publishing: run the store upload inline. The deployments row is
+      // created here so the same upload is visible on the Deployments page
+      // (logs piped to both). Only present when auto-deploy was selected. ---
+      if (ctx.build.autoDeployDestinationId) {
+        await ctx.step("publishing", "running");
+        try {
+          await runInlinePublish(ctx, artifacts);
+          await ctx.step("publishing", "success", 0);
+        } catch (e) {
+          await ctx.step("publishing", "failed", 1);
+          throw e;
+        }
+      }
 
       // --- cleanup (best-effort; ignore failures) ---
       await ctx.step("cleanup", "running");
@@ -185,16 +207,14 @@ async function materializeAndroidKeystore(
   if (cert.platform !== "android") throw new Error(`Selected signing certificate is for ${cert.platform}, not Android.`);
   if (cert.kind !== "keystore") throw new Error(`Selected signing certificate must be a keystore (got kind=${cert.kind}).`);
 
-  const remotePath = `${remoteDir}/certs/google/${cert.fileName}`;
+  const certsDir = `${remoteDir}/certs/google`;
+  await execDrained(ssh, `mkdir -p ${shq(certsDir)}`, "mkdir keystore dir", 15_000);
+
+  const remotePath = `${certsDir}/${cert.fileName}`;
   const blobBase64 = decryptString(cert.fileBlobEnc);
-  await new Promise<void>((resolve, reject) => {
-    ssh.exec(`mkdir -p ${shq(`${remoteDir}/certs/google`)} && base64 -d > ${shq(remotePath)}`, (err, stream) => {
-      if (err) return reject(err);
-      stream.on("close", (code: number | null) => (code === 0 ? resolve() : reject(new Error(`keystore upload failed (${code})`))));
-      stream.write(blobBase64);
-      stream.end();
-    });
-  });
+  const sizeKb = Math.round((blobBase64.length * 3) / 4 / 1024);
+  await ctx.log(`Uploading keystore (~${sizeKb} KB) -> ${remotePath}`);
+  await uploadBase64(ssh, { base64: blobBase64, remotePath, label: "keystore", decoder: "linux" });
   await ctx.log(`Materialized keystore: ${cert.fileName}`);
 
   const meta = (cert.metadata ?? {}) as Record<string, string>;

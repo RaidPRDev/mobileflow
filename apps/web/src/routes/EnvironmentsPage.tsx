@@ -54,54 +54,56 @@ export function EnvironmentsPage() {
       {envsQ.isLoading && <p className="text-help">Loading…</p>}
       {envsQ.error && <p className="text-error">{(envsQ.error as ApiError).message}</p>}
 
-      <div className="page-section">
-        <table className="data-table envs-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Secrets</th>
-              <th>Variables</th>
-              <th className="col-actions" aria-label="Actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {envsQ.data?.map((env) => {
-              const secrets = env.vars.filter((v) => v.isSecret);
-              const variables = env.vars.filter((v) => !v.isSecret);
-              return (
-                <tr key={env.id}>
-                  <td>
-                    <div className="data-row-name">{env.name}</div>
-                  </td>
-                  <td>
-                    <KvPreview rows={secrets} />
-                  </td>
-                  <td>
-                    <KvPreview rows={variables} />
-                  </td>
-                  <td className="col-actions">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <IconButton variant="menu" aria-label="More actions">
-                          <MoreVertical size={16} />
-                        </IconButton>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setEditing(env)}>Edit</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setDuplicating(env)}>Duplicate</DropdownMenuItem>
-                        <DropdownMenuItem destructive onSelect={() => remove.mutate(env.id)}>
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {envsQ.data?.length === 0 && <div className="empty-state">No environments yet.</div>}
-      </div>
+      {!!envsQ.data?.length && (
+        <div className="data-grid envs-table" role="table">
+          <div className="data-grid__head" role="row">
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Secrets</span>
+            <span role="columnheader">Variables</span>
+            <span role="columnheader" aria-label="Actions"></span>
+          </div>
+          {envsQ.data.map((env) => {
+            const secrets = env.vars.filter((v) => v.isSecret);
+            const variables = env.vars.filter((v) => !v.isSecret);
+            return (
+              <div key={env.id} className="data-grid__row envs-row" role="row">
+                <div role="cell">
+                  <div className="data-row-name">{env.name}</div>
+                </div>
+                <div role="cell">
+                  <KvPreview rows={secrets} />
+                </div>
+                <div role="cell">
+                  <KvPreview rows={variables} />
+                </div>
+                <div role="cell" className="data-grid__actions">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton variant="menu" aria-label="More actions">
+                        <MoreVertical size={16} />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onSelect={() => setEditing(env)}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setDuplicating(env)}>Duplicate</DropdownMenuItem>
+                      <DropdownMenuItem destructive onSelect={() => remove.mutate(env.id)}>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {envsQ.data?.length === 0 && (
+        <div className="empty-state">
+          <h2 className="empty-state__title">No environments yet</h2>
+          <p className="empty-state__body">Group variables and secrets together for your builds.</p>
+          <Button onClick={() => setOpenCreate(true)}>New environment</Button>
+        </div>
+      )}
 
       {openCreate && appId && (
         <NewEnvironmentDialog appId={appId} onClose={() => setOpenCreate(false)} />

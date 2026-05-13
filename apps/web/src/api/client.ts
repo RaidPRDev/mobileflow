@@ -137,7 +137,7 @@ export interface BuildDeploymentSummary {
   buildId: string;
   destinationId: string;
   destinationName: string | null;
-  destinationType: "app_store" | "play_store" | null;
+  destinationType: "app_store" | "testflight" | "play_store" | "play_internal" | null;
   status: "queued" | "running" | "success" | "failed" | "cancelled";
   createdAt: string;
 }
@@ -163,6 +163,7 @@ export interface BuildRow {
   finishedAt: string | null;
   triggeredByName?: string | null;
   triggeredByEmail?: string | null;
+  autoDeployDestinationId?: string | null;
   deployments?: BuildDeploymentSummary[];
 }
 
@@ -179,6 +180,42 @@ export interface BuildStepRow {
 export interface BuildDetail extends Omit<BuildRow, never> {
   steps: BuildStepRow[];
   log: { offset: number; length: number; tail: string };
+}
+
+export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+export type DestinationType = "app_store" | "testflight" | "play_store" | "play_internal";
+
+export interface DeploymentRow {
+  id: string;
+  buildId: string;
+  destinationId: string;
+  destinationName: string;
+  destinationType: DestinationType;
+  status: DeploymentStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  triggeredByName: string | null;
+  triggeredByEmail: string | null;
+  buildTarget: BuildTarget;
+  buildCommitSha: string;
+  buildCommitMessage: string | null;
+  buildBranch: string | null;
+  buildCreatedAt: string;
+  buildNumber: number | null;
+}
+
+export interface DeploymentDetail {
+  id: string;
+  buildId: string;
+  destinationId: string;
+  status: DeploymentStatus;
+  errorMessage: string | null;
+  logText: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
 export const api = {
@@ -300,7 +337,7 @@ export const api = {
 
   // Deployments
   listDestinations: (appId: string) =>
-    request<{ id: string; appId: string; name: string; type: "app_store" | "play_store"; bundleId: string | null; trackOrChannel: string | null; createdAt: string }[]>(
+    request<{ id: string; appId: string; name: string; type: "app_store" | "testflight" | "play_store" | "play_internal"; bundleId: string | null; trackOrChannel: string | null; createdAt: string }[]>(
       `/apps/${appId}/destinations`,
     ),
   createDestination: (
@@ -316,19 +353,11 @@ export const api = {
   deleteDestination: (id: string) => request<void>(`/destinations/${id}`, { method: "DELETE" }),
 
   listDeployments: (appId: string) =>
-    request<{
-      id: string;
-      buildId: string;
-      destinationId: string;
-      destinationName: string;
-      destinationType: string;
-      status: "queued" | "running" | "success" | "failed" | "cancelled";
-      errorMessage: string | null;
-      createdAt: string;
-      finishedAt: string | null;
-    }[]>(`/apps/${appId}/deployments`),
+    request<DeploymentRow[]>(`/apps/${appId}/deployments`),
   createDeployment: (appId: string, body: { buildId: string; destinationId: string }) =>
     request<{ id: string }>(`/apps/${appId}/deployments`, { method: "POST", body: JSON.stringify(body) }),
+  getDeployment: (id: string) =>
+    request<DeploymentDetail>(`/deployments/${id}`),
 
   // Billing
   getSubscription: (orgId: string) =>

@@ -1,38 +1,100 @@
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+// ─── Shared div-based data grid (ARIA-aware) ─────────────────────────────────
+//
+// Used by every listing page (Builds, Deployments, Store destinations,
+// Environments, Signing Certificates). Each page sets its own
+// `grid-template-columns` via a sibling modifier class (e.g. `.builds-table`)
+// while header text, row borders, padding, and hover live here so the look
+// stays consistent. Pages should apply ARIA roles in the JSX:
+//
+//   <div className="data-grid …" role="table">
+//     <div className="data-grid__head" role="row">
+//       <span role="columnheader">…</span>
+//     </div>
+//     <div className="data-grid__row" role="row">          // or <button>
+//       <div role="cell">…</div>
+//     </div>
+//   </div>
+
+.data-grid {
+  display: grid;
+  border-top: 1px solid var(--color-border);
 }
 
-.data-table thead th {
+.data-grid__head {
+  display: contents;
+
+  > * {
+    padding: 12px var(--space-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-subtle);
+    border-bottom: 1px solid var(--color-border);
+    background: transparent;
+  }
+}
+
+.data-grid__row {
+  display: contents;
+
+  > * {
+    padding: 14px var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  &:hover > * {
+    background: var(--color-bg-subtle);
+  }
+}
+
+// Clickable rows: when the row itself is a <button> (whole-row navigation,
+// e.g. Deployments → log modal), strip the default chrome.
+button.data-grid__row {
+  background: transparent;
+  border: 0;
+  font: inherit;
   text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-fg-subtle);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
 }
 
-.data-table tbody td {
-  padding: var(--space-md);
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
+// Trailing actions column (kebab menu, single-cell icon button). Width: 1%
+// shrinks the column to its content; the alignment lives in the cell.
+.data-grid__actions {
+  justify-content: flex-end;
 }
 
-.data-table tbody tr:last-child td {
-  border-bottom: 0;
+// ─── Per-page grid-template-columns ──────────────────────────────────────────
+// Each listing page sets only its column layout here. The visual chrome
+// comes from `.data-grid` / `.data-grid__head` / `.data-grid__row` above.
+
+.destinations-table {
+  grid-template-columns:
+    minmax(180px, 1.4fr)  // name
+    minmax(140px, 1fr)    // type
+    minmax(110px, 0.7fr)  // platform
+    minmax(160px, 1fr)    // identifier
+    auto;                 // actions
 }
 
-.data-table .col-actions {
-  width: 1%;
-  text-align: right;
+.envs-table {
+  grid-template-columns:
+    minmax(160px, 1fr)    // name
+    minmax(220px, 1.4fr)  // secrets preview
+    minmax(220px, 1.4fr)  // variables preview
+    auto;                 // actions
 }
 
-.data-table .col-shrink {
-  width: 1%;
-  white-space: nowrap;
+.certs-table {
+  grid-template-columns:
+    minmax(180px, 1.4fr)  // name
+    minmax(120px, 0.7fr)  // type
+    minmax(110px, 0.7fr)  // platform
+    minmax(160px, 1fr)    // file
+    auto;                 // actions
 }
 
 .data-row-name {

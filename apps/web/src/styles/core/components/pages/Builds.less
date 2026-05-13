@@ -1,28 +1,3 @@
-.builds-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  max-width: 1280px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.builds-page__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md) 0 var(--space-lg);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.builds-page__title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-fg);
-  margin: 0;
-}
-
 .builds-page__actions {
   display: flex;
   align-items: center;
@@ -39,36 +14,9 @@
   }
 }
 
-.builds-empty {
-  max-width: 480px;
-  margin: var(--space-2xl) auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--space-md);
-  padding: var(--space-2xl) var(--space-lg);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-subtle);
-}
-
-.builds-empty__title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-fg);
-  margin: 0;
-}
-
-.builds-empty__body {
-  font-size: 13px;
-  color: var(--color-fg-muted);
-  margin: 0;
-}
-
-// Table
+// Layout-only: chrome (head text, row borders, hover, padding) lives in
+// .data-grid (Table.less). This rule just lays out the columns.
 .builds-table {
-  display: grid;
   grid-template-columns:
     minmax(60px, 0.5fr)         // build number
     minmax(70px, 0.5fr)         // status
@@ -77,37 +25,6 @@
     minmax(220px, 1.7fr)        // commit
     minmax(140px, 1fr)          // deployment
     auto;                       // menu
-  border-top: 1px solid var(--color-border);
-}
-
-.builds-table__head {
-  display: contents;
-
-  > span {
-    padding: 12px var(--space-sm);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-fg-subtle);
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg-subtle);
-  }
-}
-
-.builds-row {
-  display: contents;
-
-  > * {
-    padding: 14px var(--space-sm);
-    border-bottom: 1px solid var(--color-border);
-    display: flex;
-    align-items: center;
-    min-width: 0;
-  }
-
-  &:hover > * {
-    background: var(--color-bg-subtle);
-  }
 }
 
 .builds-row__build {
@@ -304,3 +221,239 @@
 .builds-row__menu {
   justify-content: flex-end;
 }
+
+// ─── Deployments table ───────────────────────────────────────────────────────
+// Chrome lives in .data-grid (Table.less). This is layout only.
+
+.deployments-table {
+  grid-template-columns:
+    minmax(160px, 1.2fr)  // triggered by
+    minmax(80px, 0.5fr)   // type
+    minmax(70px, 0.4fr)   // status
+    minmax(180px, 1.2fr)  // target
+    minmax(110px, 0.7fr)  // build
+    minmax(220px, 1.7fr); // commit
+}
+
+.deployments-row__triggered {
+  gap: var(--space-sm);
+}
+
+.deployments-row__triggered-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.deployments-row__triggered-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deployments-row__triggered-name {
+  font-size: 13px;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deployments-row__triggered-date {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.deployments-row__type {
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.deployments-row__target-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.deployments-row__target-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.deployments-row__build {
+  font-size: 13px;
+}
+
+.deployments-row__build-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.deployments-row__build-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.deployments-row__commit {
+  gap: var(--space-sm);
+}
+
+.deployments-row__commit-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.deployments-row__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deployments-row__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deployments-row__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.deployments-row__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.deployments-row__commit-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+// ─── Deployment log modal ────────────────────────────────────────────────────
+
+.deployment-log-dialog {
+  max-width: 760px;
+  width: calc(100vw - 48px);
+}
+
+.deployment-log-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.deployment-log-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.deployment-log-dialog__log {
+  margin: 0;
+  padding: var(--space-md);
+  background: #0a0a0a;
+  color: #d4d4d4;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-md);
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.deployment-log-dialog__empty {
+  color: var(--color-fg-subtle);
+}
+
+.deployment-log-dialog__loading {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
+.deployment-log-dialog__error {
+  font-size: 12px;
+  color: var(--color-danger);
+  padding: var(--space-sm);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: var(--radius-md);
+
+  pre {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+// ─── New deployment dialog ───────────────────────────────────────────────────
+
+.new-deploy-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.new-deploy-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+

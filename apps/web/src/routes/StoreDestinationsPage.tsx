@@ -87,65 +87,67 @@ export function StoreDestinationsPage() {
 
       {open && <DestDialog appId={appId!} onClose={() => setOpen(false)} />}
 
-      <div className="page-section">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Platform</th>
-              <th>Identifier</th>
-              <th className="col-actions" aria-label="Actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {q.data?.map((d) => {
-              const type = d.type as DestType;
-              const platform = TYPE_PLATFORM[type];
-              return (
-                <tr key={d.id}>
-                  <td>
-                    <div className="data-row-name">{d.name}</div>
-                    {d.trackOrChannel && <div className="data-row-meta">{d.trackOrChannel}</div>}
-                  </td>
-                  <td>
-                    <span className="row" style={{ gap: 8 }}>
-                      {destIcon(type)}
-                      <span>{TYPE_LABEL[type] ?? type}</span>
+      {!!q.data?.length && (
+        <div className="data-grid destinations-table" role="table">
+          <div className="data-grid__head" role="row">
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Platform</span>
+            <span role="columnheader">Identifier</span>
+            <span role="columnheader" aria-label="Actions"></span>
+          </div>
+          {q.data.map((d) => {
+            const type = d.type as DestType;
+            const platform = TYPE_PLATFORM[type];
+            return (
+              <div key={d.id} className="data-grid__row destinations-row" role="row">
+                <div role="cell">
+                  <div className="data-row-name">{d.name}</div>
+                  {d.trackOrChannel && <div className="data-row-meta">{d.trackOrChannel}</div>}
+                </div>
+                <div role="cell">
+                  <span className="row" style={{ gap: 8 }}>
+                    {destIcon(type)}
+                    <span>{TYPE_LABEL[type] ?? type}</span>
+                  </span>
+                </div>
+                <div role="cell">
+                  <span className="data-row-platform">
+                    <span className={`data-row-platform-icon is-${platform}`}>
+                      {platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
                     </span>
-                  </td>
-                  <td>
-                    <span className="data-row-platform">
-                      <span className={`data-row-platform-icon is-${platform}`}>
-                        {platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
-                      </span>
-                      <span>{platform === "ios" ? "iOS" : "Android"}</span>
-                    </span>
-                  </td>
-                  <td>
-                    <span className="data-row-meta">{d.bundleId ?? "—"}</span>
-                  </td>
-                  <td className="col-actions">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <IconButton variant="menu" aria-label="More actions">
-                          <MoreVertical size={16} />
-                        </IconButton>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem destructive onSelect={() => remove.mutate(d.id)}>
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {q.data?.length === 0 && <div className="empty-state">No destinations yet.</div>}
-      </div>
+                    <span>{platform === "ios" ? "iOS" : "Android"}</span>
+                  </span>
+                </div>
+                <div role="cell">
+                  <span className="data-row-meta">{d.bundleId ?? "—"}</span>
+                </div>
+                <div role="cell" className="data-grid__actions">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton variant="menu" aria-label="More actions">
+                        <MoreVertical size={16} />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem destructive onSelect={() => remove.mutate(d.id)}>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {q.data?.length === 0 && (
+        <div className="empty-state">
+          <h2 className="empty-state__title">No destinations yet</h2>
+          <p className="empty-state__body">Add a store destination to enable deployments.</p>
+          <Button onClick={() => setOpen(true)}>Add destination</Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -109,68 +109,67 @@ export function CertificatesPage() {
       {certsQ.isLoading && <p className="text-help">Loading…</p>}
       {certsQ.error && <p className="text-error">{(certsQ.error as ApiError).message}</p>}
 
-      <div className="page-section">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Platform</th>
-              <th>File</th>
-              <th className="col-actions" aria-label="Actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {certsQ.data?.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <div className="data-row-name">{c.label}</div>
-                  {c.provisioningProfiles.length > 0 && (
-                    <div className="data-row-meta">
-                      {c.provisioningProfiles.length} provisioning profile
-                      {c.provisioningProfiles.length === 1 ? "" : "s"}
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <span className="data-row-meta">{c.kind}</span>
-                </td>
-                <td>
-                  <span className="data-row-platform">
-                    <span className={`data-row-platform-icon is-${c.platform}`}>
-                      {c.platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
-                    </span>
-                    <span>{c.platform === "ios" ? "iOS" : "Android"}</span>
+      {!!certsQ.data?.length && (
+        <div className="data-grid certs-table" role="table">
+          <div className="data-grid__head" role="row">
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Platform</span>
+            <span role="columnheader">File</span>
+            <span role="columnheader" aria-label="Actions"></span>
+          </div>
+          {certsQ.data.map((c) => (
+            <div key={c.id} className="data-grid__row certs-row" role="row">
+              <div role="cell">
+                <div className="data-row-name">{c.label}</div>
+                {c.provisioningProfiles.length > 0 && (
+                  <div className="data-row-meta">
+                    {c.provisioningProfiles.length} provisioning profile
+                    {c.provisioningProfiles.length === 1 ? "" : "s"}
+                  </div>
+                )}
+              </div>
+              <div role="cell">
+                <span className="data-row-meta">{c.kind}</span>
+              </div>
+              <div role="cell">
+                <span className="data-row-platform">
+                  <span className={`data-row-platform-icon is-${c.platform}`}>
+                    {c.platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
                   </span>
-                </td>
-                <td>
-                  <span className="data-row-meta is-truncate">{c.fileName}</span>
-                </td>
-                <td className="col-actions">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <IconButton variant="menu" aria-label="More actions">
-                        <MoreVertical size={16} />
-                      </IconButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onSelect={() => setEditingCert(c)}>
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem destructive onSelect={() => remove.mutate(c.id)}>
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {certsQ.data?.length === 0 && (
-          <div className="empty-state">No certificates yet.</div>
-        )}
-      </div>
+                  <span>{c.platform === "ios" ? "iOS" : "Android"}</span>
+                </span>
+              </div>
+              <div role="cell">
+                <span className="data-row-meta is-truncate">{c.fileName}</span>
+              </div>
+              <div role="cell" className="data-grid__actions">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton variant="menu" aria-label="More actions">
+                      <MoreVertical size={16} />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onSelect={() => setEditingCert(c)}>
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem destructive onSelect={() => remove.mutate(c.id)}>
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {certsQ.data?.length === 0 && (
+        <div className="empty-state">
+          <h2 className="empty-state__title">No certificates yet</h2>
+          <p className="empty-state__body">Upload a keystore or .p12 to sign your builds.</p>
+        </div>
+      )}
     </div>
   );
 }

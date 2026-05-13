@@ -13,6 +13,7 @@ import { EnvironmentsPage } from "./routes/EnvironmentsPage";
 import { CertificatesPage } from "./routes/CertificatesPage";
 import { StoreDestinationsPage } from "./routes/StoreDestinationsPage";
 import { DeploymentsPage } from "./routes/DeploymentsPage";
+import { NewDeploymentPage } from "./routes/NewDeploymentPage";
 import { OrgSettingsLayout } from "./routes/OrgSettingsLayout";
 import { AccountPage } from "./routes/AccountPage";
 import { SubscriptionsPage } from "./routes/SubscriptionsPage";
@@ -60,6 +61,7 @@ export function App() {
         <Route path="/app/:appId/build/certificates" element={<CertificatesPage />} />
         <Route path="/app/:appId/deploy" element={<Navigate to="deployments" replace />} />
         <Route path="/app/:appId/deploy/deployments" element={<DeploymentsPage />} />
+        <Route path="/app/:appId/deploy/deployments/new" element={<NewDeploymentPage />} />
         <Route path="/app/:appId/deploy/destinations" element={<StoreDestinationsPage />} />
         <Route path="/app/:appId/git" element={<GitConnectPage />} />
       </Route>

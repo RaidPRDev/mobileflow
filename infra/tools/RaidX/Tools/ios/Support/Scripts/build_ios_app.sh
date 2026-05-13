@@ -132,7 +132,7 @@ build_pods_target
 
 echo "📂 Current directory: $(pwd)"
 
-# 1. Archive
+# 1. Archive (the heavy compile step — "building" phase)
 xcodebuild \
   -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/App/App.xcworkspace" \
   -scheme "$APP_SCHEME" \
@@ -147,6 +147,11 @@ xcodebuild \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
   -verbose | xcbeautify
+
+# Archive done → enter signing phase. xcodebuild's exportArchive does the
+# re-signing for distribution, so we surface that as the "signing" phase.
+mf_phase building success
+mf_phase signing running
 
 # 2. Generate exportOptions.plist
 EXPORT_PLIST="$BUILD_DIR/exportOptions.generated.plist"
@@ -175,7 +180,7 @@ cat > "$EXPORT_PLIST" <<EOF
 </plist>
 EOF
 
-# 3. Export IPA
+# 3. Export IPA  (re-signs + assembles the .ipa)
 echo "📦 Exporting IPA to: $EXPORT_PATH"
 
 xcodebuild -exportArchive \
@@ -189,9 +194,15 @@ EXIT_CODE=${PIPESTATUS[0]}   # ${PIPESTATUS[0]} is xcodebuild's exit code
 
 if [ $EXIT_CODE -ne 0 ]; then
   echo "❌ Export failed (exit code $EXIT_CODE)"
-else
-  echo "🎉 iOS build completed. Path: $EXPORT_PATH"
+  # Phase fails at the current phase ("signing", since exportArchive both
+  # re-signs and packages); macRunner picks this up via lastRunning fallback.
+  exit $EXIT_CODE
 fi
+
+mf_phase signing success
+mf_phase packaging running
+echo "🎉 iOS build completed. Path: $EXPORT_PATH"
+mf_phase packaging success
 
 
 

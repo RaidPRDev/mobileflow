@@ -1,0 +1,5 @@
+- [API runs in WSL](project_api_runs_in_wsl.md) — MobileFlow API runs in WSL (wslrelay on :4000/:5173); .env paths must be /mnt/d/..., not D:\...
+- [Follow-up: provisionId at upload](project_provision_id_upload_followup.md) — make certificates upload route extract & persist metadata.provisionId so macRunner doesn't need the regex fallback
+- [Follow-ups: store destinations](project_store_destinations_followups.md) — destination edit UI gone; Google Play artifactKind not honored by runner (item #3 resolved)
+- [Inline-publish design](project_inline_publish_design.md) — auto-deploy runs INLINE in build's publishing phase; same deployments row shows in BuildPage + DeploymentsPage; deployWorker only handles manual deploys
+- [iOS pipeline overhaul 2026-05-12](project_ios_pipeline_overhaul.md) — Xcode 26.5; Mac→Linux scp direct (key on Mac at ~/.ssh/raidx_linux_key); ephemeral Mac sandbox + startup sweep; [MFPHASE] signaling

@@ -94,6 +94,11 @@ build_update_podfile
 # ================================
 # 5️⃣ Build iOS app and Pods (Xcode)
 # ================================
+# Phase transition: installing/setup done → start of the long compile step.
+# build_ios_app.sh emits the rest of the phase transitions (building → signing
+# → packaging) around its xcodebuild calls.
+mf_phase installing success
+mf_phase building running
 build_ios_app
 
 

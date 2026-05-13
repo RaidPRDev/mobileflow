@@ -92,6 +92,16 @@ async function runOne(buildId: string) {
 
 async function maybeQueueAutoDeploy(b: Build, ctx: RunnerContext) {
   if (!b.autoDeployDestinationId) return;
+  // Real runners (LinuxDocker/Mac) run the store upload inline during their
+  // "publishing" phase via runInlinePublish, which already creates the
+  // deployments row. Only queue here if no row exists yet — that's the
+  // StubRunner / web fallback path so demos still see a deployment record.
+  const existing = await db
+    .select({ id: deployments.id })
+    .from(deployments)
+    .where(eq(deployments.buildId, b.id))
+    .limit(1);
+  if (existing.length > 0) return;
   try {
     const [dest] = await db
       .select({ id: storeDestinations.id, name: storeDestinations.name })

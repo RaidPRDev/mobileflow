@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@mobileflow/ui";
 import {
   CheckCircle2,
@@ -187,6 +187,33 @@ export function BuildPage() {
     return envsQ.data?.find((e) => e.id === b.environmentId)?.name ?? null;
   }, [envsQ.data, b?.environmentId]);
 
+  // Destinations for the manual "Deploy binary" path. Only fetched when the
+  // build is finished and lacks an auto-deploy destination, since this is the
+  // only state where the button is offered.
+  const destsQ = useQuery({
+    queryKey: ["destinations", effectiveAppId],
+    queryFn: () => api.listDestinations(effectiveAppId!),
+    enabled: !!effectiveAppId && b?.status === "success" && !b?.autoDeployDestinationId,
+    staleTime: 60_000,
+  });
+  const matchingDestinations = useMemo(() => {
+    if (!b || !destsQ.data) return [];
+    if (b.target === "ios") return destsQ.data.filter((d) => d.type === "app_store" || d.type === "testflight");
+    if (b.target === "android") return destsQ.data.filter((d) => d.type === "play_store" || d.type === "play_internal");
+    return [];
+  }, [b, destsQ.data]);
+
+  const navigate = useNavigate();
+  const deployMut = useMutation({
+    mutationFn: (destinationId: string) =>
+      api.createDeployment(effectiveAppId!, { buildId: b!.id, destinationId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["build", buildId] });
+      void qc.invalidateQueries({ queryKey: ["deployments", effectiveAppId] });
+      navigate(`/app/${effectiveAppId}/deploy/deployments`);
+    },
+  });
+
   // Auto-scroll logs to the bottom when new content arrives, unless the user
   // has scrolled away from the bottom.
   const logRef = useRef<HTMLPreElement>(null);
@@ -230,6 +257,14 @@ export function BuildPage() {
   const durationText = formatDuration(b.startedAt, b.finishedAt, b.createdAt, live);
   const buildTypeLabel = b.buildType ? (BUILD_TYPE_LABEL[b.buildType] ?? b.buildType) : null;
   const showDeployment = !!dep;
+  // Manual deploy is only offered when the build succeeded, didn't already
+  // request an auto-deploy at start time, and has no deployment yet. Web
+  // builds don't have store destinations.
+  const showDeployButton =
+    b.status === "success" &&
+    !b.autoDeployDestinationId &&
+    !dep &&
+    b.target !== "web";
   const showCert = !!b.certificateLabel;
   const showEnv = !!b.environmentId;
 
@@ -332,6 +367,29 @@ export function BuildPage() {
                     </span>
                   )}
                 </span>
+              }
+            />
+          )}
+          {showDeployButton && (
+            <DetailRow
+              label="Deployment"
+              value={
+                matchingDestinations.length > 0 ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => deployMut.mutate(matchingDestinations[0]!.id)}
+                    loading={deployMut.isPending}
+                  >
+                    Deploy binary
+                  </Button>
+                ) : (
+                  <span className="build-side-panel__muted">
+                    No {b.target === "ios" ? "App Store" : "Google Play"} destination —{" "}
+                    <Link to={`/app/${effectiveAppId}/deploy/destinations`} className="build-side-panel__link">
+                      add one
+                    </Link>
+                  </span>
+                )
               }
             />
           )}

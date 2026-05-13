@@ -1,28 +1,8 @@
-.commits-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  max-width: 1100px;
-  margin: 0 auto;
-  width: 100%;
-}
-
+// Override: commits header uses a slightly wider gap so the search input has
+// breathing room. Shared chrome (padding, border, margin) lives in
+// Section.less via `.commits-page__header`.
 .commits-page__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--space-lg);
-  padding: var(--space-md) 0 var(--space-lg);
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: var(--space-xs);
-}
-
-.commits-page__title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-fg);
-  margin: 0;
 }
 
 .commits-page__status {

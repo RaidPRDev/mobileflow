@@ -4,7 +4,8 @@ import { db } from "../../db/client.js";
 import { apps, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
-import { exec, resolveLinuxHost, resolveMacHost, withSsh } from "../ssh.js";
+import { exec, execDrained, resolveLinuxHost, resolveMacHost, uploadBase64, withSsh } from "../ssh.js";
+import { runInlinePublish } from "../inlinePublish.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
 
@@ -149,42 +150,103 @@ export class MacRunner implements Runner {
         "no",
       ].map(shq).join(" ");
 
+      // Phase tracking. main_build.sh / build_ios_app.sh emit
+      // `[MFPHASE] <name> <status>` markers around their major sections; we
+      // intercept those in the line stream and call ctx.step() in real time.
+      // `lastRunning` lets the catch block mark the failing phase precisely.
+      const SUB_PHASES = ["installing", "building", "signing", "packaging"] as const;
+      type SubPhase = (typeof SUB_PHASES)[number];
+      const PHASE_RE = /^\[MFPHASE\]\s+(\w+)\s+(\w+)(?:\s+(\-?\d+))?\s*$/;
+      let lastRunning: SubPhase | null = "installing"; // already-running before main_build.sh starts
+      const phaseSucceeded = new Set<SubPhase>();
+
       try {
         // CocoaPods (Ruby) needs a UTF-8 locale; non-interactive SSH sessions
         // don't inherit LANG/LC_ALL from the user's profile, so `pod install`
         // hits "Unicode Normalization not appropriate for ASCII-8BIT" without
         // these. Set first so user-supplied env vars can still override.
         const localeExports = `export LANG=en_US.UTF-8 && export LC_ALL=en_US.UTF-8`;
+        // globals.sh requires MAC_SERVER_USER/IP/PASS via `${VAR:?}` strict
+        // expansion. These are only consumed by the legacy build_deploy.sh
+        // (App Store upload), which MobileFlow never invokes — but the strict
+        // check fires at globals.sh load time anyway. Inject sane values from
+        // the resolved Mac host so non-interactive sessions don't blow up.
+        const serverExports = [
+          `export MAC_SERVER_USER=${shq(host.username)}`,
+          `export MAC_SERVER_IP=${shq(host.host)}`,
+          `export MAC_SERVER_PORT=${shq(String(host.port))}`,
+          `export MAC_SERVER_PASS=${shq("unused-by-mobileflow")}`,
+        ].join(" && ");
         const fullCmd = [
           localeExports,
+          serverExports,
           envVarsExports, // user env vars take precedence (declared after)
           `bash ${shq(`${macTools}/main_build.sh`)} ${cmdArgs}`,
         ].filter(Boolean).join(" && ");
-        await run(`bash -lc ${shq(fullCmd)}`);
-        await ctx.step("installing", "success", 0);
-        await ctx.step("building", "success", 0);
-        await ctx.step("signing", "success", 0);
-        await ctx.step("packaging", "success", 0);
+        const buildCmd = `bash -lc ${shq(fullCmd)}`;
+
+        // Custom line handler: parse phase markers, otherwise stream to log.
+        // "packaging" is special: the script's "packaging success" marker means
+        // the .ipa is built, but our packaging phase also includes the scp
+        // copy to the downloads server. We suppress the script-side packaging
+        // success so it stays "running" until scp finishes below.
+        const onBuildLine = (line: string) => {
+          const m = PHASE_RE.exec(line);
+          if (m) {
+            const name = m[1];
+            const status = m[2];
+            const code = m[3] ? Number(m[3]) : undefined;
+            if ((SUB_PHASES as readonly string[]).includes(name)) {
+              const phase = name as SubPhase;
+              if (status === "running") lastRunning = phase;
+              else if (status === "success") {
+                phaseSucceeded.add(phase);
+                if (lastRunning === phase) lastRunning = null;
+              }
+              const isPackagingSuccess = phase === "packaging" && status === "success";
+              if (!isPackagingSuccess) {
+                void ctx.step(phase, status as "running" | "success" | "failed" | "skipped", code);
+              }
+            }
+            return; // marker line itself isn't useful in the build log
+          }
+          void ctx.log(line);
+        };
+
+        const r = await exec(ssh, buildCmd, onBuildLine);
+        if (r.exitCode !== 0) {
+          throw new Error(formatCmdError(buildCmd, r.exitCode, r.outputTail));
+        }
+        // Belt-and-suspenders: if a script forgets to emit a phase's success
+        // marker but the overall command exited 0, we mark sub-phases done.
+        // "packaging" is intentionally excluded here — we close it ourselves
+        // after the scp-to-downloads step below.
+        for (const p of SUB_PHASES) {
+          if (p === "packaging") continue;
+          if (!phaseSucceeded.has(p)) await ctx.step(p, "success", 0);
+        }
+        lastRunning = null;
       } catch (e) {
-        // installing/building/signing/packaging are bundled inside one
-        // main_build.sh invocation, so we cannot tell which sub-phase failed
-        // without instrumenting that script. Mark the entry phase as failed
-        // and the rest as skipped — better than lying about all four failing.
-        await ctx.step("installing", "failed", 1);
-        for (const name of ["building", "signing", "packaging"] as const) {
-          await ctx.step(name, "skipped");
+        // Mark whichever phase was last "running" as the failure point; skip
+        // anything after it. This makes the UI show the right phase as the
+        // failed one instead of always blaming "installing".
+        const failed: SubPhase = lastRunning ?? "installing";
+        await ctx.step(failed, "failed", 1);
+        const idx = SUB_PHASES.indexOf(failed);
+        for (let i = idx + 1; i < SUB_PHASES.length; i++) {
+          await ctx.step(SUB_PHASES[i], "skipped");
         }
         throw e;
       }
 
       if (await ctx.isCancelled()) throw new Error("cancelled");
 
-      // --- publishing ---
-      // Mac disks are small; we push artifacts straight to the Linux box
-      // (xbuilds.raidpr.com) using scp *from the Mac* (not Mac->API->Linux —
-      // that double-hop through WSL was ~17 KB/s on a home uplink). The Linux
-      // SSH key is pre-installed on the Mac at ~/.ssh/raidx_linux_key.
-      await ctx.step("publishing", "running");
+      // --- packaging (continued): scp artifacts to the Linux downloads box so
+      // they're at a stable URL. Mac disks are small; we push artifacts
+      // straight to xbuilds.raidpr.com using scp *from the Mac* (not
+      // Mac->API->Linux — that double-hop through WSL was ~17 KB/s on a home
+      // uplink). The Linux SSH key is pre-installed on the Mac at
+      // ~/.ssh/raidx_linux_key. ---
       const linuxHost = await resolveLinuxHost();
       if (!linuxHost) throw new Error("Linux build host is not configured — set LINUX_BUILD_* in env or add a build_hosts row");
 
@@ -261,7 +323,23 @@ export class MacRunner implements Runner {
           // we end up needing it in builds.artifacts JSON.
         });
       }
-      await ctx.step("publishing", "success", 0);
+      await ctx.step("packaging", "success", 0);
+
+      if (await ctx.isCancelled()) throw new Error("cancelled");
+
+      // --- publishing: run the store upload inline. The deployments row is
+      // created here so the same upload is visible on the Deployments page
+      // (logs piped to both). Only present when auto-deploy was selected. ---
+      if (ctx.build.autoDeployDestinationId) {
+        await ctx.step("publishing", "running");
+        try {
+          await runInlinePublish(ctx, artifacts);
+          await ctx.step("publishing", "success", 0);
+        } catch (e) {
+          await ctx.step("publishing", "failed", 1);
+          throw e;
+        }
+      }
 
       // --- cleanup ---
       // Artifacts now live on the Linux box; the Mac copy is no longer needed.
@@ -335,23 +413,7 @@ async function materializeIosCerts(
   const writeBlob = async (blobBase64: string, dest: string, label: string) => {
     const sizeKb = Math.round((blobBase64.length * 3) / 4 / 1024);
     await ctx.log(`Uploading ${label} (~${sizeKb} KB) -> ${dest}`);
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`upload ${label} timed out after 60s`)), 60_000);
-      ssh.exec(`base64 -D > ${shq(dest)}`, (err, stream) => {
-        if (err) { clearTimeout(timer); return reject(err); }
-        let stderrBuf = "";
-        stream.on("data", () => {}); // drain stdout
-        stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
-        stream.on("close", (code: number | null) => {
-          clearTimeout(timer);
-          if (code === 0) return resolve();
-          reject(new Error(`upload ${label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
-        });
-        stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
-        stream.write(blobBase64);
-        stream.end();
-      });
-    });
+    await uploadBase64(ssh, { base64: blobBase64, remotePath: dest, label, decoder: "mac" });
   };
 
   const p12Path = `${certsDir}/${p12.fileName}`;
@@ -417,25 +479,3 @@ function formatCmdError(cmd: string, exitCode: number, outputTail: string): stri
   return `Command failed (exit ${exitCode}): ${summary}\n${tail}`;
 }
 
-/**
- * ssh.exec() that always drains stdout+stderr and enforces a timeout. Plain
- * `ssh.exec` with only a "close" listener can hang if the channel has buffered
- * stderr nobody is reading — bit us once in the iOS pipeline.
- */
-function execDrained(ssh: Client, cmd: string, label: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-    ssh.exec(cmd, (err, stream) => {
-      if (err) { clearTimeout(timer); return reject(err); }
-      let stderrBuf = "";
-      stream.on("data", () => {}); // drain stdout
-      stream.stderr.on("data", (c: Buffer) => { stderrBuf += c.toString("utf8"); });
-      stream.on("close", (code: number | null) => {
-        clearTimeout(timer);
-        if (code === 0) return resolve();
-        reject(new Error(`${label} failed (exit ${code}): ${stderrBuf.trim().slice(0, 300) || "(no stderr)"}`));
-      });
-      stream.on("error", (e: Error) => { clearTimeout(timer); reject(e); });
-    });
-  });
-}

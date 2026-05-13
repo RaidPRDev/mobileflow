@@ -46,6 +46,15 @@ export IOS_CONFIGURATION="Release"
 # echo "🔹 KEYCHAIN_PATH=$KEYCHAIN_PATH"
 # echo "🔹 PROVISION_FOLDER=$PROVISION_FOLDER"
 
+# Emit a phase signal that the MobileFlow worker parses from the log stream.
+# Format:   [MFPHASE] <name> <status>          (e.g. [MFPHASE] building running)
+# Statuses: running, success, failed, skipped
+# The marker also doubles as a visible log line so a human reading the raw log
+# can still see the phase transitions.
+mf_phase() {
+  echo "[MFPHASE] $1 $2"
+}
+
 if [[ "$IS_DARWIN" = "true" ]]; then
   # Load RaidX Remote Paths
   source "$RAIDX_SUPPORT_PATH/includes.sh"

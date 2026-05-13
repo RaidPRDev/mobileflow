@@ -100,15 +100,15 @@ export function BuildsPage() {
       )}
 
       {!!numbered.length && (
-        <div className="builds-table">
-          <div className="builds-table__head">
-            <span>Build</span>
-            <span>Status</span>
-            <span>Platform</span>
-            <span>Triggered by</span>
-            <span>Commit</span>
-            <span>Deployment</span>
-            <span></span>
+        <div className="data-grid builds-table" role="table">
+          <div className="data-grid__head" role="row">
+            <span role="columnheader">Build</span>
+            <span role="columnheader">Status</span>
+            <span role="columnheader">Platform</span>
+            <span role="columnheader">Triggered by</span>
+            <span role="columnheader">Commit</span>
+            <span role="columnheader">Deployment</span>
+            <span role="columnheader" aria-label="Actions"></span>
           </div>
           {numbered.map(({ build, number }) => (
             <BuildRowItem
@@ -154,11 +154,13 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
   const goToBuild = () => navigate(`/app/${appId}/build/builds/${build.id}`);
 
   return (
-    <div className="builds-row">
-      <button type="button" className="builds-row__build" onClick={goToBuild}>
-        #{number}
-      </button>
-      <div className="builds-row__status">
+    <div className="data-grid__row builds-row" role="row">
+      <div role="cell" className="builds-row__build-cell">
+        <button type="button" className="builds-row__build" onClick={goToBuild}>
+          #{number}
+        </button>
+      </div>
+      <div role="cell" className="builds-row__status">
         {build.status === "success" ? (
           <span className="tooltip-wrap" tabIndex={0}>
             <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
@@ -173,13 +175,13 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           <span className={`status-pill is-${build.status}`}>{build.status}</span>
         )}
       </div>
-      <div className="builds-row__platform">
+      <div role="cell" className="builds-row__platform">
         <span className="builds-row__platform-icon" style={{ background: platform.iconBg }}>
           {platform.icon}
         </span>
         <span className="builds-row__platform-label">{platform.label}</span>
       </div>
-      <div className="builds-row__triggered">
+      <div role="cell" className="builds-row__triggered">
         <span className="builds-row__triggered-avatar">
           <span className="commit-row__avatar-fallback">{triggeredByInitial}</span>
         </span>
@@ -195,7 +197,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           </span>
         </div>
       </div>
-      <div className="builds-row__commit">
+      <div role="cell" className="builds-row__commit">
         <span className="builds-row__commit-avatar">
           {accountAvatarUrl ? (
             <img src={accountAvatarUrl} alt="" />
@@ -229,7 +231,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           </div>
         </div>
       </div>
-      <div className="builds-row__deployment">
+      <div role="cell" className="builds-row__deployment">
         {dep ? (
           <span className="deployment-pill">
             {dep.destinationName ?? "—"}
@@ -239,7 +241,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           <span className="builds-row__deployment-empty">—</span>
         )}
       </div>
-      <div className="builds-row__menu">
+      <div role="cell" className="builds-row__menu">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconButton variant="ghost" size="icon-sm" aria-label="Build actions">

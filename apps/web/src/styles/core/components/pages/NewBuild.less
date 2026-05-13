@@ -508,3 +508,527 @@
   padding-top: var(--space-sm);
   border-top: 1px solid var(--color-border);
 }
+
+// ─── New deployment wizard ───────────────────────────────────────────────────
+
+.deploy-build-table {
+  display: grid;
+  grid-template-columns:
+    minmax(70px, 0.4fr)    // build #
+    minmax(110px, 0.6fr)   // platform
+    minmax(180px, 1fr)     // triggered by
+    minmax(260px, 1.7fr);  // commit
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deploy-build-table__head {
+  display: contents;
+
+  > span {
+    padding: 12px var(--space-sm);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-subtle);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.deploy-build-row {
+  display: contents;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+
+  > * {
+    padding: 14px var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  &:last-child > * {
+    border-bottom: 0;
+  }
+
+  &:hover > * {
+    background: var(--color-bg-subtle);
+  }
+}
+
+.deploy-build-row__id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.deploy-build-row__platform {
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.deploy-build-row__platform-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.deploy-build-row__triggered,
+.deploy-build-row__commit {
+  gap: var(--space-sm);
+}
+
+.deploy-build-row__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.deploy-build-row__triggered-meta,
+.deploy-build-row__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deploy-build-row__triggered-name {
+  font-size: 13px;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deploy-build-row__triggered-date {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.deploy-build-row__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deploy-build-row__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.deploy-build-row__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.deploy-build-row__commit-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+// Selected-build summary card on Step 2.
+.deploy-build-summary {
+  display: grid;
+  grid-template-columns:
+    minmax(60px, 0.3fr)
+    minmax(100px, 0.5fr)
+    minmax(240px, 1.5fr)
+    auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+}
+
+.deploy-build-summary__id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.deploy-build-summary__platform {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.deploy-build-summary__platform-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.deploy-build-summary__commit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.deploy-build-summary__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.deploy-build-summary__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deploy-build-summary__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deploy-build-summary__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.deploy-build-summary__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deploy-build-summary__commit-sub {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deploy-build-summary__change {
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: default;
+  padding: var(--space-xs) var(--space-sm);
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.new-deploy-add-link {
+  margin-top: var(--space-xs);
+  font-size: 13px;
+}
+
+// ─── Deploy wizard: build picker table (step 1) ──────────────────────────────
+
+.deploy-build-table {
+  display: grid;
+  grid-template-columns:
+    minmax(80px, 0.5fr)
+    minmax(110px, 0.7fr)
+    minmax(160px, 1fr)
+    minmax(220px, 1.7fr);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-sm);
+}
+
+.deploy-build-table__head {
+  display: contents;
+
+  > span {
+    padding: 12px var(--space-sm);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-subtle);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.deploy-build-row {
+  display: contents;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+
+  > * {
+    padding: 14px var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  &:hover > * {
+    background: var(--color-bg-subtle);
+  }
+}
+
+.deploy-build-row__id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.deploy-build-row__platform {
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.deploy-build-row__platform-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.deploy-build-row__triggered,
+.deploy-build-row__commit {
+  gap: var(--space-sm);
+}
+
+.deploy-build-row__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.deploy-build-row__triggered-meta,
+.deploy-build-row__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deploy-build-row__triggered-name {
+  font-size: 13px;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deploy-build-row__triggered-date {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.deploy-build-row__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deploy-build-row__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.deploy-build-row__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.deploy-build-row__commit-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+// ─── Deploy wizard: selected build summary card (step 2) ─────────────────────
+
+.deploy-build-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  margin-top: var(--space-sm);
+}
+
+.deploy-build-summary__id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+  min-width: 60px;
+}
+
+.deploy-build-summary__platform {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+  min-width: 110px;
+}
+
+.deploy-build-summary__platform-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.deploy-build-summary__commit {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.deploy-build-summary__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.deploy-build-summary__commit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deploy-build-summary__commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deploy-build-summary__commit-sha {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.deploy-build-summary__commit-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.deploy-build-summary__commit-sub {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deploy-build-summary__change {
+  background: transparent;
+  border: 0;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: default;
+  margin-left: auto;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
