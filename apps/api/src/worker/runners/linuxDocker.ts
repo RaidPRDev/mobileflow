@@ -109,7 +109,7 @@ export class LinuxDockerAndroidRunner implements Runner {
       await ctx.step("installing", "running");
       let keystoreFlags: string[];
       try {
-        keystoreFlags = await materializeAndroidKeystore(ssh, orgId, remoteDir, ctx);
+        keystoreFlags = await materializeAndroidKeystore(ssh, remoteDir, ctx);
       } catch (e) {
         await ctx.log(`Signing certificate error: ${e instanceof Error ? e.message : String(e)}`);
         await ctx.step("installing", "failed", 1);
@@ -231,7 +231,6 @@ async function collectEnvFlags(ctx: RunnerContext): Promise<string[]> {
  */
 async function materializeAndroidKeystore(
   ssh: Client,
-  orgId: string,
   remoteDir: string,
   ctx: RunnerContext,
 ): Promise<string[]> {
@@ -245,7 +244,7 @@ async function materializeAndroidKeystore(
     .where(eq(certificates.id, certificateId))
     .limit(1);
   if (!cert) throw new Error(`Signing certificate ${certificateId} not found.`);
-  if (cert.orgId !== orgId) throw new Error("Signing certificate does not belong to this app's organization.");
+  if (cert.appId !== ctx.build.appId) throw new Error("Signing certificate does not belong to this app.");
   if (cert.platform !== "android") throw new Error(`Selected signing certificate is for ${cert.platform}, not Android.`);
   if (cert.kind !== "keystore") throw new Error(`Selected signing certificate must be a keystore (got kind=${cert.kind}).`);
 

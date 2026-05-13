@@ -110,7 +110,7 @@ export async function buildsRoutes(app: FastifyInstance) {
       if (body.target === "web") return reply.badRequest("Web builds do not use a signing certificate");
       const [cert] = await db.select().from(certificates).where(eq(certificates.id, body.certificateId)).limit(1);
       if (!cert) return reply.badRequest("Unknown signing certificate");
-      if (cert.orgId !== a.orgId) return reply.forbidden("Certificate belongs to a different organization");
+      if (cert.appId !== a.id) return reply.forbidden("Certificate belongs to a different app");
       if (cert.platform !== body.target) return reply.badRequest("Certificate platform does not match target");
     }
 

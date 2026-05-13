@@ -93,8 +93,19 @@ button.data-grid__row {
     minmax(180px, 1.4fr)  // name
     minmax(120px, 0.7fr)  // type
     minmax(110px, 0.7fr)  // platform
-    minmax(160px, 1fr)    // file
+    minmax(140px, 0.9fr)  // expiration date
     auto;                 // actions
+}
+
+// Stacks block elements vertically inside a flex cell. Needed because
+// `.data-grid__row > *` is a horizontal flex container by default, which
+// would otherwise place name and meta divs side-by-side.
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
 }
 
 .data-row-name {

@@ -154,9 +154,20 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
   const goToBuild = () => navigate(`/app/${appId}/build/builds/${build.id}`);
 
   return (
-    <div className="data-grid__row builds-row" role="row">
+    <div
+      className="data-grid__row builds-row is-clickable"
+      role="row"
+      onClick={goToBuild}
+    >
       <div role="cell" className="builds-row__build-cell">
-        <button type="button" className="builds-row__build" onClick={goToBuild}>
+        <button
+          type="button"
+          className="builds-row__build"
+          onClick={(e) => {
+            e.stopPropagation();
+            goToBuild();
+          }}
+        >
           #{number}
         </button>
       </div>
@@ -241,7 +252,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           <span className="builds-row__deployment-empty">—</span>
         )}
       </div>
-      <div role="cell" className="builds-row__menu">
+      <div role="cell" className="builds-row__menu" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconButton variant="ghost" size="icon-sm" aria-label="Build actions">

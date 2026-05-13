@@ -88,6 +88,57 @@
   white-space: nowrap;
 }
 
+// Groups a file row with its metadata table so they share a single visual
+// block. Used in EditCertDialog under each .p12 and provisioning profile.
+.cert-file-block {
+  display: flex;
+  flex-direction: column;
+
+  // Square off the bottom of the row so it joins seamlessly with the meta
+  // table below.
+  > .cert-file-row {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
+.cert-meta {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.cert-meta__row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.cert-meta__key {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-weight: 500;
+}
+
+.cert-meta__val {
+  margin: 0;
+  color: var(--color-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cert-file-delete {
   background: transparent;
   border: 0;

@@ -19,7 +19,6 @@ import {
   Label,
 } from "@mobileflow/ui";
 import { ApiError, api, type CertificateGroup, type CertificateRow } from "../api/client";
-import { useAuth } from "../auth/AuthProvider";
 import deleteIcon from "../../../../assets/icons/delete-icon.svg";
 
 type Platform = "ios" | "android";
@@ -38,27 +37,26 @@ async function fileToBase64(f: File): Promise<string> {
   );
 }
 
+function formatExpiration(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 export function CertificatesPage() {
   const { appId } = useParams();
-  const { me } = useAuth();
   const qc = useQueryClient();
 
-  const appQ = useQuery({
-    queryKey: ["app", appId],
-    queryFn: () => api.getApp(appId!),
-    enabled: !!appId,
-  });
-  const orgId = appQ.data?.orgId ?? me?.organizations[0]?.orgId ?? null;
-
   const certsQ = useQuery({
-    queryKey: ["certs", orgId],
-    queryFn: () => api.listCertificates(orgId!),
-    enabled: !!orgId,
+    queryKey: ["certs", appId],
+    queryFn: () => api.listCertificates(appId!),
+    enabled: !!appId,
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteCertificate(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["certs", orgId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["certs", appId] }),
   });
 
   const [openPlatform, setOpenPlatform] = useState<Platform | null>(null);
@@ -94,16 +92,16 @@ export function CertificatesPage() {
         </div>
       </div>
 
-      {openPlatform && orgId && (
+      {openPlatform && appId && (
         <AddCertDialog
-          orgId={orgId}
+          appId={appId}
           platform={openPlatform}
           onClose={() => setOpenPlatform(null)}
         />
       )}
 
-      {editingCert && orgId && (
-        <EditCertDialog cert={editingCert} orgId={orgId} onClose={() => setEditingCert(null)} />
+      {editingCert && appId && (
+        <EditCertDialog cert={editingCert} appId={appId} onClose={() => setEditingCert(null)} />
       )}
 
       {certsQ.isLoading && <p className="text-help">Loading…</p>}
@@ -115,19 +113,21 @@ export function CertificatesPage() {
             <span role="columnheader">Name</span>
             <span role="columnheader">Type</span>
             <span role="columnheader">Platform</span>
-            <span role="columnheader">File</span>
+            <span role="columnheader">Expiration Date</span>
             <span role="columnheader" aria-label="Actions"></span>
           </div>
           {certsQ.data.map((c) => (
             <div key={c.id} className="data-grid__row certs-row" role="row">
               <div role="cell">
-                <div className="data-row-name">{c.label}</div>
-                {c.provisioningProfiles.length > 0 && (
-                  <div className="data-row-meta">
-                    {c.provisioningProfiles.length} provisioning profile
-                    {c.provisioningProfiles.length === 1 ? "" : "s"}
-                  </div>
-                )}
+                <div className="cell-stack">
+                  <div className="data-row-name">{c.label}</div>
+                  {c.provisioningProfiles.length > 0 && (
+                    <div className="data-row-meta">
+                      {c.provisioningProfiles.length} provisioning profile
+                      {c.provisioningProfiles.length === 1 ? "" : "s"}
+                    </div>
+                  )}
+                </div>
               </div>
               <div role="cell">
                 <span className="data-row-meta">{c.kind}</span>
@@ -141,7 +141,7 @@ export function CertificatesPage() {
                 </span>
               </div>
               <div role="cell">
-                <span className="data-row-meta is-truncate">{c.fileName}</span>
+                <span className="data-row-meta">{formatExpiration(c.metadata?.expirationDate)}</span>
               </div>
               <div role="cell" className="data-grid__actions">
                 <DropdownMenu>
@@ -209,11 +209,11 @@ function PlatformHeader({ platform }: { platform: Platform }) {
 }
 
 function AddCertDialog({
-  orgId,
+  appId,
   platform,
   onClose,
 }: {
-  orgId: string;
+  appId: string;
   platform: Platform;
   onClose: () => void;
 }) {
@@ -241,7 +241,7 @@ function AddCertDialog({
       if (!isIos && !alias.trim()) throw new Error("Key alias is required");
       if (isIos && provisionFiles.length === 0) throw new Error("At least one provisioning profile is required");
 
-      const parent = await api.createCertificate(orgId, {
+      const parent = await api.createCertificate(appId, {
         platform,
         kind,
         label: label.trim(),
@@ -254,7 +254,7 @@ function AddCertDialog({
       if (isIos) {
         for (const profile of provisionFiles) {
           const provisionName = profile.name.replace(/\.mobileprovision$/i, "");
-          await api.createCertificate(orgId, {
+          await api.createCertificate(appId, {
             platform: "ios",
             kind: "provisioning",
             parentCertId: parent.id,
@@ -267,7 +267,7 @@ function AddCertDialog({
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["certs", orgId] });
+      qc.invalidateQueries({ queryKey: ["certs", appId] });
       onClose();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
@@ -402,7 +402,7 @@ interface EditState {
   removedMain: boolean;
 }
 
-function EditCertDialog({ cert, orgId, onClose }: { cert: CertificateGroup; orgId: string; onClose: () => void }) {
+function EditCertDialog({ cert, appId, onClose }: { cert: CertificateGroup; appId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const isIos = cert.platform === "ios";
   const isKeystore = cert.kind === "keystore";
@@ -457,7 +457,7 @@ function EditCertDialog({ cert, orgId, onClose }: { cert: CertificateGroup; orgI
       // 3. Upload any newly-added provisioning profiles, linked to this parent.
       for (const profile of newProfiles) {
         const provisionName = profile.name.replace(/\.mobileprovision$/i, "");
-        await api.createCertificate(orgId, {
+        await api.createCertificate(appId, {
           platform: "ios",
           kind: "provisioning",
           parentCertId: cert.id,
@@ -512,14 +512,25 @@ function EditCertDialog({ cert, orgId, onClose }: { cert: CertificateGroup; orgI
                     hint={<>Drop replacement file here or <span className="filedrop-link">browse</span></>}
                   />
                 ) : (
-                  <div className="cert-file-row">
-                    <span className="cert-file-row__name">
-                      {editState.mainFile ? editState.mainFile.name : cert.fileName}
-                    </span>
-                    <FileDeleteButton
-                      onClick={() => setEditState({ mainFile: null, removedMain: true })}
-                      ariaLabel="Remove file"
-                    />
+                  <div className="cert-file-block">
+                    <div className="cert-file-row">
+                      <span className="cert-file-row__name">
+                        {editState.mainFile ? editState.mainFile.name : cert.fileName}
+                      </span>
+                      <FileDeleteButton
+                        onClick={() => setEditState({ mainFile: null, removedMain: true })}
+                        ariaLabel="Remove file"
+                      />
+                    </div>
+                    {!editState.mainFile && cert.kind === "p12" && (
+                      <CertMetaTable
+                        rows={[
+                          ["Name", cert.metadata?.commonName],
+                          ["Creation date", formatExpiration(cert.metadata?.creationDate)],
+                          ["Expiration date", formatExpiration(cert.metadata?.expirationDate)],
+                        ]}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -560,15 +571,26 @@ function EditCertDialog({ cert, orgId, onClose }: { cert: CertificateGroup; orgI
                   {(existingProfiles.length > 0 || newProfiles.length > 0) && (
                     <div className="cert-file-list">
                       {existingProfiles.map((p) => (
-                        <div key={p.id} className="cert-file-row">
-                          <span className="cert-file-row__name">{p.fileName}</span>
-                          <FileDeleteButton
-                            onClick={() => {
-                              setExistingProfiles(existingProfiles.filter((x) => x.id !== p.id));
-                              setRemovedProfileIds([...removedProfileIds, p.id]);
-                            }}
-                            ariaLabel={`Remove ${p.fileName}`}
-                          />
+                        <div key={p.id} className="cert-file-block">
+                          <div className="cert-file-row">
+                            <span className="cert-file-row__name">{p.fileName}</span>
+                            <FileDeleteButton
+                              onClick={() => {
+                                setExistingProfiles(existingProfiles.filter((x) => x.id !== p.id));
+                                setRemovedProfileIds([...removedProfileIds, p.id]);
+                              }}
+                              ariaLabel={`Remove ${p.fileName}`}
+                            />
+                          </div>
+                          {(p.metadata?.bundleId || p.metadata?.teamId || p.metadata?.expirationDate) && (
+                            <CertMetaTable
+                              rows={[
+                                ["BundleID", p.metadata?.bundleId],
+                                ["Team", p.metadata?.teamId],
+                                ["Expiration", formatExpiration(p.metadata?.expirationDate)],
+                              ]}
+                            />
+                          )}
                         </div>
                       ))}
                       {newProfiles.map((f, i) => (
@@ -611,5 +633,18 @@ function EditCertDialog({ cert, orgId, onClose }: { cert: CertificateGroup; orgI
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CertMetaTable({ rows }: { rows: ReadonlyArray<readonly [string, string | undefined | null]> }) {
+  return (
+    <dl className="cert-meta">
+      {rows.map(([k, v]) => (
+        <div className="cert-meta__row" key={k}>
+          <dt className="cert-meta__key">{k}</dt>
+          <dd className="cert-meta__val">{v && v.trim() ? v : "—"}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

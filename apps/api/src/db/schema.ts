@@ -197,9 +197,9 @@ export const gitConnections = pgTable("git_connections", {
 
 export const certificates = pgTable("certificates", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id")
+  appId: text("app_id")
     .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
+    .references(() => apps.id, { onDelete: "cascade" }),
   platform: certPlatform("platform").notNull(),
   kind: certKind("kind").notNull(),
   // Provisioning profiles point at their parent p12 here. Top-level certs

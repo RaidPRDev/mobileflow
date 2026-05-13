@@ -45,6 +45,7 @@ export type GitProvider = "github" | "gitlab" | "bitbucket";
 
 export interface CertificateRow {
   id: string;
+  appId: string;
   platform: "ios" | "android";
   kind: "p12" | "provisioning" | "keystore";
   label: string;
@@ -308,10 +309,10 @@ export const api = {
   deleteEnvVar: (varId: string) => request<void>(`/env-vars/${varId}`, { method: "DELETE" }),
 
   // Certificates
-  listCertificates: (orgId: string) =>
-    request<CertificateGroup[]>(`/orgs/${orgId}/certificates`),
+  listCertificates: (appId: string) =>
+    request<CertificateGroup[]>(`/apps/${appId}/certificates`),
   createCertificate: (
-    orgId: string,
+    appId: string,
     body: {
       platform: "ios" | "android";
       kind: "p12" | "provisioning" | "keystore";
@@ -322,7 +323,7 @@ export const api = {
       metadata?: Record<string, string>;
       parentCertId?: string;
     },
-  ) => request<CertificateRow>(`/orgs/${orgId}/certificates`, { method: "POST", body: JSON.stringify(body) }),
+  ) => request<CertificateRow>(`/apps/${appId}/certificates`, { method: "POST", body: JSON.stringify(body) }),
   updateCertificate: (
     id: string,
     body: {

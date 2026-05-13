@@ -251,11 +251,10 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
     enabled: !!appId,
   });
 
-  const orgId = appQ.data?.orgId ?? null;
   const certsQ = useQuery({
-    queryKey: ["certs", orgId],
-    queryFn: () => api.listCertificates(orgId!),
-    enabled: !!orgId,
+    queryKey: ["certs", appId],
+    queryFn: () => api.listCertificates(appId),
+    enabled: !!appId,
   });
 
   const destsQ = useQuery({

@@ -163,7 +163,7 @@ export class MacRunner implements Runner {
       await ctx.step("installing", "running");
       let cert: IosCertMaterials;
       try {
-        cert = await materializeIosCerts(ssh, orgId, remoteDir, ctx);
+        cert = await materializeIosCerts(ssh, remoteDir, ctx);
       } catch (e) {
         await ctx.log(`Signing certificate error: ${e instanceof Error ? e.message : String(e)}`);
         await ctx.step("installing", "failed", 1);
@@ -427,7 +427,6 @@ interface IosCertMaterials {
 
 async function materializeIosCerts(
   ssh: Client,
-  orgId: string,
   remoteDir: string,
   ctx: RunnerContext,
 ): Promise<IosCertMaterials> {
@@ -442,7 +441,7 @@ async function materializeIosCerts(
     .where(eq(certificates.id, certificateId))
     .limit(1);
   if (!p12) throw new Error(`Signing certificate ${certificateId} not found.`);
-  if (p12.orgId !== orgId) throw new Error("Signing certificate does not belong to this app's organization.");
+  if (p12.appId !== ctx.build.appId) throw new Error("Signing certificate does not belong to this app.");
   if (p12.platform !== "ios") throw new Error(`Selected signing certificate is for ${p12.platform}, not iOS.`);
   if (p12.kind !== "p12") throw new Error(`Selected signing certificate must be a .p12 (got kind=${p12.kind}).`);
 
@@ -478,16 +477,12 @@ async function materializeIosCerts(
   await writeBlob(provisionBase64, provisionPath, "provisioning profile");
 
   // main_build.sh requires the provisioning profile UUID (PROVISION_ID).
-  // Prefer the value stored at upload time; fall back to parsing it out of the
-  // CMS-signed .mobileprovision (the plist is plaintext inside the envelope).
-  let provisionId = provisionMeta.provisionId ?? "";
-  if (!provisionId) {
-    provisionId = extractProvisionUuid(Buffer.from(provisionBase64, "base64")) ?? "";
-    if (provisionId) await ctx.log(`Extracted provisioning UUID from profile: ${provisionId}`);
-  }
+  // The certificates upload route extracts this from the .mobileprovision and
+  // persists it on metadata, so it is always present for valid uploads.
+  const provisionId = provisionMeta.provisionId ?? "";
   if (!provisionId) {
     throw new Error(
-      "Provisioning profile UUID not found. Re-upload the .mobileprovision so its UUID is recorded.",
+      "Provisioning profile UUID missing from metadata. Re-upload the .mobileprovision.",
     );
   }
   await ctx.log(`Materialized provisioning profile: ${provisionName} (uuid ${provisionId})`);
@@ -499,12 +494,6 @@ async function materializeIosCerts(
     provisionPath,
     provisionName,
   };
-}
-
-function extractProvisionUuid(buf: Buffer): string | null {
-  const text = buf.toString("latin1");
-  const m = text.match(/<key>UUID<\/key>\s*<string>([0-9A-Fa-f-]{36})<\/string>/);
-  return m && m[1] ? m[1] : null;
 }
 
 async function collectEnvExports(ctx: RunnerContext): Promise<string> {
