@@ -30,6 +30,11 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
+# Ensure the assets dir exists — git doesn't track empty dirs, so a client repo
+# may ship an android/ folder without app/src/main/assets/, which makes
+# cap update fail with ENOENT on capacitor.plugins.json.
+mkdir -p android/app/src/main/assets
+
 npx cap update android
 npx cap sync android
 

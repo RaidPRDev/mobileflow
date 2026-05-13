@@ -133,11 +133,19 @@ export interface ExecResult {
 // stanza, small enough to fit in the build row's errorMessage column.
 const TAIL_BUDGET = 3000;
 
-/** Run a command, streaming stdout/stderr lines to `onLine`. Resolves with exit code. */
+/**
+ * Run a command, streaming stdout/stderr lines to `onLine`. Resolves with exit
+ * code. If an `AbortSignal` is supplied and fires, we send SIGTERM to the
+ * remote process and close the channel — closing the channel triggers SIGHUP
+ * to the shell, which propagates to its foreground process group (xcodebuild,
+ * pod, docker, etc.). The resolved `signal` field is set to `"aborted"` in
+ * that case so callers can distinguish abort from natural exit.
+ */
 export function exec(
   client: Client,
   cmd: string,
   onLine: (line: string) => void | Promise<void>,
+  abortSignal?: AbortSignal,
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     client.exec(cmd, { pty: false }, (err, stream) => {
@@ -146,6 +154,7 @@ export function exec(
       let stderrBuf = "";
       const tailLines: string[] = [];
       let tailSize = 0;
+      let aborted = false;
       const pushTail = (line: string) => {
         tailLines.push(line);
         tailSize += line.length + 1;
@@ -164,11 +173,27 @@ export function exec(
         }
         return tail;
       };
+      const onAbort = () => {
+        if (aborted) return;
+        aborted = true;
+        // ssh2 stream.signal(): not all sshd impls relay signals to the
+        // remote process (Apple's notably is spotty), but it's free to try.
+        try { (stream as unknown as { signal: (s: string) => void }).signal?.("TERM"); } catch { /* ignore */ }
+        // Closing the channel sends EOF; the remote shell receives SIGHUP and
+        // forwards it to children. This is what actually does the work on
+        // macOS where signal() may no-op.
+        try { stream.close(); } catch { /* ignore */ }
+      };
+      if (abortSignal) {
+        if (abortSignal.aborted) onAbort();
+        else abortSignal.addEventListener("abort", onAbort, { once: true });
+      }
       stream
         .on("data", (chunk: Buffer) => {
           stdoutBuf = flush(stdoutBuf + chunk.toString("utf8"), false);
         })
         .on("close", (code: number | null, signal: string | null) => {
+          if (abortSignal) abortSignal.removeEventListener("abort", onAbort);
           if (stdoutBuf) {
             pushTail(stdoutBuf);
             void onLine(stdoutBuf);
@@ -177,7 +202,11 @@ export function exec(
             pushTail(`! ${stderrBuf}`);
             void onLine(`! ${stderrBuf}`);
           }
-          resolve({ exitCode: code ?? -1, signal, outputTail: tailLines.join("\n") });
+          resolve({
+            exitCode: aborted ? -1 : (code ?? -1),
+            signal: aborted ? "aborted" : signal,
+            outputTail: tailLines.join("\n"),
+          });
         })
         .stderr.on("data", (chunk: Buffer) => {
           stderrBuf = flush(stderrBuf + chunk.toString("utf8"), true);

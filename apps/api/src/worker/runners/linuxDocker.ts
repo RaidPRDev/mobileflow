@@ -52,11 +52,44 @@ export class LinuxDockerAndroidRunner implements Runner {
     const artifactBase = `${safeAppName}_${buildDate}`;
 
     return await withSsh(host, async (ssh) => {
+      // Single AbortController across every exec() in this run. When the user
+      // cancels, we abort, which closes the SSH channel and sends SIGHUP to
+      // the remote shell. `docker run` is its own foreground process and
+      // forwards SIGTERM/SIGHUP to PID 1 in the container, so the build
+      // inside the container dies along with the ssh-side bash.
+      const abortCtl = new AbortController();
+      const cancelPoll = setInterval(() => {
+        if (abortCtl.signal.aborted) return;
+        void ctx.isCancelled().then((c) => {
+          if (c && !abortCtl.signal.aborted) {
+            void ctx.log("Cancellation requested — aborting remote build…");
+            abortCtl.abort();
+          }
+        }).catch(() => { /* ignore poll errors */ });
+      }, 1000);
+
       const run = async (cmd: string) => {
-        const r = await exec(ssh, cmd, (line) => ctx.log(line));
+        const r = await exec(ssh, cmd, (line) => ctx.log(line), abortCtl.signal);
+        if (abortCtl.signal.aborted) throw new Error("cancelled");
         if (r.exitCode !== 0) throw new Error(formatCmdError(cmd, r.exitCode, r.outputTail));
       };
 
+      // Best-effort kill of stragglers after the channel is closed by abort.
+      // `docker run --rm` normally tears the container down when its bash
+      // parent exits via SIGHUP, so this mostly catches host-side stragglers.
+      const killRemoteBuildProcs = async () => {
+        try {
+          await exec(
+            ssh,
+            `bash -lc ${shq(`pkill -f ${shq(buildId)} 2>/dev/null || true`)}`,
+            () => {},
+          );
+        } catch {
+          /* best-effort */
+        }
+      };
+
+      try {
       // --- preparing ---
       await ctx.step("preparing", "running");
       try {
@@ -167,6 +200,15 @@ export class LinuxDockerAndroidRunner implements Runner {
       await ctx.step("cleanup", "success", 0);
 
       return { artifacts };
+      } catch (err) {
+        if (abortCtl.signal.aborted) {
+          await ctx.log("Cancellation: killing remote build processes…");
+          await killRemoteBuildProcs();
+        }
+        throw err;
+      } finally {
+        clearInterval(cancelPoll);
+      }
     });
   }
 }

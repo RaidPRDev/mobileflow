@@ -65,17 +65,21 @@ async function runOne(buildId: string) {
     },
   };
 
-  buildBus.emit(b.id, { type: "status", status: "running" });
+  // Include startedAt so the UI can tick the duration immediately, even when
+  // the page opened before this tick claimed the row (in which case the WS
+  // snapshot was sent with startedAt=null).
+  buildBus.emit(b.id, { type: "status", status: "running", startedAt: b.startedAt?.toISOString() ?? null });
 
   try {
     await ctx.log(`Build ${b.id} started for ${a.name} (${b.target}, ${b.commitSha.slice(0, 7)})`);
     const runner = await pickRunner(b.target);
     await ctx.log(`Using runner: ${runner.constructor.name}`);
     const { artifacts = [] } = await runner.run(ctx);
-    await db.update(builds).set({ status: "success", finishedAt: new Date(), artifacts }).where(eq(builds.id, b.id));
+    const finishedAt = new Date();
+    await db.update(builds).set({ status: "success", finishedAt, artifacts }).where(eq(builds.id, b.id));
     await ctx.log(`Build complete. ${artifacts.length} artifact(s) ready.`);
     buildBus.emit(b.id, { type: "artifacts", artifacts });
-    buildBus.emit(b.id, { type: "status", status: "success" });
+    buildBus.emit(b.id, { type: "status", status: "success", finishedAt: finishedAt.toISOString() });
     await maybeQueueAutoDeploy(b, ctx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -83,9 +87,9 @@ async function runOne(buildId: string) {
       await ctx.log("Build cancelled.");
       buildBus.emit(b.id, { type: "status", status: "cancelled" });
     } else {
-      await fail(b, msg);
+      const finishedAt = await fail(b, msg);
       await ctx.log(`Build failed: ${msg}`);
-      buildBus.emit(b.id, { type: "status", status: "failed", errorMessage: msg });
+      buildBus.emit(b.id, { type: "status", status: "failed", errorMessage: msg, finishedAt: finishedAt.toISOString() });
     }
   }
 }
@@ -128,11 +132,13 @@ async function maybeQueueAutoDeploy(b: Build, ctx: RunnerContext) {
   }
 }
 
-async function fail(b: Build, message: string) {
+async function fail(b: Build, message: string): Promise<Date> {
+  const finishedAt = new Date();
   await db
     .update(builds)
-    .set({ status: "failed", finishedAt: new Date(), errorMessage: message })
+    .set({ status: "failed", finishedAt, errorMessage: message })
     .where(eq(builds.id, b.id));
+  return finishedAt;
 }
 
 async function appendLog(buildId: string, line: string) {

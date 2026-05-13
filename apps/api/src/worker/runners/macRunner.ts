@@ -49,16 +49,54 @@ export class MacRunner implements Runner {
     const cloneUrl = cloneUrlFor(conn.provider as "github" | "gitlab" | "bitbucket", a.gitRepoFullName, token);
 
     return await withSsh(host, async (ssh) => {
+      // Single AbortController shared across every exec() in this run. When
+      // ctx.isCancelled() flips, we abort, which closes the active SSH channel
+      // and propagates SIGHUP to the remote shell + its children (xcodebuild,
+      // pod, etc.). Without this the cancellation only fires at phase
+      // boundaries — a long xcodebuild step could keep going for many seconds
+      // after the user hit Cancel.
+      const abortCtl = new AbortController();
+      const cancelPoll = setInterval(() => {
+        if (abortCtl.signal.aborted) return;
+        void ctx.isCancelled().then((c) => {
+          if (c && !abortCtl.signal.aborted) {
+            void ctx.log("Cancellation requested — aborting remote build…");
+            abortCtl.abort();
+          }
+        }).catch(() => { /* ignore poll errors */ });
+      }, 1000);
+
       const run = async (cmd: string) => {
-        const r = await exec(ssh, cmd, (line) => ctx.log(line));
+        const r = await exec(ssh, cmd, (line) => ctx.log(line), abortCtl.signal);
+        if (abortCtl.signal.aborted) throw new Error("cancelled");
         if (r.exitCode !== 0) throw new Error(formatCmdError(cmd, r.exitCode, r.outputTail));
       };
 
       // Wipe the entire build dir. Used as the error-path cleanup so a failed
       // build doesn't leave a half-cloned repo / partial Pods install behind.
+      // Uses a fresh channel (no abort signal) — even when we're aborting we
+      // still want this cleanup to run to completion.
       const wipeBuildDir = async () => {
         try {
           await exec(ssh, `bash -lc ${shq(`rm -rf ${shq(remoteDir)}`)}`, (line) => ctx.log(line));
+        } catch {
+          /* best-effort */
+        }
+      };
+
+      // Belt-and-suspenders: after the channel is closed by abort, any process
+      // that detached from the shell (cocoapods has a daemon, xcodebuild can
+      // outlive its bash parent in rare cases) won't get HUP'd. A fresh
+      // channel running pkill scoped to the build's working directory kills
+      // anything still touching it. Best-effort, short timeout.
+      const killRemoteBuildProcs = async () => {
+        try {
+          await execDrained(
+            ssh,
+            `bash -lc ${shq(`pkill -f ${shq(buildId)} 2>/dev/null || true`)}`,
+            "cancel-pkill",
+            5_000,
+          );
         } catch {
           /* best-effort */
         }
@@ -213,7 +251,10 @@ export class MacRunner implements Runner {
           void ctx.log(line);
         };
 
-        const r = await exec(ssh, buildCmd, onBuildLine);
+        const r = await exec(ssh, buildCmd, onBuildLine, abortCtl.signal);
+        if (abortCtl.signal.aborted) {
+          throw new Error("cancelled");
+        }
         if (r.exitCode !== 0) {
           throw new Error(formatCmdError(buildCmd, r.exitCode, r.outputTail));
         }
@@ -355,12 +396,22 @@ export class MacRunner implements Runner {
 
       return { artifacts };
       } catch (err) {
-        // Pipeline failure: blow away the entire build dir so we don't pile up
-        // half-cloned repos / partial Pods / orphaned DerivedData on the Mac.
-        await ctx.log("Build failed — cleaning up remote build directory.");
+        if (abortCtl.signal.aborted) {
+          // Cancellation path: kill remote processes first so they release
+          // file handles before we wipe — xcodebuild can otherwise keep dirs
+          // un-removable on some macOS configs.
+          await ctx.log("Cancellation: killing remote build processes…");
+          await killRemoteBuildProcs();
+        } else {
+          // Pipeline failure: blow away the entire build dir so we don't pile
+          // up half-cloned repos / partial Pods / orphaned DerivedData.
+          await ctx.log("Build failed — cleaning up remote build directory.");
+        }
         await wipeBuildDir();
         await wipeXcArtifacts();
         throw err;
+      } finally {
+        clearInterval(cancelPoll);
       }
     });
   }

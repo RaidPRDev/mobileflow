@@ -8,7 +8,7 @@ import { EventEmitter } from "node:events";
 type Event =
   | { type: "log"; line: string; offset: number }
   | { type: "step"; name: string; status: string; exitCode?: number }
-  | { type: "status"; status: string; errorMessage?: string | null }
+  | { type: "status"; status: string; errorMessage?: string | null; startedAt?: string | null; finishedAt?: string | null }
   | { type: "artifacts"; artifacts: { kind: string; url: string }[] };
 
 class BuildBus {

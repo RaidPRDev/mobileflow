@@ -29,7 +29,13 @@ interface SnapshotEvent {
 }
 interface LogEvent { type: "log"; line: string; offset: number }
 interface StepEvent { type: "step"; name: string; status: BuildStepStatus; exitCode?: number }
-interface StatusEvent { type: "status"; status: BuildDetail["status"]; errorMessage?: string | null }
+interface StatusEvent {
+  type: "status";
+  status: BuildDetail["status"];
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
 interface ArtifactsEvent { type: "artifacts"; artifacts: { kind: string; url: string }[] }
 type StreamEvent = SnapshotEvent | LogEvent | StepEvent | StatusEvent | ArtifactsEvent | { type: "error"; message: string };
 
@@ -134,7 +140,18 @@ export function BuildPage() {
         );
       } else if (evt.type === "status") {
         setSnapshot((s) =>
-          s ? { ...s, status: evt.status, errorMessage: evt.errorMessage ?? s.errorMessage } : s,
+          s
+            ? {
+                ...s,
+                status: evt.status,
+                errorMessage: evt.errorMessage ?? s.errorMessage,
+                // Merge timestamps when the worker provides them so the live
+                // duration ticker can start counting even if the initial
+                // snapshot pre-dated the claim (startedAt was still null).
+                startedAt: evt.startedAt ?? s.startedAt,
+                finishedAt: evt.finishedAt ?? s.finishedAt,
+              }
+            : s,
         );
       } else if (evt.type === "artifacts") {
         setSnapshot((s) => (s ? { ...s, artifacts: evt.artifacts } : s));
@@ -218,15 +235,37 @@ export function BuildPage() {
   // has scrolled away from the bottom.
   const logRef = useRef<HTMLPreElement>(null);
   const stuckToBottomRef = useRef(true);
+  // True for the brief window between our programmatic scrollTop write and the
+  // resulting scroll event — keeps the user-scroll detector from mistakenly
+  // disengaging auto-scroll on our own writes.
+  const programmaticScrollRef = useRef(false);
   useEffect(() => {
     const el = logRef.current;
     if (!el) return;
-    if (stuckToBottomRef.current) el.scrollTop = el.scrollHeight;
+    if (!stuckToBottomRef.current) return;
+    // rAF so the scroll happens after layout has settled with the new content.
+    // Without it, scrollHeight occasionally reflects the pre-paint height and
+    // we end up one frame short of the actual bottom.
+    const raf = requestAnimationFrame(() => {
+      const e = logRef.current;
+      if (!e) return;
+      programmaticScrollRef.current = true;
+      e.scrollTop = e.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
   }, [logBuf]);
   const onLogScroll = () => {
+    if (programmaticScrollRef.current) {
+      programmaticScrollRef.current = false;
+      return;
+    }
     const el = logRef.current;
     if (!el) return;
-    stuckToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+    // 24px tolerance covers scrollbar thumb height, partial-line wraps, and
+    // small layout-shift jitter. The previous 4px was tight enough that any
+    // wheel-tick away from the bottom would permanently disengage auto-scroll
+    // until the user re-snapped to the exact bottom pixel.
+    stuckToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   };
 
   // Live ticking duration while the build is running.

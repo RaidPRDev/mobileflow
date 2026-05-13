@@ -67,6 +67,12 @@ npm run build
 # ================================
 echo "🔄 Syncing web assets into iOS project..."
 npx cap telemetry off
+
+# Ensure the iOS app dir exists — mirrors the Android assets-dir guard.
+# Empty subdirs (e.g. public/) aren't tracked by git, so a client repo may
+# ship ios/App/App without public/, causing cap update/sync to ENOENT.
+mkdir -p ios/App/App/public
+
 npx cap update ios
 npx cap sync ios
 
