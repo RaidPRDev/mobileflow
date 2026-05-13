@@ -4,8 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] },
+    "paths": { "@/*": ["./src/*"] },
     "types": ["node"]
   },
   "include": ["src", "drizzle.config.ts"]
