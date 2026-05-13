@@ -145,8 +145,21 @@ export async function buildsRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Params: { buildId: string }; Querystring: { since?: string } }>("/builds/:buildId", async (req, reply) => {
-    const [b] = await db.select().from(builds).where(eq(builds.id, req.params.buildId)).limit(1);
-    if (!b) return reply.notFound();
+    // Join users so the build-detail page can render the "Triggered By"
+    // name + email (the list endpoint already does this; without it here, the
+    // detail panel shows a placeholder avatar and "—").
+    const [row] = await db
+      .select({
+        build: builds,
+        triggeredByName: users.name,
+        triggeredByEmail: users.email,
+      })
+      .from(builds)
+      .leftJoin(users, eq(builds.createdByUserId, users.id))
+      .where(eq(builds.id, req.params.buildId))
+      .limit(1);
+    if (!row) return reply.notFound();
+    const b = row.build;
     const [a] = await db.select({ orgId: apps.orgId }).from(apps).where(eq(apps.id, b.appId)).limit(1);
     if (!a) return reply.notFound();
     await requireOrgMember(req, reply, a.orgId);
@@ -166,6 +179,8 @@ export async function buildsRoutes(app: FastifyInstance) {
     return {
       ...b,
       logText: undefined,
+      triggeredByName: row.triggeredByName,
+      triggeredByEmail: row.triggeredByEmail,
       certificateLabel,
       steps,
       log: { offset: since, length: b.logText.length, tail: logTail },
@@ -186,12 +201,25 @@ export async function buildsRoutes(app: FastifyInstance) {
         socket.close(4401);
         return;
       }
-      const [b] = await db.select().from(builds).where(eq(builds.id, req.params.buildId)).limit(1);
-      if (!b) {
+      // Join users so the snapshot carries triggeredByName/Email — the build-
+      // detail page renders these and would clobber its initial REST data with
+      // an empty "Triggered By" field if we sent the bare build row here.
+      const [row] = await db
+        .select({
+          build: builds,
+          triggeredByName: users.name,
+          triggeredByEmail: users.email,
+        })
+        .from(builds)
+        .leftJoin(users, eq(builds.createdByUserId, users.id))
+        .where(eq(builds.id, req.params.buildId))
+        .limit(1);
+      if (!row) {
         socket.send(JSON.stringify({ type: "error", message: "not found" }));
         socket.close(4404);
         return;
       }
+      const b = row.build;
       const [a] = await db.select({ orgId: apps.orgId }).from(apps).where(eq(apps.id, b.appId)).limit(1);
       if (!a) {
         socket.close(4404);
@@ -216,7 +244,13 @@ export async function buildsRoutes(app: FastifyInstance) {
       socket.send(
         JSON.stringify({
           type: "snapshot",
-          build: { ...b, logText: undefined, certificateLabel },
+          build: {
+            ...b,
+            logText: undefined,
+            triggeredByName: row.triggeredByName,
+            triggeredByEmail: row.triggeredByEmail,
+            certificateLabel,
+          },
           steps,
           log: b.logText,
         }),

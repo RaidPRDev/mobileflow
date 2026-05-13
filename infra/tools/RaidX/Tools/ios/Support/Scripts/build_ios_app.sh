@@ -77,8 +77,12 @@ echo "🛠️  Building iOS archive for scheme: $APP_SCHEME"
 
 build_pods_target() {
     echo "Building CocoaPods target..."
-    
-    # Build the Pods target first
+
+    # NOTE: cannot pass -derivedDataPath here. xcodebuild requires -scheme (or
+    # -testProductsPath/-xctestrun) alongside -derivedDataPath, but the Pods
+    # project is built by -target. So this one invocation writes DerivedData to
+    # the default location (~/Library/Developer/Xcode/DerivedData/Pods-*). The
+    # worker's startup sweep wipes those Pods-* entries between API restarts.
     xcodebuild build \
         -project "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/App/$PODS_WORKSPACE_NAME" \
         -target "$PODS_TARGET" \
@@ -108,13 +112,19 @@ fi
 mkdir -p "$BUILD_DIR"
 mkdir -p "$EXPORT_PATH"
 
+# Pin DerivedData inside the build sandbox so it gets wiped with the build dir.
+# Default location (~/Library/Developer/Xcode/DerivedData/App-<hash>/) accumulates
+# orphans across builds since each build uses a unique workspace path.
+DERIVED_DATA_PATH="$BUILD_DIR/DerivedData"
+mkdir -p "$DERIVED_DATA_PATH"
+
 # Resolving Swift Package Manager dependencies...
 echo "🧹 Resolving Swift Package Manager dependencies..."
-xcodebuild -resolvePackageDependencies -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' | xcpretty
+xcodebuild -resolvePackageDependencies -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcpretty
 
 # Xcode 26 requires -destination on -showBuildSettings; without it, it errors
 # with "Found no destinations for the scheme ... and action build".
-xcodebuild -showBuildSettings -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' | xcpretty
+xcodebuild -showBuildSettings -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcpretty
 
 build_pods_target
 
@@ -129,6 +139,7 @@ xcodebuild \
   -configuration "Release" \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE_PATH" \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
   clean \
   archive \
   PROVISIONING_PROFILE="${PROFILE_UUID}" \

@@ -4,6 +4,7 @@ import { apps, buildSteps, builds, deployments, storeDestinations, type Build } 
 import type { RunnerContext } from "./runner.js";
 import { pickRunner } from "./runners/selector.js";
 import { buildBus } from "./events.js";
+import { sweepMacBuildSandboxes } from "./maintenance.js";
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = 0;
@@ -11,6 +12,9 @@ const MAX_CONCURRENCY = 2;
 
 export function startWorker(intervalMs = 1500) {
   if (timer) return;
+  // Fire-and-forget sweep of orphan Mac build dirs. Runs in the background
+  // while the polling loop starts — failures here must not delay the worker.
+  void sweepMacBuildSandboxes();
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   timer = setInterval(() => void tick(), intervalMs);
 }

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { Client } from "ssh2";
 import { db } from "../../db/client.js";
-import { apps, certificates, environmentVars, gitConnections } from "../../db/schema.js";
+import { apps, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
 import { exec, resolveLinuxHost, resolveMacHost, withSsh } from "../ssh.js";
@@ -60,6 +60,48 @@ export class MacRunner implements Runner {
           await exec(ssh, `bash -lc ${shq(`rm -rf ${shq(remoteDir)}`)}`, (line) => ctx.log(line));
         } catch {
           /* best-effort */
+        }
+      };
+
+      // Captured before main_build.sh runs; used to scope per-build cleanup of
+      // xcdistributionlogs/xcresult dirs in the user temp dir (xcodebuild has
+      // no flag to redirect those out of $TMPDIR). See wipeXcArtifacts below.
+      const buildStartUnix = Math.floor(Date.now() / 1000);
+
+      // /var/folders cleanup, gated by concurrency. Only safe to delete files
+      // newer than our build start if no OTHER build ran concurrently — else
+      // we might wipe their artifacts. When we skip, the startup sweep will
+      // catch the leftovers on the next API restart.
+      const wipeXcArtifacts = async () => {
+        try {
+          const ourStart = new Date(buildStartUnix * 1000);
+          // Builds (other than ours) whose [startedAt, finishedAt] overlapped
+          // with our window: started before now AND (still running OR finished
+          // after our start).
+          const concurrent = await db
+            .select({ id: builds.id })
+            .from(builds)
+            .where(
+              and(
+                ne(builds.id, buildId),
+                isNotNull(builds.startedAt),
+                or(isNull(builds.finishedAt), gte(builds.finishedAt, ourStart)),
+              ),
+            )
+            .limit(1);
+          if (concurrent.length > 0) {
+            await ctx.log("[cleanup] skipped xc artifact cleanup — concurrent build(s) active during this window");
+            return;
+          }
+          const cmd =
+            `find "$TMPDIR" -maxdepth 1 ` +
+            `\\( -name "*.xcdistributionlogs" -o -name "ResultBundle_*.xcresult" \\) ` +
+            `-newermt "@${buildStartUnix}" -exec rm -rf {} + 2>/dev/null; ` +
+            `echo done`;
+          await exec(ssh, `bash -lc ${shq(cmd)}`, () => {});
+          await ctx.log("[cleanup] wiped xcdistributionlogs/xcresult from this build window");
+        } catch (e) {
+          await ctx.log(`[cleanup] xc artifact cleanup failed (non-fatal): ${(e as Error).message}`);
         }
       };
 
@@ -223,14 +265,14 @@ export class MacRunner implements Runner {
 
       // --- cleanup ---
       // Artifacts now live on the Linux box; the Mac copy is no longer needed.
-      // Wipe the entire build dir so a small Mac disk doesn't fill up across
-      // many builds.
+      // Wipe the entire build dir + the xc artifacts in $TMPDIR.
       await ctx.step("cleanup", "running");
       try {
         await run(`bash -lc ${shq(`rm -rf ${shq(remoteDir)}`)}`);
       } catch {
         /* best-effort */
       }
+      await wipeXcArtifacts();
       await ctx.step("cleanup", "success", 0);
 
       return { artifacts };
@@ -239,6 +281,7 @@ export class MacRunner implements Runner {
         // half-cloned repos / partial Pods / orphaned DerivedData on the Mac.
         await ctx.log("Build failed — cleaning up remote build directory.");
         await wipeBuildDir();
+        await wipeXcArtifacts();
         throw err;
       }
     });
