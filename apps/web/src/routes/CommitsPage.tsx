@@ -171,7 +171,7 @@ function CommitRowItem({ commit, branchName, accountAvatarUrl, accountLogin, onS
           >
             <span className="commit-row__sha-text">{shortSha}</span>
             <ExternalLink size={11} aria-hidden />
-            <span className="tooltip-bubble" role="tooltip">
+            <span className="tooltip-bubble tooltip-bubble--start" role="tooltip">
               {commit.sha}
             </span>
           </a>

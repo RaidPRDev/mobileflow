@@ -40,6 +40,7 @@
 }
 
 .app-rail-icon {
+  position: relative;
   width: 40px;
   height: 40px;
   display: inline-flex;
@@ -51,6 +52,13 @@
   color: var(--color-sidebar-fg-muted);
   cursor: default;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+// Rail icons and the brand use `tooltip-wrap` for hover labels, but the
+// click target should keep its default cursor — the bubble is decorative.
+.app-rail-brand.tooltip-wrap,
+.app-rail-icon.tooltip-wrap {
+  cursor: default;
 }
 
 .app-rail-icon:hover {

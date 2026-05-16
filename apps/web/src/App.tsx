@@ -27,6 +27,9 @@ import { AdminOrgDetailPage } from "./admin/AdminOrgDetailPage";
 import { AdminUsersPage } from "./admin/AdminUsersPage";
 import { AdminBuildsPage } from "./admin/AdminBuildsPage";
 import { AdminPlansPage } from "./admin/AdminPlansPage";
+import { AdminPlanEditPage } from "./admin/AdminPlanEditPage";
+import { AdminStacksPage } from "./admin/AdminStacksPage";
+import { AdminStackEditPage } from "./admin/AdminStackEditPage";
 import { AdminHostsPage } from "./admin/AdminHostsPage";
 import { AdminOAuthAppsPage } from "./admin/AdminOAuthAppsPage";
 
@@ -80,6 +83,10 @@ export function App() {
         <Route path="users" element={<AdminUsersPage />} />
         <Route path="builds" element={<AdminBuildsPage />} />
         <Route path="plans" element={<AdminPlansPage />} />
+        <Route path="plans/:planId" element={<AdminPlanEditPage />} />
+        <Route path="stacks" element={<AdminStacksPage />} />
+        <Route path="stacks/new" element={<AdminStackEditPage />} />
+        <Route path="stacks/:stackId" element={<AdminStackEditPage />} />
         <Route path="hosts" element={<AdminHostsPage />} />
         <Route path="oauth-apps" element={<AdminOAuthAppsPage />} />
       </Route>

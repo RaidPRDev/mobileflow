@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { Client } from "ssh2";
 import { db } from "../../db/client.js";
-import { apps, certificates, environmentVars, gitConnections } from "../../db/schema.js";
+import { apps, buildStacks, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
 import { exec, execDrained, resolveLinuxHost, uploadBase64, withSsh } from "../ssh.js";
@@ -46,6 +46,15 @@ export class LinuxDockerAndroidRunner implements Runner {
     const remoteDir = `${host.remoteBase}/${orgId}/${buildId}`;
     const downloadsDir = `${host.downloadsBase}/${orgId}/${buildId}`;
     const androidTools = host.toolsPath ?? env.LINUX_BUILD_ANDROID_TOOLS;
+
+    // Stack drives the Docker image the build runs in. We fall back to the
+    // env default if the stack has no image set (or if the build references
+    // a stack that no longer exists — historical builds shouldn't fail just
+    // because an admin renamed a stack).
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const dockerImage = stack?.image ?? env.LINUX_BUILD_ANDROID_IMAGE;
     const cloneUrl = cloneUrlFor(conn.provider as "github" | "gitlab" | "bitbucket", a.gitRepoFullName, token);
     const safeAppName = a.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "app";
     const buildDate = new Date().toISOString().slice(0, 10).replaceAll("-", "_");
@@ -127,12 +136,12 @@ export class LinuxDockerAndroidRunner implements Runner {
         ...dockerEnv,
         ...keystoreFlags,
         `-w /workspace`,
-        shq(env.LINUX_BUILD_ANDROID_IMAGE),
+        shq(dockerImage),
         `bash /tools/main_build.sh`,
       ].join(" ");
 
       try {
-        await ctx.log(`docker run ${env.LINUX_BUILD_ANDROID_IMAGE}`);
+        await ctx.log(`docker run ${dockerImage} (stack: ${ctx.build.stackId ?? "—"})`);
         await run(dockerCmd);
         await ctx.step("installing", "success", 0);
         await ctx.step("building", "success", 0);

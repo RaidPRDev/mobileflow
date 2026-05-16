@@ -37,10 +37,9 @@ export async function seed() {
   console.log(`Seeded ${seedPlans.length} plans`);
 
   const stacks = [
-    { id: "android-default", platform: "android" as const, label: "Android (default)", imageOrXcodeVersion: "raidx-android-builder:latest", isDefault: true, sortOrder: 0 },
-    { id: "web-default", platform: "web" as const, label: "Web (Node 20)", imageOrXcodeVersion: "node:20-alpine", isDefault: true, sortOrder: 0 },
-    { id: "ios-15", platform: "ios" as const, label: "iOS — Xcode 15", imageOrXcodeVersion: "xcode-15", isDefault: true, sortOrder: 0 },
-    { id: "ios-16", platform: "ios" as const, label: "iOS — Xcode 16", imageOrXcodeVersion: "xcode-16", isDefault: false, sortOrder: 1 },
+    { id: "android-default", platform: "android" as const, label: "raidx-android-builder", image: "raidx-android-builder:latest", isDefault: true, sortOrder: 0 },
+    { id: "web-default", platform: "web" as const, label: "raidx-web-builder", image: "node:20-alpine", isDefault: true, sortOrder: 0 },
+    { id: "ios-default", platform: "ios" as const, label: "raidx-ios-builder", image: "xcode-25.6", isDefault: true, sortOrder: 0 },
   ];
   for (const s of stacks) {
     await db
@@ -48,7 +47,7 @@ export async function seed() {
       .values(s)
       .onConflictDoUpdate({
         target: buildStacks.id,
-        set: { platform: s.platform, label: s.label, imageOrXcodeVersion: s.imageOrXcodeVersion, isDefault: s.isDefault, sortOrder: s.sortOrder },
+        set: { platform: s.platform, label: s.label, image: s.image, isDefault: s.isDefault, sortOrder: s.sortOrder },
       });
   }
   console.log(`Seeded ${stacks.length} build stacks`);

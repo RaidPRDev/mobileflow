@@ -18,18 +18,32 @@
 // Shared page header: the title row above the table/content. Renders a
 // bottom rule so listing pages line up consistently. Add new page-specific
 // `__header` classes here when introducing a new listing page.
+// Grid (not flex) so the action button on the right keeps its natural width
+// while the title block on the left fills the rest. The `1fr` track has an
+// implicit `minmax(auto, 1fr)`, which refuses to shrink below content width —
+// `minmax(0, 1fr)` is the version that actually lets the title block shrink
+// and the subtitle wrap. The previous `flex + flex-wrap: wrap` setup pushed
+// the button to a new line whenever the subtitle had an unbreakable token
+// (e.g. `LINUX_BUILD_*` in a `<code>` element).
 .page-header,
 .apps-page__header,
 .commits-page__header,
 .builds-page__header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-md);
-  flex-wrap: wrap;
   padding: var(--space-md) 0 var(--space-lg);
   border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--space-xs);
+}
+
+// Left-side block (title + subtitle). The grid column constrains the width,
+// but `min-width: 0` is still required so the children inside can wrap —
+// otherwise long inline content (e.g. `<code>` tokens, mono identifiers)
+// would still overflow the column.
+.page-header__main {
+  min-width: 0;
 }
 
 // Shared page title styling. Matches the listing-page titles so e.g. the
@@ -49,6 +63,7 @@
   font-size: 14px;
   color: var(--color-fg-muted);
   margin-top: 4px;
+  margin-bottom: 1rem;
 }
 
 .page-actions {

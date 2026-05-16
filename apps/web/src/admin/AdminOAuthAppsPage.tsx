@@ -158,24 +158,27 @@ function ProviderCard({
   };
 
   return (
-    <div className="accordion-item">
-      <button
-        type="button"
-        className={cn("accordion-trigger", open && "is-open")}
-        onClick={() => setOpen((s) => !s)}
-        aria-expanded={open}
-      >
-        <span className="accordion-trigger-content">
-          {providerIcon(slot.provider)}
-          <span style={{ fontWeight: 500 }}>{slot.label}</span>
-          {existing ? (
-            <Badge variant="success">Configured</Badge>
-          ) : (
-            <Badge variant="outline">Not configured</Badge>
-          )}
-        </span>
-        <span className="row" style={{ gap: 8 }} onClick={(e) => e.stopPropagation()}>
-          {existing && (
+    <div className={cn("accordion-item", open && "is-open")}>
+      <div className="accordion-header">
+        <button
+          type="button"
+          className={cn("accordion-trigger", open && "is-open")}
+          onClick={() => setOpen((s) => !s)}
+          aria-expanded={open}
+        >
+          <span className="accordion-trigger-content">
+            {providerIcon(slot.provider)}
+            <span style={{ fontWeight: 500 }}>{slot.label}</span>
+            {existing ? (
+              <Badge variant="success">Configured</Badge>
+            ) : (
+              <Badge variant="outline">Not configured</Badge>
+            )}
+          </span>
+          <ChevronDown size={16} className="accordion-chevron" />
+        </button>
+        {existing && (
+          <div className="accordion-actions">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <IconButton variant="menu" aria-label="More actions">
@@ -194,10 +197,9 @@ function ProviderCard({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          <ChevronDown size={16} className="accordion-chevron" />
-        </span>
-      </button>
+          </div>
+        )}
+      </div>
       {open && (
         <div className="accordion-panel is-padded-top">
           <p className="text-help">

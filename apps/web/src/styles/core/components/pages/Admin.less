@@ -1,0 +1,533 @@
+// Admin detail-page sections (org detail, etc.). Each section is a Card; the
+// title, list rows, and table cells inside all need to align at the same
+// horizontal x — `--space-lg` from the card edge — to match the avatars in
+// the `.apps-list` rows.
+
+.admin-section-card {
+  > .card-header {
+    padding-left: var(--space-lg);
+    padding-right: var(--space-lg);
+  }
+
+  > .card-content {
+    padding: 0;
+  }
+
+  // Body inset for non-list content (e.g. Plan combobox, empty-state text).
+  > .card-content > .admin-section-card__body {
+    padding: 0 var(--space-lg) var(--space-lg);
+  }
+
+  // Align first/last data-grid cells to `--space-lg` (matches apps-list
+  // avatar position). Other cells keep their default `--space-sm` so the
+  // hover background still paints edge-to-edge.
+  > .card-content > .data-grid {
+    .data-grid__head > *:first-child,
+    .data-grid__row > *:first-child {
+      padding-left: var(--space-lg);
+    }
+
+    .data-grid__head > *:last-child,
+    .data-grid__row > *:last-child {
+      padding-right: var(--space-lg);
+    }
+  }
+}
+
+// ─── Plans admin page ────────────────────────────────────────────────────────
+
+// Card title shows both the human-readable name and the slug id. The slug
+// renders as a small monospace pill beside the name so the two values read as
+// distinct (e.g. "Yucayeque" + a `yucayeque` chip).
+.plan-card__title-block {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.plan-card__id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.plan-card__readonly {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-subtle);
+}
+
+// Two-column form grid. Custom CSS rather than Tailwind because the project
+// uses LESS-based component styles and the `sm:grid-cols-2` utility was being
+// dropped at build time — fields rendered as a single column.
+.plan-card__fields {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--space-md);
+}
+
+@media (max-width: 640px) {
+  .plan-card__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan-card__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plan-card__field-label {
+  font-size: 12px;
+}
+
+// Switch + descriptive label sit on the same baseline as a normal input.
+.plan-card__switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 34px;
+}
+
+.plan-card__switch-label {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  cursor: default;
+}
+
+// ─── Plans list ──────────────────────────────────────────────────────────────
+
+.admin-plans-table {
+  grid-template-columns:
+    minmax(220px, 1.6fr)   // plan (name + id chip)
+    minmax(90px, 0.6fr)    // price
+    minmax(70px, 0.5fr)    // max apps
+    minmax(70px, 0.5fr)    // max seats
+    minmax(110px, 0.6fr)   // max concurrent
+    minmax(80px, 0.5fr)    // can build
+    auto;                  // chevron
+}
+
+.admin-plans-row__num {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.admin-plans-row__chevron {
+  color: var(--color-fg-subtle);
+  justify-content: flex-end;
+}
+
+// Wide tooltip variant — allows wrapping for multi-sentence help text.
+// The default `.tooltip-bubble` uses `white-space: nowrap`, which truncates
+// anything longer than a few words. We also reset text-transform / letter-
+// spacing / font-weight here because the tooltip can be nested under styles
+// like `.data-grid__head > *` (uppercase column headers) and would otherwise
+// inherit them.
+.tooltip-bubble--wide {
+  white-space: normal;
+  width: max-content;
+  max-width: 360px;
+  line-height: 1.5;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+// Column-header pill that pairs a label with an info icon (the tooltip
+// trigger). Keeps the icon visually subordinate to the column name.
+.admin-hosts-table__capacity-head {
+  gap: 4px;
+  color: inherit;
+
+  svg {
+    color: var(--color-fg-subtle);
+  }
+}
+
+// ─── Orgs list ───────────────────────────────────────────────────────────────
+
+.admin-orgs-table {
+  grid-template-columns:
+    minmax(240px, 1.8fr)   // organization (avatar + name + slug)
+    minmax(110px, 0.7fr)   // plan
+    minmax(110px, 0.7fr)   // status
+    minmax(130px, 0.8fr)   // created
+    auto;                  // chevron
+}
+
+// ─── Stacks list ─────────────────────────────────────────────────────────────
+
+.admin-stacks-table {
+  grid-template-columns:
+    minmax(220px, 1.5fr)   // stack (label + id chip)
+    minmax(100px, 0.6fr)   // platform
+    minmax(180px, 1.2fr)   // image / xcode
+    minmax(70px, 0.4fr)    // default
+    auto;                  // menu
+}
+
+// ─── Hosts list ──────────────────────────────────────────────────────────────
+
+.admin-hosts-table {
+  grid-template-columns:
+    minmax(180px, 1.2fr)   // name
+    minmax(110px, 0.7fr)   // kind
+    minmax(200px, 1.4fr)   // address
+    minmax(80px, 0.4fr)    // capacity
+    minmax(70px, 0.4fr)    // source
+    minmax(70px, 0.4fr)    // status
+    auto;                  // menu
+}
+
+.admin-hosts-row__addr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg);
+}
+
+.admin-hosts-row__source {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+}
+
+.admin-hosts-row__source--db {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.admin-hosts-row__source--env {
+  color: var(--color-fg-muted);
+  background: var(--color-bg-muted);
+}
+
+// Test output panel — spans across the row when present (handled by the grid).
+.admin-hosts-row__test-output {
+  grid-column: 1 / -1;
+  background: var(--color-bg-subtle);
+
+  pre {
+    margin: 0;
+    padding: var(--space-sm) var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+// ─── Orphan cleanup preview ──────────────────────────────────────────────────
+
+// Renders the list of paths the cleanup dialog will delete. Each section is a
+// pair of <base-path title> + <wrapped, mono list of leaf paths>. Truncation
+// happens in JS — the LESS just keeps the list visually contained.
+.cleanup-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.cleanup-preview__summary {
+  font-size: 14px;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.cleanup-preview__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-fg-muted);
+  margin-bottom: 4px;
+}
+
+.cleanup-preview__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  max-height: 200px;
+  overflow: auto;
+
+  li {
+    word-break: break-all;
+    padding: 2px 0;
+  }
+}
+
+.cleanup-preview__more {
+  color: var(--color-fg-subtle);
+  font-style: italic;
+}
+
+// ─── SSH test-connection dialog ──────────────────────────────────────────────
+
+// Stack title above description inside the shared `.dialog-header` (which is
+// flex-row + space-between for title/close-button alignment).
+.ssh-test__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ssh-test {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+}
+
+.ssh-test__icon {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &.is-pending {
+    color: var(--color-fg-muted);
+  }
+  &.is-success {
+    color: var(--color-success, #22c55e);
+  }
+  &.is-fail {
+    color: var(--color-danger);
+  }
+}
+
+.ssh-test__spinner {
+  animation: ssh-test-spin 0.8s linear infinite;
+}
+
+@keyframes ssh-test-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// SVG checkmark with circle + tick stroke animations.
+.ssh-test__check {
+  display: block;
+}
+
+.ssh-test__check-circle {
+  stroke: var(--color-success, #22c55e);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 151; // 2 * pi * 24
+  stroke-dashoffset: 151;
+  animation: ssh-test-circle 0.45s ease-out forwards;
+  transform-origin: 50% 50%;
+  transform: rotate(-90deg);
+}
+
+.ssh-test__check-mark {
+  stroke: var(--color-success, #22c55e);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: ssh-test-mark 0.3s 0.35s ease-out forwards;
+}
+
+@keyframes ssh-test-circle {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ssh-test-mark {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.ssh-test__caption {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.ssh-test__output {
+  width: 100%;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+
+// Field hint sits below the input/control.
+.plan-card__field-hint {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+// PEM key input — textarea + upload button + clear/filename indicator.
+.pem-key-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pem-key-input__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.pem-key-input__upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--color-accent);
+
+  input[type="file"] {
+    display: none;
+  }
+
+  &:hover span {
+    text-decoration: underline;
+  }
+}
+
+.pem-key-input__filename {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.pem-key-input__clear {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-danger);
+  }
+}
+
+// New-host form ssh key textarea.
+.admin-hosts-form__key {
+  width: 100%;
+  min-height: 160px;
+  padding: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  resize: vertical;
+}
+
+// ─── Plan edit page ──────────────────────────────────────────────────────────
+
+.page-back-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.page-back-link {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+  cursor: default;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--color-bg-subtle);
+    color: var(--color-fg);
+  }
+}
+
+.page-back-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.admin-back-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.admin-back-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: default;
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--color-bg-subtle);
+    color: var(--color-fg);
+  }
+}
+
+.admin-back-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+

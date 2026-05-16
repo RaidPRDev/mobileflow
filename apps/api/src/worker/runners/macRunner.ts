@@ -1,7 +1,7 @@
 import { and, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { Client } from "ssh2";
 import { db } from "../../db/client.js";
-import { apps, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
+import { apps, buildStacks, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
 import { exec, execDrained, resolveLinuxHost, resolveMacHost, uploadBase64, withSsh } from "../ssh.js";
@@ -47,6 +47,20 @@ export class MacRunner implements Runner {
     const remoteDir = `${host.remoteBase}/${orgId}/${buildId}`;
     const macTools = host.toolsPath ?? env.MAC_BUILD_TOOLS;
     const cloneUrl = cloneUrlFor(conn.provider as "github" | "gitlab" | "bitbucket", a.gitRepoFullName, token);
+
+    // Resolve the Xcode developer dir from the build's stack so xcodebuild /
+    // xcrun / pod pick up the right toolchain. We export DEVELOPER_DIR rather
+    // than running `sudo xcode-select -s` so the switch is scoped to this
+    // build process and doesn't require passwordless sudo on the Mac.
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const developerDir = stack?.image ? xcodeDeveloperDir(stack.image) : null;
+    if (developerDir) {
+      await ctx.log(`Xcode (stack ${ctx.build.stackId}): DEVELOPER_DIR=${developerDir}`);
+    } else if (ctx.build.stackId) {
+      await ctx.log(`Stack ${ctx.build.stackId} has no image — using system default Xcode`);
+    }
 
     return await withSsh(host, async (ssh) => {
       // Single AbortController shared across every exec() in this run. When
@@ -215,8 +229,13 @@ export class MacRunner implements Runner {
           `export MAC_SERVER_PORT=${shq(String(host.port))}`,
           `export MAC_SERVER_PASS=${shq("unused-by-mobileflow")}`,
         ].join(" && ");
+        // DEVELOPER_DIR comes from the build's stack and picks the Xcode used
+        // by xcodebuild/xcrun/pod inside this shell. Declared before user env
+        // vars so a per-environment override is still possible if needed.
+        const xcodeExport = developerDir ? `export DEVELOPER_DIR=${shq(developerDir)}` : "";
         const fullCmd = [
           localeExports,
+          xcodeExport,
           serverExports,
           envVarsExports, // user env vars take precedence (declared after)
           `bash ${shq(`${macTools}/main_build.sh`)} ${cmdArgs}`,
@@ -505,6 +524,28 @@ async function collectEnvExports(ctx: RunnerContext): Promise<string> {
 
 function shq(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Translate a stack's `image` value into the DEVELOPER_DIR path
+ * that Xcode tools read. Accepts three input shapes so admins can pick what
+ * they're comfortable with:
+ *
+ *   1. Absolute path ending in `/Contents/Developer` — used verbatim.
+ *   2. Absolute path to an `.app` bundle — `/Contents/Developer` appended.
+ *   3. A short tag like `xcode-25.6` / `Xcode-25.6` / `25.6` — expanded to
+ *      `/Applications/Xcode_<version>.app/Contents/Developer`.
+ *
+ * Returns null if the input is empty.
+ */
+function xcodeDeveloperDir(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (v.startsWith("/")) {
+    return v.endsWith("/Contents/Developer") ? v : `${v}/Contents/Developer`;
+  }
+  const version = v.replace(/^xcode[-_]?/i, "");
+  return `/Applications/Xcode_${version}.app/Contents/Developer`;
 }
 
 /**

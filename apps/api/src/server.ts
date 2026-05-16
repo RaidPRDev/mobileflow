@@ -14,6 +14,7 @@ import { buildsRoutes } from "./routes/builds.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { certificateRoutes } from "./routes/certificates.js";
 import { adminRoutes } from "./routes/admin.js";
+import { stackRoutes } from "./routes/stacks.js";
 import { billingRoutes, billingWebhookRoutes } from "./routes/billing.js";
 import { startWorker } from "./worker/worker.js";
 import { startDeployWorker } from "./worker/deployWorker.js";
@@ -57,6 +58,7 @@ export async function buildServer() {
     await api.register(gitConnectionRoutes);
     await api.register(commitsRoutes);
     await api.register(buildsRoutes);
+    await api.register(stackRoutes);
     await api.register(environmentRoutes);
     await api.register(certificateRoutes);
     await api.register(adminRoutes);

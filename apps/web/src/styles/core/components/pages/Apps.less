@@ -192,3 +192,44 @@
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
+
+// Align tooltip to the start (left edge) of its anchor — used when the
+// anchor sits near the left side of the viewport and a centered bubble
+// would overflow off-screen.
+.tooltip-bubble--start {
+  left: 0;
+  transform: translateX(0) translateY(-2px);
+}
+
+.tooltip-wrap:hover .tooltip-bubble--start,
+.tooltip-wrap:focus-visible .tooltip-bubble--start {
+  transform: translateX(0) translateY(0);
+}
+
+// Align tooltip to the end (right edge) of its anchor — used when the
+// anchor sits near the right side of the viewport.
+.tooltip-bubble--end {
+  left: auto;
+  right: 0;
+  transform: translateX(0) translateY(-2px);
+}
+
+.tooltip-wrap:hover .tooltip-bubble--end,
+.tooltip-wrap:focus-visible .tooltip-bubble--end {
+  transform: translateX(0) translateY(0);
+}
+
+// Place tooltip to the right of its anchor (used for the left-side rail
+// icons, where a bubble below the icon would be clipped by the next row).
+.tooltip-bubble--right {
+  top: 50%;
+  left: 100%;
+  margin-top: 0;
+  margin-left: 8px;
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.tooltip-wrap:hover .tooltip-bubble--right,
+.tooltip-wrap:focus-visible .tooltip-bubble--right {
+  transform: translateY(-50%) translateX(0);
+}

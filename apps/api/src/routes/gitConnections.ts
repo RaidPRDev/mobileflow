@@ -6,7 +6,28 @@ import { gitConnections } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { OAUTH_STATE_COOKIE, exchangeCode, newState, resolveProvider, type OAuthProviderId } from "../auth/oauth.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import { oauthLog } from "../lib/oauthLog.js";
 import { env } from "../env.js";
+
+class UpstreamError extends Error {
+  constructor(
+    public provider: GitProvider,
+    public endpoint: string,
+    public status: number,
+    public bodySnippet: string,
+  ) {
+    super(`${provider} ${endpoint} ${status}: ${bodySnippet.slice(0, 200)}`);
+  }
+}
+
+async function readBodySnippet(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    return text.slice(0, 600);
+  } catch {
+    return "";
+  }
+}
 
 const GIT_PROVIDERS = ["github", "gitlab", "bitbucket"] as const;
 type GitProvider = (typeof GIT_PROVIDERS)[number];
@@ -37,7 +58,7 @@ async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[
       const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated&page=${page}`, {
         headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
       });
-      if (!res.ok) throw new Error(`github /user/repos ${res.status}`);
+      if (!res.ok) throw new UpstreamError("github", "/user/repos", res.status, await readBodySnippet(res));
       const batch = (await res.json()) as { id: number; full_name: string; private: boolean; default_branch: string; description: string | null }[];
       out.push(...batch.map((r) => ({ id: r.id, fullName: r.full_name, private: r.private, defaultBranch: r.default_branch, description: r.description })));
       if (batch.length < 100) break;
@@ -52,7 +73,7 @@ async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[
       const res = await fetch(`https://gitlab.com/api/v4/projects?membership=true&per_page=100&order_by=last_activity_at&page=${page}`, {
         headers: { authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error(`gitlab /projects ${res.status}`);
+      if (!res.ok) throw new UpstreamError("gitlab", "/projects", res.status, await readBodySnippet(res));
       const batch = (await res.json()) as { id: number; path_with_namespace: string; visibility: string; default_branch: string | null; description: string | null }[];
       out.push(
         ...batch.map((r) => ({
@@ -68,26 +89,53 @@ async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[
     }
     return out;
   }
-  // bitbucket
+  // bitbucket: CHANGE-2770 removed every account-wide listing endpoint
+  // (/2.0/repositories?role=member, /2.0/user/permissions/workspaces, /2.0/workspaces).
+  // Workspace must now be supplied explicitly. /2.0/user is still account-scoped and
+  // returns the personal workspace's username — list repos there. Team/group workspaces
+  // need an explicit slug; that requires a UI change and is out of scope here.
   const out: RepoOut[] = [];
-  let url: string | null = "https://api.bitbucket.org/2.0/repositories?role=member&pagelen=100&sort=-updated_on";
-  while (url) {
-    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`bitbucket /repositories ${res.status}`);
-    const j = (await res.json()) as {
-      values: { uuid: string; full_name: string; is_private: boolean; mainbranch?: { name: string }; description: string | null }[];
-      next?: string;
-    };
-    out.push(
-      ...j.values.map((r) => ({
-        id: r.uuid,
-        fullName: r.full_name,
-        private: r.is_private,
-        defaultBranch: r.mainbranch?.name ?? "main",
-        description: r.description,
-      })),
-    );
-    url = j.next ?? null;
+  const userRes = await fetch("https://api.bitbucket.org/2.0/user", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!userRes.ok) {
+    throw new UpstreamError("bitbucket", "/2.0/user", userRes.status, await readBodySnippet(userRes));
+  }
+  const userJson = (await userRes.json()) as { username?: string; uuid?: string };
+  const personalSlug = userJson.username ?? userJson.uuid;
+  if (!personalSlug) {
+    throw new UpstreamError("bitbucket", "/2.0/user", 200, "missing username/uuid");
+  }
+  const workspaceSlugs: string[] = [personalSlug];
+  for (const slug of workspaceSlugs) {
+    let url: string | null =
+      `https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(slug)}?pagelen=100&sort=-updated_on`;
+    while (url) {
+      const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        throw new UpstreamError(
+          "bitbucket",
+          `/2.0/repositories/${slug}`,
+          res.status,
+          await readBodySnippet(res),
+        );
+      }
+      const j = (await res.json()) as {
+        values: { uuid: string; full_name: string; is_private: boolean; mainbranch?: { name: string }; description: string | null }[];
+        next?: string;
+      };
+      out.push(
+        ...j.values.map((r) => ({
+          id: r.uuid,
+          fullName: r.full_name,
+          private: r.is_private,
+          defaultBranch: r.mainbranch?.name ?? "main",
+          description: r.description,
+        })),
+      );
+      url = j.next ?? null;
+      if (out.length > 500) break;
+    }
     if (out.length > 500) break;
   }
   return out;
@@ -129,7 +177,32 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
       const token = decryptString(row.accessTokenEnc);
       return await listRepos(row.provider as GitProvider, token);
     } catch (err) {
-      server.log.error({ err }, "list repos failed");
+      const upstream = err instanceof UpstreamError ? err : null;
+      const logEntry = upstream
+        ? {
+            connectionId: row.id,
+            orgId: row.orgId,
+            userId: req.auth?.userId,
+            provider: upstream.provider,
+            endpoint: upstream.endpoint,
+            status: upstream.status,
+            body: upstream.bodySnippet,
+          }
+        : {
+            connectionId: row.id,
+            orgId: row.orgId,
+            userId: req.auth?.userId,
+            provider: row.provider,
+            error: (err as Error).message,
+          };
+      server.log.error({ err, ...logEntry }, "list repos failed");
+      void oauthLog("list_repos_failed", logEntry);
+      const detail = upstream
+        ? `${upstream.provider} ${upstream.endpoint} returned ${upstream.status}: ${upstream.bodySnippet.slice(0, 300)}`
+        : (err as Error).message;
+      if (req.auth?.isSuperadmin) {
+        return reply.internalServerError(`Could not list repositories — ${detail}`);
+      }
       return reply.internalServerError("Could not list repositories");
     }
   });

@@ -19,7 +19,7 @@ import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
 import { ArrowLeft, Check, GitBranch, Plus, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type BuildTarget, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
-import { STACKS } from "../lib/stacks";
+import { stacksByTarget, useStacks } from "../lib/stacks";
 
 const TARGETS: { id: BuildTarget; label: string; icon: JSX.Element; iconBg: string }[] = [
   { id: "ios", label: "iOS", icon: <AppleIcon />, iconBg: "#0a0a0a" },
@@ -93,9 +93,17 @@ function SelectCommit({ appId }: { appId: string }) {
 
   return (
     <div className="new-build-page">
-      <button type="button" className="new-build-back" onClick={() => navigate(-1)}>
-        <ArrowLeft size={14} /> Back
-      </button>
+      <div className="page-back-row">
+        <button
+          type="button"
+          className="page-back-link"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
+        >
+          <ArrowLeft size={14} aria-hidden />
+        </button>
+        <span className="page-back-label">Back</span>
+      </div>
       <header className="new-build-header">
         <h1 className="new-build-title">Create a new build</h1>
         <Steps activeStep="select" />
@@ -223,8 +231,10 @@ function SelectableCommitRow({ commit, branchName, accountAvatarUrl, accountLogi
 function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const stacksQ = useStacks();
   const [target, setTarget] = useState<BuildTarget>("ios");
-  const [stackId, setStackId] = useState<string>(STACKS.ios[0]!.id);
+  // Stack defaults are filled in once the catalog loads (see effect below).
+  const [stackId, setStackId] = useState<string>("");
   const [buildType, setBuildType] = useState<string>(BUILD_TYPES.ios![0]!.id);
   const [environmentId, setEnvironmentId] = useState<string>("");
   const [certificateId, setCertificateId] = useState<string>("");
@@ -326,10 +336,22 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
 
   const onTargetChange = (t: BuildTarget) => {
     setTarget(t);
-    setStackId(STACKS[t][0]!.id);
+    const firstStack = stacksByTarget(stacksQ.data, t)[0];
+    setStackId(firstStack?.id ?? "");
     const types = BUILD_TYPES[t];
     setBuildType(types ? types[0]!.id : "");
   };
+
+  // Stacks load asynchronously; pick a sensible default once they arrive, and
+  // re-pick if the user switches platforms before the catalog finishes loading.
+  useEffect(() => {
+    const options = stacksByTarget(stacksQ.data, target);
+    if (options.length === 0) return;
+    if (!options.some((s) => s.id === stackId)) {
+      const preferred = options.find((s) => s.isDefault) ?? options[0]!;
+      setStackId(preferred.id);
+    }
+  }, [stacksQ.data, target, stackId]);
 
   const start = useMutation({
     mutationFn: () =>
@@ -354,9 +376,17 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
 
   return (
     <div className="new-build-page">
-      <button type="button" className="new-build-back" onClick={() => navigate(-1)}>
-        <ArrowLeft size={14} /> Back
-      </button>
+      <div className="page-back-row">
+        <button
+          type="button"
+          className="page-back-link"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
+        >
+          <ArrowLeft size={14} aria-hidden />
+        </button>
+        <span className="page-back-label">Back</span>
+      </div>
       <header className="new-build-header">
         <h1 className="new-build-title">Create a new build</h1>
         <Steps activeStep="configure" />
@@ -399,7 +429,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
             id="build-stack"
             value={stackId}
             onChange={setStackId}
-            options={STACKS[target].map((s) => ({ value: s.id, label: s.label }))}
+            options={stacksByTarget(stacksQ.data, target).map((s) => ({ value: s.id, label: s.label }))}
           />
         </div>
 

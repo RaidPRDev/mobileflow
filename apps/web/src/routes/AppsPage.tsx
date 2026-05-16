@@ -156,11 +156,7 @@ function AppListItem({ app, onDelete }: { app: AppRow; onDelete: () => void }) {
                 <span className="apps-list__dot">·</span>
               </>
             )}
-            <span
-              className="tooltip-wrap"
-              tabIndex={0}
-              onClick={(e) => e.preventDefault()}
-            >
+            <span className="tooltip-wrap" tabIndex={0}>
               Last updated {updated}
               <span className="tooltip-bubble" role="tooltip">{updatedFull}</span>
             </span>

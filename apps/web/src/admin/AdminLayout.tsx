@@ -1,5 +1,6 @@
 import { Navigate, NavLink, Outlet } from "react-router-dom";
 import { Button, cn } from "@mobileflow/ui";
+import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
 
@@ -27,12 +28,14 @@ export function AdminLayout() {
           <Item to="/admin/builds" label="Builds" />
           <Item to="/admin/plans" label="Plans" />
           <Item to="/admin/hosts" label="Build hosts" />
+          <Item to="/admin/stacks" label="Build stacks" />
           <Item to="/admin/oauth-apps" label="OAuth apps" />
         </nav>
-        <div className="app-rail-nav" style={{ marginTop: 16 }}>
-          <Button asChild variant="ghost" size="sm" className="admin-back-btn">
-            <NavLink to="/">← Back to app</NavLink>
-          </Button>
+        <div className="admin-back-row" style={{ marginTop: 16 }}>
+          <NavLink to="/" className="admin-back-btn" aria-label="Back to app">
+            <ArrowLeft size={14} aria-hidden />
+          </NavLink>
+          <span className="admin-back-label">Back to app</span>
         </div>
       </aside>
       <main className="app-main">

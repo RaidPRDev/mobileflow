@@ -55,9 +55,17 @@ function SelectBuild({ appId }: { appId: string }) {
 
   return (
     <div className="new-build-page">
-      <button type="button" className="new-build-back" onClick={() => navigate(-1)}>
-        <ArrowLeft size={14} /> Back
-      </button>
+      <div className="page-back-row">
+        <button
+          type="button"
+          className="page-back-link"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
+        >
+          <ArrowLeft size={14} aria-hidden />
+        </button>
+        <span className="page-back-label">Back</span>
+      </div>
       <header className="new-build-header">
         <h1 className="new-build-title">Create New Deployment</h1>
         <Steps activeStep="select" />
@@ -221,9 +229,17 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
 
   return (
     <div className="new-build-page">
-      <button type="button" className="new-build-back" onClick={() => navigate(-1)}>
-        <ArrowLeft size={14} /> Back
-      </button>
+      <div className="page-back-row">
+        <button
+          type="button"
+          className="page-back-link"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
+        >
+          <ArrowLeft size={14} aria-hidden />
+        </button>
+        <span className="page-back-label">Back</span>
+      </div>
       <header className="new-build-header">
         <h1 className="new-build-title">Create New Deployment</h1>
         <Steps activeStep="configure" />

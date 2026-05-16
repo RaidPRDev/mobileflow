@@ -22,12 +22,38 @@ const HOSTS: HostDef[] = [
 
 type Step = "setup" | "repo";
 
+// Stash key for the in-progress form. Connecting a Git host does a full-page
+// redirect to OAuth, so React state would be lost on return without this.
+// Scoped to the org so two tabs on different orgs don't clobber each other.
+function draftKey(orgId: string | undefined): string | null {
+  return orgId ? `mf:import-app-draft:${orgId}` : null;
+}
+
+interface ImportDraft {
+  name?: string;
+  runtime?: Runtime;
+}
+
+function readDraft(orgId: string | undefined): ImportDraft {
+  const key = draftKey(orgId);
+  if (!key) return {};
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as ImportDraft) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function ImportAppPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { orgId } = useParams();
-  const [name, setName] = useState("");
-  const [runtime, setRuntime] = useState<Runtime>("capacitor");
+  // Lazy initializers read sessionStorage once on mount. After an OAuth
+  // round-trip, name/runtime are restored from whatever the user typed before
+  // hitting Connect; otherwise we use the normal defaults.
+  const [name, setName] = useState<string>(() => readDraft(orgId).name ?? "");
+  const [runtime, setRuntime] = useState<Runtime>(() => readDraft(orgId).runtime ?? "capacitor");
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>("setup");
   const [host, setHost] = useState<GitProvider | null>(null);
@@ -70,6 +96,10 @@ export function ImportAppPage() {
         gitRepoFullName: opts.gitRepoFullName ?? null,
       }),
     onSuccess: (created) => {
+      const key = draftKey(orgId);
+      if (key) {
+        try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+      }
       qc.invalidateQueries({ queryKey: ["apps", orgId] });
       navigate(`/app/${created.id}/commits`);
     },
@@ -98,6 +128,16 @@ export function ImportAppPage() {
 
   function handleHostConnect(provider: GitProvider) {
     if (!orgId) return;
+    // Persist the in-progress form before the full-page OAuth redirect so it
+    // can be restored when the browser lands back on this URL.
+    const key = draftKey(orgId);
+    if (key) {
+      try {
+        sessionStorage.setItem(key, JSON.stringify({ name, runtime }));
+      } catch {
+        /* sessionStorage may be unavailable (Safari private mode); just lose the draft. */
+      }
+    }
     const returnTo = `/org/${orgId}/apps/import`;
     const qs = new URLSearchParams({ orgId, returnTo }).toString();
     window.location.href = `/api/orgs/git-connections/${provider}/start?${qs}`;

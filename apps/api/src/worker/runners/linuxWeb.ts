@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import { apps, environmentVars, gitConnections } from "../../db/schema.js";
+import { apps, buildStacks, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
 import { exec, resolveLinuxHost, withSsh } from "../ssh.js";
@@ -37,6 +37,13 @@ export class LinuxDockerWebRunner implements Runner {
     const artifactName = `${safeAppName}_${buildDate}.zip`;
     const artifactDst = `${downloadsDir}/${artifactName}`;
 
+    // Stack drives the Docker image. Fall back to the env default if unset
+    // or if the build references a stack that has since been deleted.
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const dockerImage = stack?.image ?? env.LINUX_BUILD_WEB_IMAGE;
+
     return await withSsh(host, async (ssh) => {
       const run = async (cmd: string) => {
         const r = await exec(ssh, cmd, (line) => ctx.log(line));
@@ -62,12 +69,12 @@ export class LinuxDockerWebRunner implements Runner {
         `-v raidx-npm-cache:/root/.npm`,
         ...dockerEnvFlags,
         `-w /workspace`,
-        shq(env.LINUX_BUILD_WEB_IMAGE),
+        shq(dockerImage),
         `sh -lc ${shq(env.LINUX_BUILD_WEB_COMMAND)}`,
       ].join(" ");
 
       try {
-        await ctx.log(`docker run ${env.LINUX_BUILD_WEB_IMAGE}: ${env.LINUX_BUILD_WEB_COMMAND}`);
+        await ctx.log(`docker run ${dockerImage} (stack: ${ctx.build.stackId ?? "—"}): ${env.LINUX_BUILD_WEB_COMMAND}`);
         await run(dockerCmd);
         await ctx.step("installing", "success", 0);
         await ctx.step("building", "success", 0);

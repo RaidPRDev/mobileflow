@@ -91,10 +91,10 @@ export function BuildsPage() {
 
       {buildsQ.data?.length === 0 && (
         <div className="builds-empty">
-          <h2 className="builds-empty__title">No builds yet</h2>
+          <h2 className="builds-empty__title">No builds history</h2>
           <p className="builds-empty__body">Pick a commit to start your first build.</p>
           <Button asChild>
-            <Link to={`/app/${appId}/build/builds/new`}>New build</Link>
+            <Link to={`/app/${appId}/build/builds/new`}>Create your first build</Link>
           </Button>
         </div>
       )}

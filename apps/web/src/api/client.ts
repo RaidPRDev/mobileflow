@@ -233,6 +233,16 @@ export const api = {
   logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
   me: () => request<MeResponse>("/auth/me"),
 
+  listStacks: () =>
+    request<{
+      id: string;
+      platform: BuildTarget;
+      label: string;
+      image: string | null;
+      isDefault: boolean;
+      sortOrder: number;
+    }[]>("/stacks"),
+
   listApps: (orgId: string) => request<AppRow[]>(`/orgs/${orgId}/apps`),
   createApp: (
     orgId: string,
@@ -417,6 +427,7 @@ export const api = {
         id: string;
         email: string;
         name: string | null;
+        avatarUrl: string | null;
         isSuperadmin: boolean;
         createdAt: string;
         memberships: { orgId: string; orgName: string; role: "owner" | "admin" | "member" }[];
@@ -461,6 +472,26 @@ export const api = {
       body: Partial<{ name: string; priceCents: number; maxApps: number | null; maxSeats: number | null; maxConcurrentBuilds: number | null; canBuild: boolean; stripePriceId: string | null }>,
     ) => request<unknown>(`/admin/plans/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 
+    createStack: (body: {
+      id: string;
+      platform: BuildTarget;
+      label: string;
+      image?: string | null;
+      isDefault?: boolean;
+      sortOrder?: number;
+    }) => request<unknown>("/admin/stacks", { method: "POST", body: JSON.stringify(body) }),
+    patchStack: (
+      id: string,
+      body: Partial<{
+        platform: BuildTarget;
+        label: string;
+        image: string | null;
+        isDefault: boolean;
+        sortOrder: number;
+      }>,
+    ) => request<unknown>(`/admin/stacks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteStack: (id: string) => request<void>(`/admin/stacks/${id}`, { method: "DELETE" }),
+
     hosts: () =>
       request<{
         id: string;
@@ -476,6 +507,8 @@ export const api = {
         capacity: number;
         online: boolean;
         createdAt: string;
+        source: "db" | "env";
+        hasArtifactKey: boolean;
       }[]>("/admin/hosts"),
     createHost: (body: {
       name: string;
@@ -484,6 +517,7 @@ export const api = {
       port: number;
       sshUser: string;
       sshKey: string;
+      artifactKey?: string | null;
       remoteBase: string;
       downloadsBase: string;
       downloadsBaseUrl: string;
@@ -497,6 +531,28 @@ export const api = {
     testHost: (id: string) =>
       request<{ ok: boolean; exitCode?: number; output?: string; error?: string }>(`/admin/hosts/${id}/test`, {
         method: "POST",
+      }),
+    pushArtifactKey: (id: string, body?: { artifactKey?: string }) =>
+      request<{ ok: boolean; output?: string; error?: string }>(
+        `/admin/hosts/${id}/push-artifact-key`,
+        { method: "POST", body: JSON.stringify(body ?? {}) },
+      ),
+    cleanupOrphans: (id: string, body?: { dryRun?: boolean }) =>
+      request<{
+        ok: boolean;
+        kind?: "linux_docker" | "mac";
+        remoteBase?: string | null;
+        downloadsBase?: string | null;
+        remoteOrphans?: string[];
+        downloadOrphans?: string[];
+        totalOrphans?: number;
+        dryRun?: boolean;
+        deleted?: number;
+        deleteLog?: string;
+        error?: string;
+      }>(`/admin/hosts/${id}/cleanup-orphans`, {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
       }),
 
     oauthApps: () =>

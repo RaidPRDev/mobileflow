@@ -236,6 +236,10 @@ export const buildHosts = pgTable("build_hosts", {
   port: integer("port").notNull().default(22),
   sshUser: text("ssh_user").notNull(),
   sshKeyEnc: text("ssh_key_enc").notNull(), // PEM private key, encrypted
+  // Mac→Linux SSH key, encrypted. Pushed to the Mac at ~/.ssh/raidx_linux_key
+  // by the admin "Push artifact-server key" action. Only meaningful on
+  // `kind = mac`; null otherwise.
+  artifactKeyEnc: text("artifact_key_enc"),
   remoteBase: text("remote_base").notNull(),
   downloadsBase: text("downloads_base").notNull(),
   downloadsBaseUrl: text("downloads_base_url").notNull(),
@@ -249,7 +253,10 @@ export const buildStacks = pgTable("build_stacks", {
   id: text("id").primaryKey(),
   platform: buildTarget("platform").notNull(),
   label: text("label").notNull(),
-  imageOrXcodeVersion: text("image_or_xcode_version"),
+  // For Linux stacks (android/web) this is the Docker image. For iOS stacks
+  // it's the Xcode developer path / version tag, used to derive DEVELOPER_DIR
+  // at build time. See `xcodeDeveloperDir()` in macRunner.ts.
+  image: text("image"),
   isDefault: boolean("is_default").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
 });

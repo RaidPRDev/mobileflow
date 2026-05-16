@@ -27,6 +27,36 @@
     auto;                       // menu
 }
 
+// Admin users: re-uses .builds-row visuals (avatar, name+email stack).
+.admin-users-table {
+  grid-template-columns:
+    minmax(220px, 1.6fr)        // user (avatar + name + email)
+    minmax(110px, 0.6fr)        // role
+    minmax(180px, 1.4fr)        // memberships
+    minmax(120px, 0.7fr)        // joined
+    auto;                       // menu
+}
+
+.admin-users-row__memberships {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Admin cross-org builds: same row visuals as `.builds-table`, columns differ
+// because admin data has no triggered-by / branch / deployment.
+.admin-builds-table {
+  grid-template-columns:
+    minmax(80px, 0.6fr)         // build id
+    minmax(70px, 0.5fr)         // status
+    minmax(110px, 0.7fr)        // platform
+    minmax(180px, 1.2fr)        // organization / app
+    minmax(180px, 1.4fr)        // commit
+    auto;                       // menu
+}
+
 .builds-row.is-clickable {
   cursor: default;
 }
@@ -38,7 +68,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--color-fg);
-  cursor: pointer;
+  cursor: default;
 
   &:hover {
     color: var(--color-accent);

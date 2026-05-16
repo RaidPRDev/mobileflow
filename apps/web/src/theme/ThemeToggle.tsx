@@ -8,12 +8,14 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className="theme-toggle tooltip-wrap"
       onClick={() => setMode(next)}
-      title={`Theme: ${label}`}
       aria-label={`Theme: ${label}`}
     >
       {resolved === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+      <span className="tooltip-bubble tooltip-bubble--end" role="tooltip">
+        {`Theme: ${label}`}
+      </span>
     </button>
   );
 }

@@ -19,7 +19,7 @@ import {
   type BuildTarget,
 } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
-import { getStackLabel } from "../lib/stacks";
+import { stackLabel, useStacks } from "../lib/stacks";
 
 interface SnapshotEvent {
   type: "snapshot";
@@ -70,6 +70,7 @@ const ARTIFACT_LABEL: Record<string, string> = {
 export function BuildPage() {
   const { buildId, appId } = useParams();
   const qc = useQueryClient();
+  const stacksQ = useStacks();
   const [logBuf, setLogBuf] = useState("");
   const [wsConnected, setWsConnected] = useState(false);
   const offsetRef = useRef(0);
@@ -393,7 +394,7 @@ export function BuildPage() {
               </span>
             }
           />
-          <DetailRow label="Build Stack" value={getStackLabel(b.target, b.stackId)} />
+          <DetailRow label="Build Stack" value={stackLabel(stacksQ.data, b.target, b.stackId)} />
           {showDeployment && (
             <DetailRow
               label="Deployment"

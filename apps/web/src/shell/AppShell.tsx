@@ -35,8 +35,15 @@ export function AppShell() {
 function OuterRail({ orgId, isSuperadmin }: { orgId: string; isSuperadmin: boolean }) {
   return (
     <aside className="app-rail-outer">
-      <Link to={`/org/${orgId}/apps`} className="app-rail-brand" title="MobileFlow">
+      <Link
+        to={`/org/${orgId}/apps`}
+        className="app-rail-brand tooltip-wrap"
+        aria-label="MobileFlow"
+      >
         MF
+        <span className="tooltip-bubble tooltip-bubble--right" role="tooltip">
+          MobileFlow
+        </span>
       </Link>
       <div className="app-rail-icons">
         <RailIcon to={`/org/${orgId}/apps`} label="Apps">
@@ -67,10 +74,13 @@ function RailIcon({
   return (
     <NavLink
       to={to}
-      title={label}
-      className={({ isActive }) => cn("app-rail-icon", isActive && "is-active")}
+      aria-label={label}
+      className={({ isActive }) => cn("app-rail-icon tooltip-wrap", isActive && "is-active")}
     >
       {children}
+      <span className="tooltip-bubble tooltip-bubble--right" role="tooltip">
+        {label}
+      </span>
     </NavLink>
   );
 }
