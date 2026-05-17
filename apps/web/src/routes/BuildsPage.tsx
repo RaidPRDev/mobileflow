@@ -262,7 +262,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={goToBuild}>View build</DropdownMenuItem>
             <DropdownMenuItem onSelect={onRerun}>Rerun build</DropdownMenuItem>
-            {build.target === "ios" && (
+            {build.status === "success" && build.target === "ios" && (
               <>
                 <DropdownMenuItem disabled={!dep}>Send to App Store</DropdownMenuItem>
                 <DropdownMenuItem
@@ -273,7 +273,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
                 </DropdownMenuItem>
               </>
             )}
-            {build.target === "android" && (
+            {build.status === "success" && build.target === "android" && (
               <>
                 <DropdownMenuItem disabled={!dep}>Send to Google Play Store</DropdownMenuItem>
                 <DropdownMenuItem

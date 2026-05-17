@@ -39,7 +39,7 @@ export async function seed() {
   const stacks = [
     { id: "android-default", platform: "android" as const, label: "raidx-android-builder", image: "raidx-android-builder:latest", isDefault: true, sortOrder: 0 },
     { id: "web-default", platform: "web" as const, label: "raidx-web-builder", image: "node:20-alpine", isDefault: true, sortOrder: 0 },
-    { id: "ios-default", platform: "ios" as const, label: "raidx-ios-builder", image: "xcode-25.6", isDefault: true, sortOrder: 0 },
+    { id: "ios-default", platform: "ios" as const, label: "raidx-ios-builder", image: "/Applications/Xcode.app", isDefault: true, sortOrder: 0 },
   ];
   for (const s of stacks) {
     await db

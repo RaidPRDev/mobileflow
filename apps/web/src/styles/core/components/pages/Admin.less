@@ -653,6 +653,15 @@
   color: #e6e6e6;
   flex-shrink: 0;
   width: 100%;
+
+  // Panel header is always dark, regardless of app theme, so force the close
+  // button icon to stay light — otherwise the dark theme-fg makes it invisible.
+  .btn-ghost {
+    color: #e6e6e6;
+
+    &:hover { background: rgba(255, 255, 255, 0.08); }
+    &:active { background: rgba(255, 255, 255, 0.14); }
+  }
 }
 
 .host-terminal-panel__title {

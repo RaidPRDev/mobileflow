@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
+import { loadStripe, type Appearance, type Stripe } from "@stripe/stripe-js";
 import {
   Elements,
   PaymentElement,
@@ -9,12 +9,55 @@ import {
 } from "@stripe/react-stripe-js";
 import { Button, Combobox, Input } from "@mobileflow/ui";
 import { ApiError, api } from "../../api/client";
+import { useTheme } from "../../theme/ThemeProvider";
 import { COUNTRIES } from "./countries";
 
 let _stripeP: Promise<Stripe | null> | null = null;
 function getStripeP(publishableKey: string): Promise<Stripe | null> {
   if (!_stripeP) _stripeP = loadStripe(publishableKey);
   return _stripeP;
+}
+
+function buildStripeAppearance(theme: "light" | "dark"): Appearance {
+  if (theme === "dark") {
+    return {
+      theme: "night",
+      variables: {
+        colorPrimary: "#3b82f6",
+        colorBackground: "#131316",
+        colorText: "#f5f5f5",
+        colorTextSecondary: "#a1a1aa",
+        colorTextPlaceholder: "#71717a",
+        colorDanger: "#ef4444",
+        colorIconTab: "#a1a1aa",
+        colorIconTabSelected: "#f5f5f5",
+        borderRadius: "8px",
+        fontFamily:
+          'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      },
+      rules: {
+        ".Input": {
+          backgroundColor: "#131316",
+          border: "1px solid #2a2a2e",
+          color: "#f5f5f5",
+        },
+        ".Input:focus": {
+          border: "1px solid #3b82f6",
+          boxShadow: "0 0 0 1px #3b82f6",
+        },
+        ".Label": { color: "#a1a1aa" },
+      },
+    };
+  }
+  return {
+    theme: "stripe",
+    variables: {
+      colorPrimary: "#2563eb",
+      fontFamily:
+        'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      borderRadius: "8px",
+    },
+  };
 }
 
 interface Props {
@@ -24,6 +67,7 @@ interface Props {
 }
 
 export function PaymentMethodForm({ orgId, onSaved, onCancel }: Props) {
+  const { resolved: theme } = useTheme();
   const cfgQ = useQuery({
     queryKey: ["billing-config"],
     queryFn: () => api.getBillingConfig(),
@@ -38,6 +82,11 @@ export function PaymentMethodForm({ orgId, onSaved, onCancel }: Props) {
     const pk = cfgQ.data?.publishableKey;
     return pk ? getStripeP(pk) : null;
   }, [cfgQ.data?.publishableKey]);
+
+  const appearance = useMemo(
+    () => buildStripeAppearance(theme),
+    [theme],
+  );
 
   if (cfgQ.isLoading || intentQ.isLoading) {
     return <p className="text-help">Loading…</p>;
@@ -61,7 +110,7 @@ export function PaymentMethodForm({ orgId, onSaved, onCancel }: Props) {
       stripe={stripePromise}
       options={{
         clientSecret: intentQ.data.clientSecret,
-        appearance: { theme: "stripe" },
+        appearance,
       }}
     >
       <InnerForm orgId={orgId} onSaved={onSaved} onCancel={onCancel} />
