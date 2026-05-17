@@ -165,7 +165,7 @@ function InnerForm({ orgId, onSaved, onCancel }: Props) {
       <div className="settings-field">
         <label className="settings-field__label">Card information</label>
         <div className="payment-element-wrap">
-          <PaymentElement options={{ wallets: { applePay: "auto", googlePay: "auto", link: "never" } }} />
+          <PaymentElement options={{ wallets: { applePay: "auto", googlePay: "auto" } }} />
         </div>
       </div>
 

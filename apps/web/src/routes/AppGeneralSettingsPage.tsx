@@ -112,13 +112,15 @@ export function AppGeneralSettingsPage() {
   const otherOrgs = (me?.organizations ?? []).filter((o) => o.orgId !== app.orgId);
 
   return (
-    <div className="settings-page">
+    <div className="page settings-page">
       <div className="settings-page__breadcrumb">
         <span>Settings</span>
         <span className="settings-page__sep">/</span>
         <span className="settings-page__crumb-current">General</span>
       </div>
-      <h1 className="page-title">General Settings</h1>
+      <div className="page-header">
+        <h1 className="page-title">General Settings</h1>
+      </div>
 
       <section className="settings-row">
         <div className="settings-row__label">App details</div>

@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
   IconButton,
 } from "@mobileflow/ui";
-import { CheckCircle2, GitBranch, MoreVertical, XCircle } from "lucide-react";
+import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
 import { ApiError, api, type BuildRow, type BuildStatus, type BuildTarget } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
@@ -255,9 +255,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
       <div role="cell" className="builds-row__menu" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <IconButton variant="ghost" size="icon-sm" aria-label="Build actions">
-              <MoreVertical size={16} />
-            </IconButton>
+            <IconButton variant="menu" aria-label="Build actions" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={goToBuild}>View build</DropdownMenuItem>

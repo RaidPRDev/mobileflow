@@ -28,7 +28,9 @@ export async function sweepMacBuildSandboxes(log: (line: string) => void = conso
       // search predictable; we filter to UUID-looking names below.
       const cmd = `find ${shq(host.remoteBase)} -mindepth 2 -maxdepth 2 -type d 2>/dev/null`;
       const out: string[] = [];
-      const result = await exec(ssh, cmd, (line) => out.push(line));
+      const result = await exec(ssh, cmd, (line) => {
+        out.push(line);
+      });
       if (result.exitCode !== 0) {
         log(`[sweep] find exited ${result.exitCode}: ${result.outputTail.slice(0, 200)}`);
         return;

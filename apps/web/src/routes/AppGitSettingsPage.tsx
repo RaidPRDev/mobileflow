@@ -106,13 +106,15 @@ export function AppGitSettingsPage() {
   }
 
   return (
-    <div className="settings-page">
+    <div className="page settings-page">
       <div className="settings-page__breadcrumb">
         <span>Settings</span>
         <span className="settings-page__sep">/</span>
         <span className="settings-page__crumb-current">Git</span>
       </div>
-      <h1 className="page-title">Git</h1>
+      <div className="page-header">
+        <h1 className="page-title">Git</h1>
+      </div>
 
       <div className="git-tabs">
         {HOSTS.map((h) => (

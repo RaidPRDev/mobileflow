@@ -250,8 +250,8 @@ export class MacRunner implements Runner {
         const onBuildLine = (line: string) => {
           const m = PHASE_RE.exec(line);
           if (m) {
-            const name = m[1];
-            const status = m[2];
+            const name = m[1]!;
+            const status = m[2]!;
             const code = m[3] ? Number(m[3]) : undefined;
             if ((SUB_PHASES as readonly string[]).includes(name)) {
               const phase = name as SubPhase;
@@ -294,7 +294,7 @@ export class MacRunner implements Runner {
         await ctx.step(failed, "failed", 1);
         const idx = SUB_PHASES.indexOf(failed);
         for (let i = idx + 1; i < SUB_PHASES.length; i++) {
-          await ctx.step(SUB_PHASES[i], "skipped");
+          await ctx.step(SUB_PHASES[i]!, "skipped");
         }
         throw e;
       }

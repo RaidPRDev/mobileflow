@@ -28,6 +28,10 @@ module.exports = {
   },
   resolve: {
     extensions: ["...", ".ts", ".tsx"],
+    extensionAlias: {
+      ".js": [".ts", ".tsx", ".js"],
+      ".mjs": [".mts", ".mjs"],
+    },
     alias: {
       "@": path.resolve(__dirname, "src"),
       "@assets": path.resolve(__dirname, "../../assets"),

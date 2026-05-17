@@ -473,14 +473,7 @@ export function BuildPage() {
                 <span className="build-side-panel__avatar">{triggeredInitial}</span>
                 <span>
                   <span className="build-side-panel__user-name">{triggeredBy}</span>
-                  <span
-                    className="tooltip-wrap build-side-panel__muted"
-                    tabIndex={0}
-                    aria-label={formatFullDate(b.createdAt)}
-                  >
-                    {relativeTime(b.createdAt)}
-                    <span className="tooltip-bubble" role="tooltip">{formatFullDate(b.createdAt)}</span>
-                  </span>
+                  <FullDateTooltip iso={b.createdAt} />
                 </span>
               </span>
             }
@@ -504,6 +497,55 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
       <div className="build-side-panel__label">{label}</div>
       <div className="build-side-panel__value">{value}</div>
     </div>
+  );
+}
+
+// Tooltip that exposes a full timestamp on hover. The side panel clips its
+// horizontal overflow, so we walk up to the nearest clipping ancestor and
+// shift the bubble inward if its centered position would be cut off.
+function FullDateTooltip({ iso }: { iso: string }) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+  const full = formatFullDate(iso);
+
+  const adjust = () => {
+    const wrap = wrapRef.current;
+    const bubble = bubbleRef.current;
+    if (!wrap || !bubble) return;
+
+    bubble.style.transform = "";
+
+    let container: HTMLElement | null = wrap.parentElement;
+    while (container && container !== document.body) {
+      const cs = getComputedStyle(container);
+      if (/(auto|scroll|hidden)/.test(`${cs.overflow} ${cs.overflowX} ${cs.overflowY}`)) break;
+      container = container.parentElement;
+    }
+    const bounds = (container ?? document.documentElement).getBoundingClientRect();
+    const br = bubble.getBoundingClientRect();
+    const PAD = 6;
+
+    let dx = 0;
+    if (br.left < bounds.left + PAD) dx = bounds.left + PAD - br.left;
+    else if (br.right > bounds.right - PAD) dx = bounds.right - PAD - br.right;
+
+    if (dx !== 0) {
+      bubble.style.transform = `translateX(calc(-50% + ${dx}px)) translateY(0)`;
+    }
+  };
+
+  return (
+    <span
+      ref={wrapRef}
+      className="tooltip-wrap build-side-panel__muted"
+      tabIndex={0}
+      aria-label={full}
+      onMouseEnter={adjust}
+      onFocus={adjust}
+    >
+      {relativeTime(iso)}
+      <span ref={bubbleRef} className="tooltip-bubble" role="tooltip">{full}</span>
+    </span>
   );
 }
 
