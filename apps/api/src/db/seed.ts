@@ -53,6 +53,7 @@ export async function seed() {
   console.log(`Seeded ${stacks.length} build stacks`);
 
   await seedSuperadmin();
+  await seedTesterClient();
 }
 
 async function seedSuperadmin() {
@@ -110,6 +111,56 @@ async function seedSuperadmin() {
       set: { planId: "unlimited", status: "active" },
     });
   console.log(`Admin org subscribed to "unlimited" plan`);
+}
+
+async function seedTesterClient() {
+  if (!env.TESTERCLIENT_EMAIL) {
+    console.log("TESTERCLIENT_EMAIL not set — skipping tester client seed");
+    return;
+  }
+  const email = env.TESTERCLIENT_EMAIL;
+
+  const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  let userId: string;
+  if (existing) {
+    userId = existing.id;
+    console.log(`Tester client ${email} already exists`);
+  } else {
+    const passwordHash = await hashPassword(env.TESTERCLIENT_PASSWORD);
+    const [created] = await db
+      .insert(users)
+      .values({ email, name: "Tester Client", passwordHash, isSuperadmin: false })
+      .returning();
+    if (!created) throw new Error("Failed to create tester client user");
+    userId = created.id;
+    console.log(`Created tester client ${email} (password from TESTERCLIENT_PASSWORD)`);
+  }
+
+  const slug = "tester-client";
+  let [clientOrg] = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.slug, slug))
+    .limit(1);
+  if (!clientOrg) {
+    [clientOrg] = await db
+      .insert(organizations)
+      .values({ name: "Tester Client", slug, ownerUserId: userId })
+      .returning();
+    if (!clientOrg) throw new Error("Failed to create tester client org");
+    console.log(`Created tester client org "${slug}"`);
+  }
+
+  await db
+    .insert(orgMembers)
+    .values({ orgId: clientOrg.id, userId, role: "owner" })
+    .onConflictDoNothing();
+
+  await db
+    .insert(subscriptions)
+    .values({ orgId: clientOrg.id, planId: "bohio", status: "active" })
+    .onConflictDoNothing({ target: subscriptions.orgId });
+  console.log(`Tester client org subscribed`);
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}`) {

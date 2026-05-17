@@ -119,7 +119,14 @@ function InnerRail({
               <NavItem to={`/app/${appId}/deploy/destinations`} label="Store Destinations" sub />
             </NavSection>
             <div className="app-rail-section-divider">App</div>
-            <NavItem to={`/app/${appId}/settings`} label="Settings" />
+            <NavSection
+              label="Settings"
+              basePath={`/app/${appId}/settings`}
+              landingPath={`/app/${appId}/settings/general`}
+            >
+              <NavItem to={`/app/${appId}/settings/general`} label="General" sub />
+              <NavItem to={`/app/${appId}/settings/git`} label="Git" sub />
+            </NavSection>
           </>
         ) : (
           <>

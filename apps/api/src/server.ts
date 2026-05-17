@@ -8,6 +8,7 @@ import { env } from "./env.js";
 import { authRoutes } from "./routes/auth.js";
 import { oauthRoutes } from "./routes/oauth.js";
 import { appsRoutes } from "./routes/apps.js";
+import { orgsRoutes } from "./routes/orgs.js";
 import { gitConnectionRoutes } from "./routes/gitConnections.js";
 import { commitsRoutes } from "./routes/commits.js";
 import { buildsRoutes } from "./routes/builds.js";
@@ -54,6 +55,7 @@ export async function buildServer() {
   await app.register(async (api) => {
     await api.register(authRoutes);
     await api.register(oauthRoutes);
+    await api.register(orgsRoutes);
     await api.register(appsRoutes);
     await api.register(gitConnectionRoutes);
     await api.register(commitsRoutes);

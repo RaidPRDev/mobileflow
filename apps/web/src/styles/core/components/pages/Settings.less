@@ -1,0 +1,826 @@
+.settings-page {
+  width: 100%;
+  margin: 0 auto;
+}
+
+.settings-page__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-md);
+}
+
+.settings-page__crumb-current {
+  color: var(--color-fg);
+  font-weight: 500;
+}
+
+.settings-page__sep {
+  color: var(--color-fg-subtle);
+}
+
+.settings-page__status {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  padding: var(--space-sm) 0;
+
+  &.is-danger {
+    color: var(--color-danger);
+  }
+}
+
+.settings-page__error {
+  font-size: 13px;
+  color: var(--color-danger);
+  margin-top: var(--space-md);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-2xl);
+  padding: var(--space-xl) 0;
+  align-items: start;
+}
+
+.settings-row__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+  padding-top: var(--space-xs);
+}
+
+.settings-row__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.settings-divider {
+  border: 0;
+  border-top: 1px dashed var(--color-border);
+  margin: 0;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-width: 480px;
+}
+
+.settings-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-field__hint {
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+}
+
+.settings-icon-upload {
+  width: 64px;
+  height: 64px;
+}
+
+.settings-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  font-size: 24px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.settings-icon--img {
+  object-fit: cover;
+}
+
+.settings-icon--sm {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.settings-icon--org {
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.org-id-display {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.org-id-display__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-icon__letter {
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+
+// Danger outline button — paired with `<Button variant="outline" className="btn-danger-outline">`
+.btn-danger-outline {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+
+  &:hover:not(:disabled) {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+}
+
+// Transfer ownership
+.settings-transfer__copy {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+  max-width: 540px;
+  line-height: 1.55;
+}
+
+.settings-transfer__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.settings-transfer__chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+  cursor: default;
+
+  &:hover {
+    background: var(--color-bg-muted);
+    color: var(--color-fg);
+  }
+}
+
+// Delete app dialog summary block
+.delete-app-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.delete-app-summary__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.delete-app-summary__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.delete-app-list {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  line-height: 1.65;
+}
+
+.delete-app-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+  margin-top: var(--space-sm);
+  cursor: default;
+}
+
+// Settings/Git page
+.git-tabs {
+  display: flex;
+  gap: var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-xl);
+}
+
+.git-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: default;
+
+  &:hover {
+    color: var(--color-fg);
+  }
+
+  &.is-active {
+    color: var(--color-fg);
+    border-bottom-color: var(--color-fg);
+    font-weight: 600;
+  }
+}
+
+.git-tab__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.git-connect-row,
+.git-connected-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.git-connect-row__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.git-connect-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.git-connect-row__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.git-connect-row__sub {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin-top: 2px;
+}
+
+.git-connected-row__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.git-connected-row__text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-fg);
+}
+
+.git-connected-row__link {
+  color: var(--color-accent);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.settings-section {
+  margin-top: var(--space-md);
+}
+
+.settings-section__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin-bottom: var(--space-md);
+}
+
+.git-repo-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.git-repo-account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 12px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.git-repo-account__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.git-repo-account__name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-repo-account__chev {
+  color: var(--color-fg-muted);
+  flex-shrink: 0;
+}
+
+.git-repo-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.git-repo-search__icon {
+  position: absolute;
+  left: 12px;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+
+.git-repo-search__input {
+  width: 100%;
+  height: 36px;
+  padding: 0 32px 0 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 13px;
+
+  &::placeholder {
+    color: var(--color-fg-subtle);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+  }
+}
+
+.git-repo-search__clear {
+  position: absolute;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+
+  &:hover {
+    background: var(--color-bg-muted);
+    color: var(--color-fg);
+  }
+}
+
+.git-repos {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.git-repos__empty {
+  padding: var(--space-lg) 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--color-border);
+
+  &.is-error {
+    color: var(--color-danger);
+  }
+}
+
+.git-repo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--color-fg);
+  cursor: default;
+  transition: background var(--transition-fast);
+
+  &:hover:not(:disabled) {
+    background: var(--color-bg-subtle);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.git-repo__icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-fg);
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.git-repo__name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-repo__lock {
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+}
+
+.git-repos__pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-md);
+}
+
+// ─── Subscriptions page ─────────────────────────────────────────────────────
+
+.settings-banner {
+  font-size: 13px;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+
+  &.is-success {
+    border-color: var(--color-success-border, var(--color-border));
+    background: var(--color-success-soft, var(--color-bg-subtle));
+    color: var(--color-success, var(--color-fg));
+  }
+}
+
+.plan-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+}
+
+.plan-summary__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.plan-summary__price {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin-top: 2px;
+}
+
+.plan-upgrade-hint {
+  font-size: 13px;
+  margin: 0;
+  color: var(--color-fg-muted);
+}
+
+.plan-tile {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+
+  &.is-current {
+    border-color: var(--color-accent);
+  }
+}
+
+.plan-tile__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.plan-tile__price {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.plan-tile__action {
+  margin-top: var(--space-xs);
+}
+
+// Billing details card with stacked sub-rows (info / payment method).
+.billing-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  overflow: hidden;
+}
+
+.billing-card__sep {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 0;
+}
+
+.billing-subrow {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  align-items: start;
+}
+
+.billing-subrow__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+  padding-top: 6px;
+}
+
+.billing-subrow__body {
+  min-width: 0;
+}
+
+.billing-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.billing-summary__cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-md) var(--space-xl);
+  flex: 1;
+  min-width: 0;
+}
+
+.billing-summary__cell {
+  min-width: 0;
+}
+
+.billing-summary__key {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+  margin-bottom: 2px;
+}
+
+.billing-summary__val {
+  font-size: 13px;
+  color: var(--color-fg);
+  word-break: break-word;
+}
+
+.billing-summary__edit {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.payment-method-display {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.payment-method-display__brand {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+
+.payment-method-display__last4 {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+}
+
+.payment-method-display__exp {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.payment-method-display__none {
+  color: var(--color-fg-muted);
+  font-style: italic;
+}
+
+.card-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+}
+
+// Wrap around Stripe PaymentElement so its iframe sits inside a styled border
+// matching our other inputs.
+.payment-element-wrap {
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+}
+
+.billing-address-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.billing-address-group__legend {
+  padding: 0 var(--space-xs);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+// Payments table
+.payments-table-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-card);
+}
+
+.payments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.payments-table thead th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+.payments-table tbody td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg);
+}
+
+.payments-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.payments-table__status {
+  text-align: center;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  padding: var(--space-xl);
+}
+
+.payments-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  text-transform: capitalize;
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+
+  &.is-paid {
+    background: var(--color-success-soft, var(--color-bg-muted));
+    color: var(--color-success, var(--color-fg));
+  }
+
+  &.is-failed {
+    background: var(--color-danger-soft, var(--color-bg-muted));
+    color: var(--color-danger, var(--color-fg));
+  }
+}
+
+.row.gap-md {
+  gap: var(--space-md);
+}
+
+.settings-field.grow {
+  flex: 1;
+  min-width: 0;
+}

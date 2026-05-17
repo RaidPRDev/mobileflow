@@ -50,3 +50,13 @@
   white-space: nowrap;
   border: 0;
 }
+
+// Restore native bullets on a list (the global reset strips them).
+.with-bullets {
+  list-style: disc outside;
+  padding-left: var(--space-xl);
+}
+
+ol.with-bullets {
+  list-style: decimal outside;
+}

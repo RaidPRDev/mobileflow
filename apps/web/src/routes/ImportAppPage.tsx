@@ -167,7 +167,7 @@ export function ImportAppPage() {
       </button>
 
       <header className="import-page__header">
-        <h1 className="import-page__title">Import app</h1>
+        <h1 className="page-title">Import app</h1>
         <div className="import-page__steps">
           <button
             type="button"

@@ -43,7 +43,7 @@ export function AppsPage() {
   return (
     <div className="apps-page">
       <header className="apps-page__header">
-        <h1 className="apps-page__title">Apps</h1>
+        <h1 className="page-title">Apps</h1>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button>
@@ -172,7 +172,7 @@ function AppListItem({ app, onDelete }: { app: AppRow; onDelete: () => void }) {
             <DropdownMenuItem onSelect={() => navigate(`/app/${app.id}/commits`)}>
               View app
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => navigate(`/app/${app.id}/settings`)}>
+            <DropdownMenuItem onSelect={() => navigate(`/app/${app.id}/settings/general`)}>
               Settings
             </DropdownMenuItem>
             <DropdownMenuItem destructive onSelect={onDelete}>

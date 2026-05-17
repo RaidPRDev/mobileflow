@@ -29,7 +29,7 @@ const StartBody = z.object({
   branch: z.string().max(120).optional(),
   target: z.enum(["ios", "android", "web"]),
   stackId: z.string().min(1).max(80),
-  buildType: z.enum(["debug", "release", "development", "adhoc", "appstore"]).optional(),
+  buildType: z.enum(["debug", "release", "simulator", "development", "adhoc", "appstore"]).optional(),
   environmentId: z.string().uuid().optional(),
   certificateId: z.string().uuid().optional(),
   // When set, the worker auto-creates a deployment to this destination on

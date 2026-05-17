@@ -16,7 +16,9 @@ import {
   users,
 } from "../db/schema.js";
 import { requireSuperadmin } from "../auth/middleware.js";
+import { SESSION_COOKIE, getSession } from "../auth/session.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import { Client as SshClient } from "ssh2";
 import { exec, linuxSshTarget, macSshTarget, uploadBase64, withSsh, type SshTarget } from "../worker/ssh.js";
 import { resolveLinuxHost } from "../worker/ssh.js";
 import { env } from "../env.js";
@@ -90,7 +92,14 @@ function shqMac(s: string): string {
 }
 
 export async function adminRoutes(server: FastifyInstance) {
-  server.addHook("preHandler", requireSuperadmin);
+  // Skip the http preHandler on WS upgrade requests — @fastify/websocket
+  // bypasses route preHandlers and `requireSuperadmin` would short-circuit
+  // the handshake. The terminal WS route re-does the superadmin check
+  // inline before opening the SSH shell.
+  server.addHook("preHandler", async (req, reply) => {
+    if (req.headers.upgrade?.toLowerCase() === "websocket") return;
+    return requireSuperadmin(req, reply);
+  });
 
   // ---------- Orgs ----------
 
@@ -403,6 +412,133 @@ export async function adminRoutes(server: FastifyInstance) {
       return reply.code(200).send({ ok: false, error: (err as Error).message });
     }
   });
+
+  // Interactive SSH terminal over WebSocket. Opens a PTY-backed shell on the
+  // build host and pipes bytes in both directions. Closing the socket ends the
+  // ssh2 channel, which SIGHUPs the remote shell and kills any foreground
+  // process group attached to it. Wire protocol (JSON text frames):
+  //   client → server: { type: "input",  data: string }
+  //                    { type: "resize", cols: number, rows: number }
+  //   server → client: { type: "data",   data: string }
+  //                    { type: "ready" }
+  //                    { type: "exit",   code?: number, signal?: string }
+  //                    { type: "error",  message: string }
+  server.get<{ Params: { id: string } }>(
+    "/admin/hosts/:id/terminal",
+    { websocket: true },
+    async (socket, req) => {
+      const closeWith = (code: number, msg?: string) => {
+        try {
+          if (msg) socket.send(JSON.stringify({ type: "error", message: msg }));
+        } catch { /* ignore */ }
+        try { socket.close(code); } catch { /* ignore */ }
+      };
+
+      // WS bypasses the route preHandler, so we re-check superadmin inline.
+      const sid = req.cookies[SESSION_COOKIE];
+      const sess = sid ? await getSession(sid) : null;
+      if (!sess) return closeWith(4401, "unauthorized");
+      const [u] = await db
+        .select({ id: users.id, isSuperadmin: users.isSuperadmin })
+        .from(users)
+        .where(eq(users.id, sess.userId))
+        .limit(1);
+      if (!u || !u.isSuperadmin) return closeWith(4403, "forbidden");
+
+      // Resolve target the same way testHost does.
+      let target: SshTarget | null = null;
+      if (req.params.id === "env:linux_docker") {
+        target = linuxSshTarget();
+      } else if (req.params.id === "env:mac") {
+        target = macSshTarget();
+      } else {
+        const [row] = await db.select().from(buildHosts).where(eq(buildHosts.id, req.params.id)).limit(1);
+        if (!row) return closeWith(4404, "host not found");
+        target = {
+          host: row.hostname,
+          port: row.port,
+          username: row.sshUser,
+          privateKey: Buffer.from(decryptString(row.sshKeyEnc), "utf8"),
+        };
+      }
+      if (!target) return closeWith(4400, "host not configured");
+
+      const client = new SshClient();
+      let stream: import("ssh2").ClientChannel | null = null;
+      let closed = false;
+
+      const tearDown = () => {
+        if (closed) return;
+        closed = true;
+        try { stream?.close(); } catch { /* ignore */ }
+        try { client.end(); } catch { /* ignore */ }
+      };
+
+      socket.on("close", tearDown);
+      socket.on("error", tearDown);
+
+      client.once("error", (err) => {
+        closeWith(1011, `ssh: ${err.message}`);
+        tearDown();
+      });
+
+      client.once("ready", () => {
+        client.shell({ term: "xterm-256color", cols: 80, rows: 24 }, (err, sh) => {
+          if (err) {
+            closeWith(1011, `shell: ${err.message}`);
+            tearDown();
+            return;
+          }
+          stream = sh;
+          try { socket.send(JSON.stringify({ type: "ready" })); } catch { /* ignore */ }
+
+          sh.on("data", (chunk: Buffer) => {
+            if (closed) return;
+            try {
+              socket.send(JSON.stringify({ type: "data", data: chunk.toString("utf8") }));
+            } catch { /* ignore */ }
+          });
+          sh.stderr.on("data", (chunk: Buffer) => {
+            if (closed) return;
+            try {
+              socket.send(JSON.stringify({ type: "data", data: chunk.toString("utf8") }));
+            } catch { /* ignore */ }
+          });
+          sh.on("close", (code: number | null, signal: string | null) => {
+            try {
+              socket.send(JSON.stringify({ type: "exit", code: code ?? undefined, signal: signal ?? undefined }));
+            } catch { /* ignore */ }
+            tearDown();
+            try { socket.close(1000); } catch { /* ignore */ }
+          });
+
+          socket.on("message", (raw: Buffer) => {
+            if (!stream || closed) return;
+            let msg: { type?: string; data?: string; cols?: number; rows?: number };
+            try {
+              msg = JSON.parse(raw.toString("utf8"));
+            } catch {
+              return;
+            }
+            if (msg.type === "input" && typeof msg.data === "string") {
+              try { stream.write(msg.data); } catch { /* ignore */ }
+            } else if (msg.type === "resize" && msg.cols && msg.rows) {
+              try { stream.setWindow(msg.rows, msg.cols, 0, 0); } catch { /* ignore */ }
+            }
+          });
+        });
+      });
+
+      client.connect({
+        host: target.host,
+        port: target.port,
+        username: target.username,
+        privateKey: target.privateKey,
+        readyTimeout: 20_000,
+        keepaliveInterval: 15_000,
+      });
+    },
+  );
 
   // Scan + optionally delete orphaned build directories on a host. A build dir
   // is orphaned when its name (the leaf segment after `<base>/<orgId>/`) is

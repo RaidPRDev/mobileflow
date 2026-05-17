@@ -8,7 +8,9 @@ import { CommitsPage } from "./routes/CommitsPage";
 import { BuildsPage } from "./routes/BuildsPage";
 import { NewBuildPage } from "./routes/NewBuildPage";
 import { BuildPage } from "./routes/BuildPage";
-import { GitConnectPage } from "./routes/GitConnectPage";
+import { AppSettingsLayout } from "./routes/AppSettingsLayout";
+import { AppGeneralSettingsPage } from "./routes/AppGeneralSettingsPage";
+import { AppGitSettingsPage } from "./routes/AppGitSettingsPage";
 import { EnvironmentsPage } from "./routes/EnvironmentsPage";
 import { CertificatesPage } from "./routes/CertificatesPage";
 import { StoreDestinationsPage } from "./routes/StoreDestinationsPage";
@@ -66,7 +68,12 @@ export function App() {
         <Route path="/app/:appId/deploy/deployments" element={<DeploymentsPage />} />
         <Route path="/app/:appId/deploy/deployments/new" element={<NewDeploymentPage />} />
         <Route path="/app/:appId/deploy/destinations" element={<StoreDestinationsPage />} />
-        <Route path="/app/:appId/git" element={<GitConnectPage />} />
+        <Route path="/app/:appId/git" element={<Navigate to="../settings/git" replace />} />
+        <Route path="/app/:appId/settings" element={<AppSettingsLayout />}>
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<AppGeneralSettingsPage />} />
+          <Route path="git" element={<AppGitSettingsPage />} />
+        </Route>
       </Route>
 
       <Route

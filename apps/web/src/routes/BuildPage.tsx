@@ -316,7 +316,7 @@ export function BuildPage() {
             ← Builds
           </Link>
           <div className="build-detail__title-row">
-            <h1 className="build-detail__title">{headerLabel}</h1>
+            <h1 className="page-title">{headerLabel}</h1>
             <StatusBadge status={b.status} />
             <span className={`build-detail__live-dot is-${wsConnected ? "live" : "polling"}`} aria-hidden />
           </div>

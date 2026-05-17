@@ -82,6 +82,53 @@ export interface MeResponse {
   organizations: { orgId: string; slug: string; name: string; role: "owner" | "admin" | "member" }[];
 }
 
+export interface OrgRow {
+  id: string;
+  name: string;
+  slug: string;
+  ownerUserId: string;
+  iconUrl: string | null;
+  description: string | null;
+  billingEmail: string | null;
+  createdAt: string;
+}
+
+export interface BillingInfoRow {
+  orgId: string;
+  fullName: string | null;
+  country: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  taxIdType: string | null;
+  taxIdValue: string | null;
+  updatedAt: string;
+}
+
+export interface PaymentMethodRow {
+  type: string;
+  brand?: string;
+  last4?: string;
+  expMonth?: number;
+  expYear?: number;
+}
+
+export interface PaymentRow {
+  id: string;
+  orgId: string;
+  stripeInvoiceId: string;
+  amountCents: number;
+  currency: string;
+  status: "paid" | "open" | "uncollectible" | "void" | "draft" | "failed";
+  description: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
 export interface AppRow {
   id: string;
   orgId: string;
@@ -243,6 +290,17 @@ export const api = {
       sortOrder: number;
     }[]>("/stacks"),
 
+  getOrg: (orgId: string) => request<OrgRow>(`/orgs/${orgId}`),
+  patchOrg: (
+    orgId: string,
+    body: Partial<{
+      name: string;
+      iconUrl: string | null;
+      description: string | null;
+      billingEmail: string | null;
+    }>,
+  ) => request<OrgRow>(`/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify(body) }),
+
   listApps: (orgId: string) => request<AppRow[]>(`/orgs/${orgId}/apps`),
   createApp: (
     orgId: string,
@@ -254,6 +312,11 @@ export const api = {
     body: Partial<{ name: string; iconUrl: string | null; runtime: Runtime; gitConnectionId: string | null; gitRepoFullName: string | null; gitDefaultBranch: string | null }>,
   ) => request<AppRow>(`/apps/${appId}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteApp: (appId: string) => request<void>(`/apps/${appId}`, { method: "DELETE" }),
+  transferApp: (appId: string, targetOrgId: string) =>
+    request<AppRow>(`/apps/${appId}/transfer`, {
+      method: "POST",
+      body: JSON.stringify({ targetOrgId }),
+    }),
 
   listGitConnections: (orgId: string) => request<GitConnectionRow[]>(`/orgs/${orgId}/git-connections`),
   deleteGitConnection: (id: string) => request<void>(`/git-connections/${id}`, { method: "DELETE" }),
@@ -401,6 +464,25 @@ export const api = {
     }),
   openBillingPortal: (orgId: string) =>
     request<{ url: string }>(`/orgs/${orgId}/billing/portal`, { method: "POST" }),
+
+  getBillingConfig: () => request<{ publishableKey: string | null }>("/billing/config"),
+  getBillingInfo: (orgId: string) =>
+    request<BillingInfoRow | null>(`/orgs/${orgId}/billing-info`),
+  putBillingInfo: (orgId: string, body: Partial<Omit<BillingInfoRow, "orgId" | "updatedAt">>) =>
+    request<BillingInfoRow>(`/orgs/${orgId}/billing-info`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  createSetupIntent: (orgId: string) =>
+    request<{ clientSecret: string }>(`/orgs/${orgId}/billing/setup-intent`, { method: "POST" }),
+  getPaymentMethod: (orgId: string) =>
+    request<PaymentMethodRow | null>(`/orgs/${orgId}/billing/payment-method`),
+  attachPaymentMethod: (orgId: string, paymentMethodId: string) =>
+    request<{ ok: true }>(`/orgs/${orgId}/billing/payment-method`, {
+      method: "POST",
+      body: JSON.stringify({ paymentMethodId }),
+    }),
+  listPayments: (orgId: string) => request<PaymentRow[]>(`/orgs/${orgId}/payments`),
 
   // Admin (superadmin only)
   admin: {

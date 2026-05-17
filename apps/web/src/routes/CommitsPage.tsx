@@ -57,7 +57,7 @@ export function CommitsPage() {
           Connect a repository to see commits and start builds.
         </p>
         <Button asChild>
-          <Link to={`/app/${appId}/git`}>Connect a repository</Link>
+          <Link to={`/app/${appId}/settings/git`}>Connect a repository</Link>
         </Button>
       </div>
     );
@@ -71,7 +71,7 @@ export function CommitsPage() {
   return (
     <div className="commits-page">
       <div className="commits-page__header">
-        <h1 className="commits-page__title">Commits</h1>
+        <h1 className="page-title">Commits</h1>
         <div className="commits-search">
           <Search size={14} className="commits-search__icon" aria-hidden />
           <input

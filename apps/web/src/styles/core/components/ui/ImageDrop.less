@@ -1,0 +1,46 @@
+.imagedrop {
+  position: relative;
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: default;
+  outline: 2px dashed transparent;
+  outline-offset: 2px;
+  transition: outline-color var(--transition-fast);
+
+  &:focus-visible {
+    outline-style: solid;
+    outline-color: var(--color-accent);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+
+  // Hover overlay slot — opt-in via .imagedrop__overlay child
+  &:hover .imagedrop__overlay,
+  &.is-dragover .imagedrop__overlay {
+    opacity: 1;
+  }
+
+  &.is-dragover {
+    outline-style: dashed;
+    outline-color: var(--color-accent);
+  }
+}
+
+.imagedrop__overlay {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+}

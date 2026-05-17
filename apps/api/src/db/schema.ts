@@ -53,6 +53,7 @@ export const deploymentStatus = pgEnum("deployment_status", [
 export const buildType = pgEnum("build_type", [
   "debug",
   "release",
+  "simulator",
   "development",
   "adhoc",
   "appstore",
@@ -89,6 +90,9 @@ export const organizations = pgTable("organizations", {
   ownerUserId: uuid("owner_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
+  iconUrl: text("icon_url"),
+  description: text("description"),
+  billingEmail: text("billing_email"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -164,6 +168,47 @@ export const subscriptions = pgTable("subscriptions", {
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`),
+});
+
+export const billingInfo = pgTable("billing_info", {
+  orgId: uuid("org_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  fullName: text("full_name"),
+  country: text("country"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  taxIdType: text("tax_id_type"),
+  taxIdValue: text("tax_id_value"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const paymentStatus = pgEnum("payment_status", [
+  "paid",
+  "open",
+  "uncollectible",
+  "void",
+  "draft",
+  "failed",
+]);
+
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  stripeInvoiceId: text("stripe_invoice_id").notNull().unique(),
+  amountCents: integer("amount_cents").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  status: paymentStatus("status").notNull(),
+  description: text("description"),
+  hostedInvoiceUrl: text("hosted_invoice_url"),
+  invoicePdfUrl: text("invoice_pdf_url"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const apps = pgTable("apps", {

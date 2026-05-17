@@ -40,5 +40,10 @@ export {
 } from "./DropdownMenu";
 export { Combobox, type ComboboxOption, type ComboboxProps } from "./Combobox";
 export { FileDrop, type FileDropProps } from "./FileDrop";
+export {
+  ImageDrop,
+  DEFAULT_IMAGE_MIME_TYPES,
+  type ImageDropProps,
+} from "./ImageDrop";
 export { Switch, type SwitchProps } from "./Switch";
 export { RadioGroup, type RadioGroupProps, type RadioOption } from "./RadioGroup";

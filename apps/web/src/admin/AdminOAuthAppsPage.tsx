@@ -108,7 +108,7 @@ export function AdminOAuthAppsPage() {
           );
           return (
             <ProviderCard
-              key={`${slot.provider}-${slot.kind}`}
+              key={`${slot.provider}-${slot.kind}-${existing?.id ?? "none"}`}
               slot={slot}
               existing={existing}
               onSave={(body) => upsert.mutate(body)}

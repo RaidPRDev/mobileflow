@@ -76,7 +76,7 @@ export function DeploymentsPage() {
   return (
     <div className="builds-page">
       <header className="builds-page__header">
-        <h1 className="builds-page__title">Deployments</h1>
+        <h1 className="page-title">Deployments</h1>
         <div className="builds-page__actions">
           <Button size="sm" onClick={() => navigate(`/app/${appId}/deploy/deployments/new`)}>
             New deployment

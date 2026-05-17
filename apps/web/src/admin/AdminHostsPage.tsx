@@ -23,6 +23,7 @@ import {
 } from "@mobileflow/ui";
 import { CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
 import { ApiError, api } from "../api/client";
+import { HostTerminalPanel } from "./HostTerminalPanel";
 
 type Kind = "linux_docker" | "mac";
 
@@ -131,6 +132,7 @@ function HostRowItem({ host }: { host: HostRow }) {
   const [testOpen, setTestOpen] = useState(false);
   const [pushKeyOpen, setPushKeyOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   const setOnline = useMutation({
     mutationFn: (online: boolean) => api.admin.patchHost(host.id, { online }),
@@ -200,6 +202,9 @@ function HostRowItem({ host }: { host: HostRow }) {
             <DropdownMenuItem onSelect={() => setCleanupOpen(true)}>
               Clean up orphans…
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTerminalOpen(true)}>
+              Terminal
+            </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isEnv || setOnline.isPending}
               title={isEnv ? "Env hosts are always available when configured" : undefined}
@@ -241,6 +246,12 @@ function HostRowItem({ host }: { host: HostRow }) {
       <CleanupOrphansDialog
         open={cleanupOpen}
         onOpenChange={setCleanupOpen}
+        hostId={host.id}
+        hostName={host.name}
+      />
+      <HostTerminalPanel
+        open={terminalOpen}
+        onClose={() => setTerminalOpen(false)}
         hostId={host.id}
         hostName={host.name}
       />

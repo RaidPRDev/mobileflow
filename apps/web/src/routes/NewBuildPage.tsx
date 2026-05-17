@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -105,7 +106,7 @@ function SelectCommit({ appId }: { appId: string }) {
         <span className="page-back-label">Back</span>
       </div>
       <header className="new-build-header">
-        <h1 className="new-build-title">Create a new build</h1>
+        <h1 className="page-title">Create a new build</h1>
         <Steps activeStep="select" />
       </header>
 
@@ -238,7 +239,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
   const [buildType, setBuildType] = useState<string>(BUILD_TYPES.ios![0]!.id);
   const [environmentId, setEnvironmentId] = useState<string>("");
   const [certificateId, setCertificateId] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[] | null>(null);
   const [envOpen, setEnvOpen] = useState(false);
   const [destinationOn, setDestinationOn] = useState(false);
   const [autoDeployDestId, setAutoDeployDestId] = useState<string>("");
@@ -371,8 +372,38 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
       qc.invalidateQueries({ queryKey: ["builds", appId] });
       navigate(`/app/${appId}/build/builds/${b.id}`);
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Failed to start build"),
+    onError: (err) => {
+      const issues = issuesFromApiError(err, { appId, target });
+      if (issues) {
+        setValidationIssues(issues);
+      } else {
+        setValidationIssues([
+          {
+            title: "Couldn’t start build",
+            detail: err instanceof ApiError ? err.message : "Failed to start build",
+          },
+        ]);
+      }
+    },
   });
+
+  const runBuild = () => {
+    const issues = collectClientIssues({
+      appId,
+      target,
+      stackId,
+      certificateId,
+      platformCerts,
+      destinationsVisible,
+      destinationOn,
+      autoDeployDestId,
+    });
+    if (issues.length > 0) {
+      setValidationIssues(issues);
+      return;
+    }
+    start.mutate();
+  };
 
   return (
     <div className="new-build-page">
@@ -388,7 +419,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
         <span className="page-back-label">Back</span>
       </div>
       <header className="new-build-header">
-        <h1 className="new-build-title">Create a new build</h1>
+        <h1 className="page-title">Create a new build</h1>
         <Steps activeStep="configure" />
       </header>
 
@@ -502,11 +533,9 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
           />
         )}
 
-        {error && <p className="new-build-error">{error}</p>}
-
         <div className="new-build-actions">
           <Button variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-          <Button onClick={() => start.mutate()} loading={start.isPending} disabled={!commitQ.data}>
+          <Button onClick={runBuild} loading={start.isPending} disabled={!commitQ.data}>
             Build
           </Button>
         </div>
@@ -520,6 +549,12 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
           setEnvironmentId(envId);
           setEnvOpen(false);
         }}
+      />
+
+      <ValidationIssuesDialog
+        issues={validationIssues}
+        target={target}
+        onOpenChange={(open) => !open && setValidationIssues(null)}
       />
     </div>
   );
@@ -662,6 +697,149 @@ function CommitPanel({ appId, sha, commit, loading, loadError, branchName }: Com
   );
 }
 
+// ─── Build validation ────────────────────────────────────────────────────────
+
+interface ValidationIssue {
+  title: string;
+  detail: string;
+  action?: { label: string; to: string };
+}
+
+interface ClientIssueInput {
+  appId: string;
+  target: BuildTarget;
+  stackId: string;
+  certificateId: string;
+  platformCerts: { id: string }[];
+  destinationsVisible: boolean;
+  destinationOn: boolean;
+  autoDeployDestId: string;
+}
+
+function collectClientIssues(i: ClientIssueInput): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (!i.stackId) {
+    issues.push({ title: "Pick a build stack", detail: "Choose a build stack for the selected platform." });
+  }
+
+  if (i.target !== "web") {
+    const platformLabel = i.target === "ios" ? "iOS" : "Android";
+    if (i.platformCerts.length === 0) {
+      issues.push({
+        title: `Add an ${platformLabel} signing certificate`,
+        detail: `${platformLabel} builds need a signing certificate. Add one to this app, then try again.`,
+        action: { label: "Add certificate", to: `/app/${i.appId}/build/certificates` },
+      });
+    } else if (!i.certificateId) {
+      issues.push({
+        title: "Pick a signing certificate",
+        detail: `Select an ${platformLabel} certificate to sign this build.`,
+      });
+    }
+  }
+
+  if (i.destinationsVisible && i.destinationOn && !i.autoDeployDestId) {
+    issues.push({
+      title: "Pick a destination",
+      detail: "Auto-deploy is on, but no destination is selected. Pick one, or turn off auto-deploy.",
+      action: { label: "Manage destinations", to: `/app/${i.appId}/deploy/destinations` },
+    });
+  }
+
+  return issues;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  commitSha: "Commit",
+  target: "Target platform",
+  stackId: "Build stack",
+  buildType: "Build type",
+  environmentId: "Environment",
+  certificateId: "Signing certificate",
+  autoDeployDestinationId: "Destination",
+};
+
+function issuesFromApiError(
+  err: unknown,
+  ctx: { appId: string; target: BuildTarget },
+): ValidationIssue[] | null {
+  if (!(err instanceof ApiError)) return null;
+  const body = err.body as { error?: string; issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } } | null;
+  if (!body || body.error !== "ValidationError" || !body.issues) return null;
+
+  const items: ValidationIssue[] = [];
+  const fieldErrors = body.issues.fieldErrors ?? {};
+  for (const [field, msgs] of Object.entries(fieldErrors)) {
+    if (!msgs || msgs.length === 0) continue;
+    const label = FIELD_LABELS[field] ?? field;
+    items.push({
+      title: label,
+      detail: msgs.join(" "),
+      action:
+        field === "certificateId"
+          ? { label: "Add certificate", to: `/app/${ctx.appId}/build/certificates` }
+          : undefined,
+    });
+  }
+  for (const msg of body.issues.formErrors ?? []) {
+    items.push({ title: "Build settings", detail: msg });
+  }
+  return items.length > 0 ? items : null;
+}
+
+interface ValidationIssuesDialogProps {
+  issues: ValidationIssue[] | null;
+  target: BuildTarget;
+  onOpenChange: (open: boolean) => void;
+}
+
+function ValidationIssuesDialog({ issues, target, onOpenChange }: ValidationIssuesDialogProps) {
+  const open = issues !== null && issues.length > 0;
+  const targetMeta = TARGETS.find((t) => t.id === target)!;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="build-issues-dialog">
+        <DialogHeader>
+          <div className="build-issues-dialog__heading">
+            <DialogTitle>Can’t start this build yet</DialogTitle>
+            <DialogDescription className="build-issues-dialog__intro">
+              Fix the following before starting the build:
+            </DialogDescription>
+          </div>
+        </DialogHeader>
+        <DialogBody>
+          <ul className="build-issues-list">
+            {(issues ?? []).map((issue, i) => (
+              <li key={i} className="build-issues-list__item">
+                <span
+                  className="build-issues-list__icon"
+                  style={{ background: targetMeta.iconBg }}
+                  aria-hidden
+                >
+                  {targetMeta.icon}
+                </span>
+                <div className="build-issues-list__body">
+                  <div className="build-issues-list__title">{issue.title}</div>
+                  <div className="build-issues-list__detail">{issue.detail}</div>
+                  {issue.action && (
+                    <Link to={issue.action.to} className="new-build-link">
+                      {issue.action.label}
+                    </Link>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Got it</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function Steps({ activeStep }: { activeStep: "select" | "configure" }) {
   return (
     <div className="new-build-steps">
@@ -743,7 +921,12 @@ function NewEnvironmentDialog({ appId, open, onOpenChange, onCreated }: NewEnvir
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="new-env-dialog">
         <DialogHeader>
-          <DialogTitle>New Environment</DialogTitle>
+          <div className="build-issues-dialog__heading">
+            <DialogTitle>New Environment</DialogTitle>
+            <DialogDescription className="build-issues-dialog__intro">
+              Create a named group of secrets and variables to expose to your builds.
+            </DialogDescription>
+          </div>
         </DialogHeader>
         <DialogBody>
           <div className="new-env-field">

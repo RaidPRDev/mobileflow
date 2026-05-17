@@ -67,7 +67,7 @@ function SelectBuild({ appId }: { appId: string }) {
         <span className="page-back-label">Back</span>
       </div>
       <header className="new-build-header">
-        <h1 className="new-build-title">Create New Deployment</h1>
+        <h1 className="page-title">Create New Deployment</h1>
         <Steps activeStep="select" />
       </header>
 
@@ -241,7 +241,7 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
         <span className="page-back-label">Back</span>
       </div>
       <header className="new-build-header">
-        <h1 className="new-build-title">Create New Deployment</h1>
+        <h1 className="page-title">Create New Deployment</h1>
         <Steps activeStep="configure" />
       </header>
 

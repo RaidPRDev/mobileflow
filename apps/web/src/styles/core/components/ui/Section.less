@@ -46,12 +46,10 @@
   min-width: 0;
 }
 
-// Shared page title styling. Matches the listing-page titles so e.g. the
-// "Store destinations" header looks the same as "Builds" or "Commits".
-.page-title,
-.apps-page__title,
-.commits-page__title,
-.builds-page__title {
+// Single source of truth for page titles across the app. Every top-level
+// page header should use `.page-title` so a font-size change here applies
+// everywhere consistently.
+.page-title {
   font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.01em;

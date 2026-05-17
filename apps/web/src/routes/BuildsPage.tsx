@@ -73,7 +73,7 @@ export function BuildsPage() {
   return (
     <div className="builds-page">
       <header className="builds-page__header">
-        <h1 className="builds-page__title">Builds</h1>
+        <h1 className="page-title">Builds</h1>
         <div className="builds-page__actions">
           <Button variant="outline" size="sm">
             Filter
