@@ -20,6 +20,7 @@ import { billingRoutes, billingWebhookRoutes } from "./routes/billing.js";
 import { startWorker } from "./worker/worker.js";
 import { startDeployWorker } from "./worker/deployWorker.js";
 import { deploymentRoutes } from "./routes/deployments.js";
+import { csrfGuard } from "./auth/csrf.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -53,6 +54,10 @@ export async function buildServer() {
   app.get("/health", async () => ({ ok: true, env: env.NODE_ENV }));
 
   await app.register(async (api) => {
+    // CSRF guard runs before route handlers in this scope. The Stripe webhook
+    // is registered in a separate scope below so it bypasses this hook (Stripe
+    // verifies its own signature header instead).
+    api.addHook("onRequest", csrfGuard);
     await api.register(authRoutes);
     await api.register(oauthRoutes);
     await api.register(orgsRoutes);

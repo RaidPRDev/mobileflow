@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { orgMembers, organizations, ssoIdentities, subscriptions, users } from "../db/schema.js";
 import { OAUTH_STATE_COOKIE, authorizeRedirectUrl, exchangeCode, newState, resolveProvider } from "../auth/oauth.js";
-import { SESSION_COOKIE, createSession } from "../auth/session.js";
+import { createSession } from "../auth/session.js";
+import { establishSession } from "./auth.js";
 import { env } from "../env.js";
 
 function redirectUriFor(providerId: "google" | "github"): string {
@@ -96,13 +97,7 @@ export async function oauthRoutes(app: FastifyInstance) {
         const profile = await p.fetchProfile(accessToken);
         const userId = await ensureUserAndOrg(profile, req.params.provider);
         const sess = await createSession({ userId, userAgent: req.headers["user-agent"], ip: req.ip });
-        reply.setCookie(SESSION_COOKIE, sess.id, {
-          httpOnly: true,
-          secure: env.isProd,
-          sameSite: "lax",
-          path: "/",
-          expires: sess.expiresAt,
-        });
+        establishSession(reply, sess.id, sess.expiresAt);
         return reply.redirect(`${env.WEB_BASE_URL}/auth/callback?ok=1`);
       } catch (err) {
         app.log.error({ err }, "oauth callback failed");

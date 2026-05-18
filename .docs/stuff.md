@@ -377,3 +377,11 @@ infra/
 - API serves a WebSocket endpoint for live build logs; ensure Traefik labels don't interfere (default works, but verify `Connection: Upgrade` passes through).
 - Postgres replaces MariaDB; volume name and entrypoint adjusted accordingly.
 - API route prefix is `/api` on the same host as the SPA — uses Traefik `PathPrefix` priority just like the `phpmyadmin` block does.
+
+
+
+
+- Request signing / HMAC — adds complexity without raising the bar against an attacker who has the binary.
+  - Origin/Referer checks on the API — already covered by CORS + sameSite, and useless for the desktop path.
+  - mTLS / platform attestation — order-of-magnitude more code for a threat model you probably don't have. Reconsider if you 
+  ever process payment credentials or PHI directly.

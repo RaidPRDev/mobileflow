@@ -25,6 +25,7 @@ import {
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
+import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import {
   StoreDestinationDialog,
   TYPE_PLATFORM,
@@ -44,6 +45,7 @@ export function StoreDestinationsPage() {
   const qc = useQueryClient();
   const [dialog, setDialog] = useState<{ mode: "create" } | { mode: "edit"; row: DestinationRow } | null>(null);
   const [page, setPage] = useState(0);
+  const [deleting, setDeleting] = useState<DestinationRow | null>(null);
 
   const destQ = useQuery({
     queryKey: ["destinations", appId],
@@ -69,7 +71,10 @@ export function StoreDestinationsPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteDestination(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations", appId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["destinations", appId] });
+      setDeleting(null);
+    },
   });
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -131,7 +136,7 @@ export function StoreDestinationsPage() {
                   latest={latest}
                   onOpen={() => navigate(`/app/${appId}/deploy/store-destinations/${d.id}`)}
                   onEdit={() => setDialog({ mode: "edit", row: d })}
-                  onDelete={() => remove.mutate(d.id)}
+                  onDelete={() => setDeleting(d)}
                 />
               );
             })}
@@ -146,6 +151,22 @@ export function StoreDestinationsPage() {
             onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
           />
         </>
+      )}
+
+      {deleting && (
+        <ConfirmDeleteDialog
+          title="Delete store destination"
+          itemName={deleting.name}
+          details={[
+            "Stored credentials (Apple API key / .p12 / service-account JSON) will be permanently destroyed",
+            "Deployment history is preserved, but new deploys to this destination will no longer be possible",
+          ]}
+          error={remove.error}
+          pending={remove.isPending}
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => remove.mutate(deleting.id)}
+          confirmLabel="Delete destination"
+        />
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { Client } from "ssh2";
 import { db } from "../../db/client.js";
 import { apps, buildStacks, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
+import { safeBasename } from "../../lib/safePath.js";
 import { env } from "../../env.js";
 import { exec, execDrained, resolveLinuxHost, uploadBase64, withSsh } from "../ssh.js";
 import { runInlinePublish } from "../inlinePublish.js";
@@ -260,17 +261,23 @@ async function materializeAndroidKeystore(
   const certsDir = `${remoteDir}/certs/google`;
   await execDrained(ssh, `mkdir -p ${shq(certsDir)}`, "mkdir keystore dir", 15_000);
 
-  const remotePath = `${certsDir}/${cert.fileName}`;
+  // Re-sanitize fileName at the point of use. The upload validator rejects
+  // path traversal, but legacy rows that pre-date that validator could still
+  // hold unsafe values; without `safeBasename` an attacker-controlled
+  // fileName could escape `certsDir` (and the value baked into
+  // ANDROID_KEYSTORE would point outside the workspace bind-mount).
+  const safeKeystoreFileName = safeBasename(cert.fileName, "keystore fileName");
+  const remotePath = `${certsDir}/${safeKeystoreFileName}`;
   const blobBase64 = decryptString(cert.fileBlobEnc);
   const sizeKb = Math.round((blobBase64.length * 3) / 4 / 1024);
   await ctx.log(`Uploading keystore (~${sizeKb} KB) -> ${remotePath}`);
   await uploadBase64(ssh, { base64: blobBase64, remotePath, label: "keystore", decoder: "linux" });
-  await ctx.log(`Materialized keystore: ${cert.fileName}`);
+  await ctx.log(`Materialized keystore: ${safeKeystoreFileName}`);
 
   const meta = (cert.metadata ?? {}) as Record<string, string>;
   const password = cert.passwordEnc ? decryptString(cert.passwordEnc) : "";
   const flags = [
-    `-e ${shq(`ANDROID_KEYSTORE=/workspace/certs/google/${cert.fileName}`)}`,
+    `-e ${shq(`ANDROID_KEYSTORE=/workspace/certs/google/${safeKeystoreFileName}`)}`,
     `-e ${shq(`ANDROID_KEYSTORE_PASS=${password}`)}`,
   ];
   if (meta.alias) flags.push(`-e ${shq(`ANDROID_ALIAS=${meta.alias}`)}`);

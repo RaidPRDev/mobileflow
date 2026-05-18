@@ -3,6 +3,7 @@ import { Client } from "ssh2";
 import { db } from "../../db/client.js";
 import { apps, buildStacks, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
+import { safeBasename } from "../../lib/safePath.js";
 import { env } from "../../env.js";
 import { exec, execDrained, resolveLinuxHost, resolveMacHost, uploadBase64, withSsh } from "../ssh.js";
 import { runInlinePublish } from "../inlinePublish.js";
@@ -494,13 +495,23 @@ async function materializeIosCerts(
     await uploadBase64(ssh, { base64: blobBase64, remotePath: dest, label, decoder: "mac" });
   };
 
-  const p12Path = `${certsDir}/${p12.fileName}`;
+  // Re-sanitize fileName at the point of use. The upload validator rejects
+  // path traversal, but legacy rows that pre-date that validator could still
+  // hold unsafe values; without `safeBasename` an attacker-controlled
+  // fileName could escape `certsDir`.
+  const safeP12FileName = safeBasename(p12.fileName, "p12 fileName");
+  const p12Path = `${certsDir}/${safeP12FileName}`;
   await writeBlob(decryptString(p12.fileBlobEnc), p12Path, ".p12");
-  await ctx.log(`Materialized iOS .p12: ${p12.fileName}`);
+  await ctx.log(`Materialized iOS .p12: ${safeP12FileName}`);
 
   const provisionBase64 = decryptString(prov.fileBlobEnc);
   const provisionMeta = (prov.metadata ?? {}) as Record<string, string>;
-  const provisionName = provisionMeta.provisionName ?? prov.fileName.replace(/\.mobileprovision$/, "");
+  // provisionName is used as a path component below; treat the metadata
+  // value with the same suspicion as fileName (it was derived from a user
+  // upload at create time and may also be legacy-unsanitized).
+  const rawProvisionName =
+    provisionMeta.provisionName ?? prov.fileName.replace(/\.mobileprovision$/, "");
+  const provisionName = safeBasename(rawProvisionName, "provisioning name");
   const provisionPath = `${profilesDir}/${provisionName}.mobileprovision`;
   await writeBlob(provisionBase64, provisionPath, "provisioning profile");
 

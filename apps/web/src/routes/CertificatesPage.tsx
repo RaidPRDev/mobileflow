@@ -19,6 +19,7 @@ import {
   Label,
 } from "@mobileflow/ui";
 import { ApiError, api, type CertificateGroup, type CertificateRow } from "../api/client";
+import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import deleteIcon from "../../../../assets/icons/delete-icon.svg";
 
 type Platform = "ios" | "android";
@@ -54,13 +55,17 @@ export function CertificatesPage() {
     enabled: !!appId,
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => api.deleteCertificate(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["certs", appId] }),
-  });
-
   const [openPlatform, setOpenPlatform] = useState<Platform | null>(null);
   const [editingCert, setEditingCert] = useState<CertificateGroup | null>(null);
+  const [deletingCert, setDeletingCert] = useState<CertificateGroup | null>(null);
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteCertificate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["certs", appId] });
+      setDeletingCert(null);
+    },
+  });
 
   return (
     <div className="page">
@@ -154,7 +159,7 @@ export function CertificatesPage() {
                     <DropdownMenuItem onSelect={() => setEditingCert(c)}>
                       Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem destructive onSelect={() => remove.mutate(c.id)}>
+                    <DropdownMenuItem destructive onSelect={() => setDeletingCert(c)}>
                       Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -170,8 +175,44 @@ export function CertificatesPage() {
           <p className="empty-state__body">Upload a keystore or .p12 to sign your builds.</p>
         </div>
       )}
+
+      {deletingCert && (
+        <ConfirmDeleteDialog
+          title="Delete signing certificate"
+          itemName={deletingCert.label}
+          details={buildCertDeleteDetails(deletingCert)}
+          error={remove.error}
+          pending={remove.isPending}
+          onCancel={() => {
+            if (!remove.isPending) {
+              setDeletingCert(null);
+              remove.reset();
+            }
+          }}
+          onConfirm={() => remove.mutate(deletingCert.id)}
+          confirmLabel="Delete certificate"
+        />
+      )}
     </div>
   );
+}
+
+function buildCertDeleteDetails(c: CertificateGroup): string[] {
+  // Spell out what cascades so the user understands the blast radius. The
+  // backend wipes the encrypted blob + password + provisioning-profile rows;
+  // builds that were signed with this cert keep their record but lose the
+  // link (FK is ON DELETE SET NULL).
+  const details: string[] = [];
+  const kindLabel = c.kind === "p12" ? "iOS .p12 certificate" : c.kind === "keystore" ? "Android keystore" : "provisioning profile";
+  details.push(`The encrypted ${kindLabel} file (${c.fileName}) and its password will be permanently destroyed`);
+  if (c.provisioningProfiles.length > 0) {
+    details.push(
+      `${c.provisioningProfiles.length} provisioning profile${c.provisioningProfiles.length === 1 ? "" : "s"} attached to this certificate will be deleted along with their .mobileprovision files`,
+    );
+  }
+  details.push("Past builds that used this certificate keep their history, but lose the link to it");
+  details.push("In-flight (queued or running) builds using this certificate will block the delete — cancel them first");
+  return details;
 }
 
 // Small inline ×-style button using the shared delete-icon.svg.

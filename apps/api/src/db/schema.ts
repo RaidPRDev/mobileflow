@@ -140,6 +140,26 @@ export const sessions = pgTable("sessions", {
   ip: text("ip"),
 });
 
+// Long-lived bearer tokens issued to the Tauri desktop client. The raw token
+// is only ever returned to the user once (at issuance); `tokenHash` is a
+// SHA-256 hex digest used for constant-time lookup so a DB read leak can't
+// reveal usable credentials. `tokenPrefix` (first 8 chars of the raw token)
+// is kept in cleartext so the "Your devices" UI can show a recognizable
+// fingerprint like "mfd_abc1…" without storing the secret.
+export const deviceTokens = pgTable("device_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  tokenPrefix: text("token_prefix").notNull(),
+  name: text("name").notNull(), // user-supplied label, e.g. "My MacBook"
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  lastUsedIp: text("last_used_ip"),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
 export const plans = pgTable("plans", {
   id: planId("id").primaryKey(),
   name: text("name").notNull(),

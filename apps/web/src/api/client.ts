@@ -5,13 +5,39 @@ export class ApiError extends Error {
   }
 }
 
+// Methods that don't require a CSRF token. Mirrors the server-side allow-list
+// in apps/api/src/auth/csrf.ts — if you change one, change the other.
+const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const CSRF_COOKIE = "mf_csrf";
+
+function readCsrfTokenFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  // document.cookie is the only place the SPA can read the CSRF value back —
+  // the cookie is deliberately NOT httpOnly. A cross-origin attacker cannot
+  // read it (same-origin policy on cookies) but can cause a credentialed
+  // request to send it back; CSRF defense relies on them being unable to
+  // *also* set the matching X-CSRF-Token header, which they can't.
+  for (const entry of document.cookie.split(";")) {
+    const eq = entry.indexOf("=");
+    if (eq === -1) continue;
+    const name = entry.slice(0, eq).trim();
+    if (name !== CSRF_COOKIE) continue;
+    return decodeURIComponent(entry.slice(eq + 1).trim());
+  }
+  return null;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const hasBody = init.body != null;
+  const method = (init.method ?? "GET").toUpperCase();
+  const needsCsrf = !CSRF_SAFE_METHODS.has(method);
+  const csrfToken = needsCsrf ? readCsrfTokenFromCookie() : null;
   const res = await fetch(`/api${path}`, {
     credentials: "include",
     ...init,
     headers: {
       ...(hasBody ? { "content-type": "application/json" } : {}),
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
       ...(init.headers ?? {}),
     },
   });

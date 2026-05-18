@@ -6,6 +6,10 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Lock, Search, X } from "luci
 import type { Runtime } from "@mobileflow/shared";
 import { ApiError, api, type BranchRow, type GitConnectionRow, type GitProvider, type RepoRow } from "../api/client";
 import { RUNTIME_OPTIONS } from "../runtimes";
+import { FieldError } from "../components/FieldError";
+
+// App name limits — mirror AppNameSchema in apps/api/src/routes/apps.ts.
+const APP_NAME_MAX = 80;
 
 type HostDef = {
   id: GitProvider;
@@ -131,12 +135,21 @@ export function ImportAppPage() {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Could not create app"),
   });
 
-  const setupValid = name.trim().length > 0;
+  // Validation matches AppNameSchema on the API: required, trimmed, ≤ 80 chars.
+  // We surface the same error message here so the user sees a consistent
+  // answer locally and on submit.
+  const nameError = useMemo(() => {
+    const trimmed = name.trim();
+    if (!trimmed) return "App name is required";
+    if (trimmed.length > APP_NAME_MAX) return `App name must be ${APP_NAME_MAX} characters or fewer`;
+    return null;
+  }, [name]);
+  const setupValid = !nameError;
   const submitting = createApp.isPending;
 
   function handleHostContinue(provider: GitProvider) {
-    if (!setupValid) {
-      setError("Enter an app name first");
+    if (nameError) {
+      setError(nameError);
       return;
     }
     setError(null);
@@ -249,6 +262,7 @@ export function ImportAppPage() {
         <SetupStep
           name={name}
           onName={setName}
+          nameError={nameError}
           runtime={runtime}
           onRuntime={setRuntime}
           conns={connsQ.data ?? []}
@@ -311,6 +325,7 @@ export function ImportAppPage() {
 interface SetupStepProps {
   name: string;
   onName: (v: string) => void;
+  nameError: string | null;
   runtime: Runtime;
   onRuntime: (r: Runtime) => void;
   conns: GitConnectionRow[];
@@ -321,8 +336,8 @@ interface SetupStepProps {
 }
 
 function SetupStep(props: SetupStepProps) {
-  const { name, onName, runtime, onRuntime, conns, onContinue, onConnect, onConnectLater, submitting } = props;
-  const disabled = !name.trim() || submitting;
+  const { name, onName, nameError, runtime, onRuntime, conns, onContinue, onConnect, onConnectLater, submitting } = props;
+  const disabled = !!nameError || submitting;
 
   return (
     <>
@@ -336,7 +351,11 @@ function SetupStep(props: SetupStepProps) {
           value={name}
           onChange={(e) => onName(e.target.value)}
           autoFocus
+          maxLength={APP_NAME_MAX}
+          aria-invalid={nameError ? true : undefined}
+          aria-describedby={nameError ? "import-app-name-error" : undefined}
         />
+        {nameError && <FieldError id="import-app-name-error">{nameError}</FieldError>}
       </div>
 
       <div className="import-section">
@@ -402,7 +421,12 @@ function SetupStep(props: SetupStepProps) {
                       </Button>
                     </div>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={() => onConnect(h.id)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onConnect(h.id)}
+                      disabled={disabled}
+                    >
                       Connect
                     </Button>
                   )}

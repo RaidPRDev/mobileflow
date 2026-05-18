@@ -5,17 +5,36 @@ import { db } from "../db/client.js";
 import { apps, environmentVars, environments } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import { sanitizeLabel } from "../lib/sanitize.js";
 
 const SECRET_PLACEHOLDER = "********";
 
-const CreateEnv = z.object({ name: z.string().min(1).max(80) });
-const PatchEnv = z.object({ name: z.string().min(1).max(80) }).strict();
+// Trim happens inside the schema so the persisted value matches the
+// validation surface — otherwise a caller could pad with whitespace to
+// bypass a uniqueness check or the visible length.
+const EnvNameSchema = z
+  .string()
+  .max(200)
+  .transform((s) => sanitizeLabel(s).trim())
+  .pipe(z.string().min(1, "Name is required").max(80, "Name must be 80 characters or fewer"));
 
+const CreateEnv = z.object({ name: EnvNameSchema }).strict();
+const PatchEnv = z.object({ name: EnvNameSchema }).strict();
+
+// Keep this regex in sync with apps/web/src/routes/EnvironmentsPage.tsx
+// (ENV_KEY_RE) so the client and server reject the same shapes. Keys are
+// uppercased on the client; we still validate post-trim here so a malformed
+// payload from a non-UI client gets a clean 400 instead of a DB write.
 const VarBody = z.object({
-  key: z.string().min(1).max(120).regex(/^[A-Z][A-Z0-9_]*$/, "Use SCREAMING_SNAKE_CASE"),
-  value: z.string().max(8192),
+  key: z
+    .string()
+    .trim()
+    .min(1, "Key is required")
+    .max(120, "Key must be 120 characters or fewer")
+    .regex(/^[A-Z][A-Z0-9_]*$/, "Use SCREAMING_SNAKE_CASE"),
+  value: z.string().max(8192, "Value must be 8192 characters or fewer"),
   isSecret: z.boolean().optional().default(false),
-});
+}).strict();
 
 async function appOrFail(appId: string) {
   const [a] = await db.select().from(apps).where(and(eq(apps.id, appId), isNull(apps.deletedAt))).limit(1);
@@ -71,6 +90,14 @@ export async function environmentRoutes(server: FastifyInstance) {
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
     const body = CreateEnv.parse(req.body);
+    // Prevent two environments with the same name on the same app — the DB
+    // doesn't have a uniqueness constraint here so we enforce it in code.
+    const [dup] = await db
+      .select({ id: environments.id })
+      .from(environments)
+      .where(and(eq(environments.appId, a.id), eq(environments.name, body.name)))
+      .limit(1);
+    if (dup) return reply.conflict("An environment with that name already exists");
     const [created] = await db.insert(environments).values({ appId: a.id, name: body.name }).returning();
     return reply.code(201).send(created);
   });
@@ -83,6 +110,14 @@ export async function environmentRoutes(server: FastifyInstance) {
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
     const body = PatchEnv.parse(req.body);
+    if (body.name !== e.name) {
+      const [dup] = await db
+        .select({ id: environments.id })
+        .from(environments)
+        .where(and(eq(environments.appId, e.appId), eq(environments.name, body.name)))
+        .limit(1);
+      if (dup) return reply.conflict("An environment with that name already exists");
+    }
     const [updated] = await db.update(environments).set(body).where(eq(environments.id, e.id)).returning();
     return updated;
   });
@@ -123,6 +158,15 @@ export async function environmentRoutes(server: FastifyInstance) {
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
     const body = VarBody.parse(req.body);
+    // No DB-level uniqueness on (environment_id, key); enforce here to avoid
+    // shipping duplicate keys to the build runner (where the second one
+    // would silently override the first).
+    const [dup] = await db
+      .select({ id: environmentVars.id })
+      .from(environmentVars)
+      .where(and(eq(environmentVars.environmentId, e.id), eq(environmentVars.key, body.key)))
+      .limit(1);
+    if (dup) return reply.conflict(`Variable "${body.key}" already exists in this environment`);
     const [v] = await db
       .insert(environmentVars)
       .values({ environmentId: e.id, key: body.key, valueEnc: encryptString(body.value), isSecret: body.isSecret })

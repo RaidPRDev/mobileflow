@@ -1,24 +1,53 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import forge from "node-forge";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { apps, certificates } from "../db/schema.js";
+import { apps, builds, certificates } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import { sanitizeLabel } from "../lib/sanitize.js";
 
 // Limit upload size at the route level via Fastify body limit — we keep this
 // modest because keystores are tiny. Increase if real provisioning bundles need it.
 const MAX_BLOB_BYTES = 5 * 1024 * 1024;
 
+// `fileName` ends up concatenated into filesystem paths on the build host
+// (e.g. `${certsDir}/${cert.fileName}`). Without sanitization, an upload
+// named `../../etc/something.p12` would write the blob outside the certs
+// directory. Reject path separators, control characters, and leading-dot
+// names (which would also rule out `.` and `..` self/parent references).
+// The worker re-applies `safeBasename` on read as defense-in-depth for any
+// legacy rows that pre-date this check.
+const SafeFileName = z
+  .string()
+  .trim()
+  .min(1, "fileName is required")
+  .max(255, "fileName must be 255 characters or fewer")
+  .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "fileName must not contain control characters")
+  .refine((v) => !/[\\/]/.test(v), "fileName must not contain path separators")
+  .refine((v) => !v.startsWith("."), "fileName must not start with a dot");
+
+// Label is user-typed and rendered prominently in the Certificates list +
+// echoed into build logs. Strip control/bidi chars so a "trojan source"
+// label can't disguise itself in the UI or log lines.
+const LabelSchema = z
+  .string()
+  .max(400)
+  .transform((s) => sanitizeLabel(s).trim())
+  .pipe(z.string().min(1, "label is required").max(120, "label must be 120 characters or fewer"));
+
 const CreateBody = z.object({
   platform: z.enum(["ios", "android"]),
   kind: z.enum(["p12", "provisioning", "keystore"]),
-  label: z.string().min(1).max(120),
-  fileName: z.string().min(1).max(255),
+  label: LabelSchema,
+  fileName: SafeFileName,
   fileBase64: z.string().min(1),
   password: z.string().max(2048).optional(),
-  metadata: z.record(z.string()).optional(),
+  // User-supplied metadata values are short identifiers (e.g. keystore
+  // `alias`). Strip control/bidi codepoints and cap length so a malicious
+  // value can't hide in the UI or wreck a build log when echoed.
+  metadata: z.record(z.string().max(500).transform(sanitizeLabel)).optional(),
   parentCertId: z.string().uuid().optional(),
 });
 
@@ -338,10 +367,13 @@ export async function certificateRoutes(server: FastifyInstance) {
   });
 
   const PatchBody = z.object({
-    label: z.string().min(1).max(120).optional(),
+    label: LabelSchema.optional(),
     password: z.string().max(2048).nullable().optional(), // null = clear, undefined = keep
-    metadata: z.record(z.string()).optional(),
-    fileName: z.string().min(1).max(255).optional(),
+    // User-supplied metadata values are short identifiers (e.g. keystore
+  // `alias`). Strip control/bidi codepoints and cap length so a malicious
+  // value can't hide in the UI or wreck a build log when echoed.
+  metadata: z.record(z.string().max(500).transform(sanitizeLabel)).optional(),
+    fileName: SafeFileName.optional(),
     fileBase64: z.string().min(1).optional(),
   });
 
@@ -433,10 +465,53 @@ export async function certificateRoutes(server: FastifyInstance) {
     if (!app) return reply.notFound();
     await requireOrgMember(req, reply, app.orgId);
     if (reply.sent) return;
-    // Cascade: drop children first (the DB-level FK was omitted to keep the
-    // self-reference clean in Drizzle; we handle it here instead).
-    await db.delete(certificates).where(eq(certificates.parentCertId, row.id));
-    await db.delete(certificates).where(eq(certificates.id, row.id));
+
+    // Guard against deleting a certificate that an in-flight build is about
+    // to read. `builds.certificateId` has ON DELETE SET NULL so finished
+    // builds keep their record (just lose the link), but a queued/running
+    // build would crash with "Signing certificate not found" mid-signing.
+    // Either the user retries the delete after the build finishes, or they
+    // cancel the build first.
+    const activeBuilds = await db
+      .select({ id: builds.id })
+      .from(builds)
+      .where(
+        and(
+          eq(builds.certificateId, row.id),
+          or(eq(builds.status, "queued"), eq(builds.status, "running")),
+        ),
+      )
+      .limit(1);
+    if (activeBuilds.length > 0) {
+      return reply.conflict(
+        "Cannot delete: this certificate is in use by a build that is queued or running. Cancel the build and try again.",
+      );
+    }
+
+    // Identify children up front so we can report what's being destroyed and
+    // wrap the whole cascade in a transaction — without it, a failure after
+    // children-delete but before parent-delete would leave the parent with
+    // no children but otherwise intact, which is confusing but not corrupting.
+    // (parentCertId has no DB-level FK constraint; cascade lives in app code.)
+    const children = await db
+      .select({ id: certificates.id })
+      .from(certificates)
+      .where(eq(certificates.parentCertId, row.id));
+
+    await db.transaction(async (tx) => {
+      if (children.length > 0) {
+        // Use inArray over `eq(parentCertId, row.id)` so the row count we just
+        // measured matches what we delete — any racing inserts after the
+        // SELECT won't be silently swept into this delete.
+        await tx
+          .delete(certificates)
+          .where(inArray(certificates.id, children.map((c) => c.id)));
+      }
+      await tx.delete(certificates).where(eq(certificates.id, row.id));
+    });
+    // Encrypted blobs (fileBlobEnc) and password (passwordEnc) live inline on
+    // the row, so removing the row removes the encrypted attachments too. No
+    // external storage to garbage-collect.
     return reply.code(204).send();
   });
 }

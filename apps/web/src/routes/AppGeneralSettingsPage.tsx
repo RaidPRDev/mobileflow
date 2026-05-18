@@ -20,8 +20,12 @@ import { RUNTIME_LABEL } from "@mobileflow/shared";
 import { ApiError, api, type AppRow } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { relativeTime } from "../lib/dates";
+import { FieldError } from "../components/FieldError";
 
 const MAX_ICON_BYTES = 256 * 1024; // 256 KB encoded data URL
+const APP_NAME_MAX = 80;
+// Patterns mirror the backend validators in apps/api/src/routes/apps.ts.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function AppGeneralSettingsPage() {
   const { appId } = useParams();
@@ -53,7 +57,24 @@ export function AppGeneralSettingsPage() {
 
   const dirty =
     !!app && (name.trim() !== app.name || (iconUrl ?? null) !== (app.iconUrl ?? null));
-  const nameValid = name.trim().length > 0;
+
+  // Per-field error messages. The Update button stays clickable when invalid
+  // so we can surface the error inline; we just block the mutation in the
+  // click handler. Same pattern as StoreDestinationDialog.
+  const nameError = useMemo(() => {
+    const trimmed = name.trim();
+    if (!trimmed) return "App name is required";
+    if (trimmed.length > APP_NAME_MAX) return `App name must be ${APP_NAME_MAX} characters or fewer`;
+    return null;
+  }, [name]);
+
+  const transferError = useMemo(() => {
+    const trimmed = targetOrgId.trim();
+    if (!trimmed) return null; // empty = no error yet; button is disabled
+    if (!UUID_RE.test(trimmed)) return "Organization ID must be a UUID (e.g. 00000000-0000-0000-0000-000000000000)";
+    if (app && trimmed === app.orgId) return "App is already in this organization";
+    return null;
+  }, [targetOrgId, app?.orgId]);
 
   const update = useMutation({
     mutationFn: () =>
@@ -149,13 +170,17 @@ export function AppGeneralSettingsPage() {
               id="general-app-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              maxLength={APP_NAME_MAX}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "general-app-name-error" : undefined}
             />
+            {nameError && <FieldError id="general-app-name-error">{nameError}</FieldError>}
           </div>
 
           <div>
             <Button
               onClick={() => update.mutate()}
-              disabled={!dirty || !nameValid || update.isPending}
+              disabled={!dirty || !!nameError || update.isPending}
               loading={update.isPending}
             >
               Update
@@ -208,7 +233,13 @@ export function AppGeneralSettingsPage() {
               value={targetOrgId}
               onChange={(e) => setTargetOrgId(e.target.value)}
               placeholder="00000000-0000-0000-0000-000000000000"
+              maxLength={36}
+              aria-invalid={transferError ? true : undefined}
+              aria-describedby={transferError ? "transfer-org-id-error" : undefined}
             />
+            {transferError && (
+              <FieldError id="transfer-org-id-error">{transferError}</FieldError>
+            )}
             {otherOrgs.length > 0 && (
               <div className="settings-transfer__suggestions">
                 {otherOrgs.map((o) => (
@@ -227,7 +258,7 @@ export function AppGeneralSettingsPage() {
           <div>
             <Button
               onClick={() => transfer.mutate()}
-              disabled={!targetOrgId.trim() || transfer.isPending}
+              disabled={!targetOrgId.trim() || !!transferError || transfer.isPending}
               loading={transfer.isPending}
             >
               Transfer app

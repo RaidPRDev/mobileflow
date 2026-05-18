@@ -27,6 +27,7 @@ import {
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
+import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { StoreDestinationDialog, type DestType } from "./StoreDestinationDialog";
 import { DestinationTargetLabel, PlatformBadge } from "./StoreDestinationsPage";
 
@@ -43,6 +44,7 @@ export function StoreDestinationDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const destQ = useQuery({
     queryKey: ["destinations", appId],
@@ -123,7 +125,7 @@ export function StoreDestinationDetailPage() {
               </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem destructive onSelect={() => remove.mutate()}>
+              <DropdownMenuItem destructive onSelect={() => setConfirmingDelete(true)}>
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -181,6 +183,24 @@ export function StoreDestinationDetailPage() {
           appId={appId!}
           existing={destination}
           onClose={() => setEditing(false)}
+        />
+      )}
+
+      {confirmingDelete && (
+        <ConfirmDeleteDialog
+          title="Delete store destination"
+          itemName={destination.name}
+          details={[
+            "Stored credentials (Apple API key / .p12 / service-account JSON) will be permanently destroyed",
+            history.length > 0
+              ? `Deployment history (${history.length} entr${history.length === 1 ? "y" : "ies"}) is preserved, but new deploys will no longer be possible`
+              : "New deploys to this destination will no longer be possible",
+          ]}
+          error={remove.error}
+          pending={remove.isPending}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => remove.mutate()}
+          confirmLabel="Delete destination"
         />
       )}
     </div>

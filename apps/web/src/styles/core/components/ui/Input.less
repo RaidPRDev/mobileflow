@@ -30,6 +30,19 @@
   cursor: not-allowed;
 }
 
+.input[aria-invalid="true"],
+.input.is-invalid {
+  border-color: var(--color-danger);
+}
+
+.input[aria-invalid="true"]:focus,
+.input[aria-invalid="true"]:focus-visible,
+.input.is-invalid:focus,
+.input.is-invalid:focus-visible {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 2px var(--color-danger-soft);
+}
+
 .textarea {
   display: block;
   width: 100%;
@@ -66,6 +79,13 @@
 .field-error {
   font-size: 12px;
   color: var(--color-danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field-error__icon {
+  flex-shrink: 0;
 }
 
 .label {

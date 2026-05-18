@@ -123,6 +123,12 @@
 }
 
 .org-id-display {
+  // The parent .settings-row__content is `display: flex; flex-direction: column`,
+  // which stretches every child to the column width by default — that overrides
+  // `inline-flex` here. align-self: flex-start opts this one row out of the
+  // stretch so the pill hugs its content. max-width keeps it from spilling
+  // past the column on absurdly long IDs.
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);

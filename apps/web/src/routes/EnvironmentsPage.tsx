@@ -19,9 +19,75 @@ import {
   Label,
 } from "@mobileflow/ui";
 import { ApiError, api, type EnvVarRow, type EnvironmentWithVars } from "../api/client";
+import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
+import { FieldError } from "../components/FieldError";
 
 const MAX_PREVIEW = 10;
 const SECRET_PLACEHOLDER = "********";
+// Validation constants — mirror apps/api/src/routes/environments.ts.
+const ENV_NAME_MAX = 80;
+const ENV_KEY_MAX = 120;
+const ENV_VALUE_MAX = 8192;
+const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
+
+interface EnvFormErrors {
+  name?: string;
+  rows: Record<number, { key?: string; value?: string }>;
+}
+
+/**
+ * Validate the New / Edit Environment form. Returns per-field errors keyed by
+ * row index so each Input can render its own message. `submitted` flips on
+ * after the first save attempt; we don't show errors before that to keep the
+ * empty dialog quiet on open.
+ */
+function validateEnvForm(
+  name: string,
+  rows: { key: string; value: string; isSecret: boolean; id?: string | null }[],
+): EnvFormErrors {
+  const errors: EnvFormErrors = { rows: {} };
+  const trimmedName = name.trim();
+  if (!trimmedName) errors.name = "Name is required";
+  else if (trimmedName.length > ENV_NAME_MAX) errors.name = `Name must be ${ENV_NAME_MAX} characters or fewer`;
+
+  // Track keys we've already seen so duplicate entries within the same form
+  // are flagged before submission — the backend has no (env_id, key) unique
+  // constraint, so without this we'd silently insert two rows.
+  const keysSeen = new Map<string, number>();
+  rows.forEach((row, i) => {
+    const trimmedKey = row.key.trim();
+    if (!trimmedKey) return; // empty rows are filtered out, not flagged
+    if (trimmedKey.length > ENV_KEY_MAX) {
+      errors.rows[i] = { ...errors.rows[i], key: `Key must be ${ENV_KEY_MAX} characters or fewer` };
+    } else if (!ENV_KEY_RE.test(trimmedKey.toUpperCase())) {
+      errors.rows[i] = { ...errors.rows[i], key: "Use SCREAMING_SNAKE_CASE (letters, digits, underscore)" };
+    }
+    const canonical = trimmedKey.toUpperCase();
+    const prev = keysSeen.get(canonical);
+    if (prev !== undefined) {
+      errors.rows[i] = { ...errors.rows[i], key: `Duplicate key "${canonical}" (also on row ${prev + 1})` };
+    } else {
+      keysSeen.set(canonical, i);
+    }
+    // Don't reject the secret placeholder on edit — that's the "unchanged"
+    // signal, not a real value.
+    if (!(row.isSecret && row.id && row.value === SECRET_PLACEHOLDER)) {
+      if (row.value.length > ENV_VALUE_MAX) {
+        errors.rows[i] = { ...errors.rows[i], value: `Value must be ${ENV_VALUE_MAX} characters or fewer` };
+      }
+    }
+  });
+  return errors;
+}
+
+function hasFormErrors(e: EnvFormErrors): boolean {
+  if (e.name) return true;
+  for (const k of Object.keys(e.rows)) {
+    const r = e.rows[Number(k)];
+    if (r?.key || r?.value) return true;
+  }
+  return false;
+}
 
 export function EnvironmentsPage() {
   const { appId } = useParams();
@@ -33,14 +99,10 @@ export function EnvironmentsPage() {
     enabled: !!appId,
   });
 
-  const remove = useMutation({
-    mutationFn: (envId: string) => api.deleteEnvironment(envId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["envs", appId] }),
-  });
-
   const [openCreate, setOpenCreate] = useState(false);
   const [editing, setEditing] = useState<EnvironmentWithVars | null>(null);
   const [duplicating, setDuplicating] = useState<EnvironmentWithVars | null>(null);
+  const [deleting, setDeleting] = useState<EnvironmentWithVars | null>(null);
 
   return (
     <div className="page">
@@ -86,7 +148,7 @@ export function EnvironmentsPage() {
                     <DropdownMenuContent>
                       <DropdownMenuItem onSelect={() => setEditing(env)}>Edit</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setDuplicating(env)}>Duplicate</DropdownMenuItem>
-                      <DropdownMenuItem destructive onSelect={() => remove.mutate(env.id)}>
+                      <DropdownMenuItem destructive onSelect={() => setDeleting(env)}>
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -115,6 +177,10 @@ export function EnvironmentsPage() {
 
       {duplicating && appId && (
         <DuplicateEnvironmentDialog appId={appId} source={duplicating} onClose={() => setDuplicating(null)} />
+      )}
+
+      {deleting && (
+        <DeleteEnvironmentDialog env={deleting} onClose={() => setDeleting(null)} />
       )}
     </div>
   );
@@ -147,17 +213,25 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
   const [variables, setVariables] = useState<FormKV[]>([blankRow(false)]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  // Combine for validation so duplicate keys across the secrets/variables
+  // split are flagged. The row index in `errors.rows` aligns with this
+  // combined array; KvSection consumers slice the relevant half back out.
+  const combined = useMemo(() => [...secrets, ...variables], [secrets, variables]);
+  const errors = useMemo(() => validateEnvForm(name, combined), [name, combined]);
+  const blocked = hasFormErrors(errors);
 
   const create = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError("Name is required");
+    setSubmitted(true);
+    if (blocked) {
+      setError("Please fix the highlighted fields.");
       return;
     }
     setError(null);
     setSubmitting(true);
     try {
-      const created = await api.createEnvironment(appId, trimmedName);
+      const created = await api.createEnvironment(appId, name.trim());
       // Filter out blank rows. Keys are uppercased to match the Edit dialog.
       const all = [...secrets, ...variables].filter((r) => r.key.trim());
       for (const row of all) {
@@ -176,6 +250,7 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
     }
   };
 
+  const showErrors = submitted;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="new-env-dialog" aria-describedby={undefined}>
@@ -190,8 +265,14 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
+              maxLength={ENV_NAME_MAX}
               placeholder="staging, production…"
+              aria-invalid={showErrors && errors.name ? true : undefined}
+              aria-describedby={showErrors && errors.name ? "new-env-name-error" : undefined}
             />
+            {showErrors && errors.name && (
+              <FieldError id="new-env-name-error">{errors.name}</FieldError>
+            )}
           </div>
 
           <KvSection
@@ -200,6 +281,8 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
             rows={secrets}
             isSecret
             onChange={setSecrets}
+            rowErrors={showErrors ? errors.rows : undefined}
+            rowIndexBase={0}
           />
           <KvSection
             title="Variables"
@@ -207,6 +290,8 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
             rows={variables}
             isSecret={false}
             onChange={setVariables}
+            rowErrors={showErrors ? errors.rows : undefined}
+            rowIndexBase={secrets.length}
           />
 
           {error && <p className="new-env-error">{error}</p>}
@@ -215,11 +300,7 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button
-            onClick={create}
-            disabled={!name.trim() || submitting}
-            loading={submitting}
-          >
+          <Button onClick={create} loading={submitting}>
             Create
           </Button>
         </DialogFooter>
@@ -270,13 +351,19 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
   const [variables, setVariables] = useState<FormKV[]>(initial.variables.length ? initial.variables : [blankRow(false)]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const combined = useMemo(() => [...secrets, ...variables], [secrets, variables]);
+  const errors = useMemo(() => validateEnvForm(name, combined), [name, combined]);
+  const blocked = hasFormErrors(errors);
 
   const save = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError("Name is required");
+    setSubmitted(true);
+    if (blocked) {
+      setError("Please fix the highlighted fields.");
       return;
     }
+    const trimmedName = name.trim();
     setError(null);
     setSubmitting(true);
     try {
@@ -343,7 +430,13 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
+              maxLength={ENV_NAME_MAX}
+              aria-invalid={submitted && errors.name ? true : undefined}
+              aria-describedby={submitted && errors.name ? "edit-env-name-error" : undefined}
             />
+            {submitted && errors.name && (
+              <FieldError id="edit-env-name-error">{errors.name}</FieldError>
+            )}
           </div>
 
           <KvSection
@@ -352,6 +445,8 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
             rows={secrets}
             isSecret
             onChange={setSecrets}
+            rowErrors={submitted ? errors.rows : undefined}
+            rowIndexBase={0}
           />
           <KvSection
             title="Variables"
@@ -359,6 +454,8 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
             rows={variables}
             isSecret={false}
             onChange={setVariables}
+            rowErrors={submitted ? errors.rows : undefined}
+            rowIndexBase={secrets.length}
           />
 
           {error && <p className="new-env-error">{error}</p>}
@@ -382,12 +479,21 @@ function KvSection({
   rows,
   isSecret,
   onChange,
+  rowErrors,
+  rowIndexBase = 0,
 }: {
   title: string;
   description: string;
   rows: FormKV[];
   isSecret: boolean;
   onChange: (rows: FormKV[]) => void;
+  /**
+   * Errors keyed by *global* row index in the combined secrets+variables form.
+   * Pass `rowIndexBase` so this section can translate its local index `i` to
+   * the global index used by the validator.
+   */
+  rowErrors?: Record<number, { key?: string; value?: string }>;
+  rowIndexBase?: number;
 }) {
   const update = (i: number, patch: Partial<FormKV>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -405,36 +511,48 @@ function KvSection({
           <span>VALUE</span>
           <span></span>
         </div>
-        {rows.map((row, i) => (
-          <div key={i} className="new-env-kv__row">
-            <Input
-              placeholder="Key"
-              value={row.key}
-              onChange={(e) => update(i, { key: e.target.value })}
-            />
-            <Input
-              placeholder="Value"
-              type={isSecret ? "password" : "text"}
-              value={row.value}
-              onChange={(e) => update(i, { value: e.target.value })}
-              onFocus={() => {
-                // For existing secret rows, clear the placeholder so the user
-                // can type a new value. The original is tracked via originalValue.
-                if (isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
-                  update(i, { value: "" });
-                }
-              }}
-            />
-            <button
-              type="button"
-              className="new-env-kv__remove"
-              aria-label="Remove row"
-              onClick={() => remove(i)}
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+        {rows.map((row, i) => {
+          const err = rowErrors?.[rowIndexBase + i];
+          return (
+            <div key={i} className="new-env-kv__row">
+              <div className="new-env-kv__cell">
+                <Input
+                  placeholder="Key"
+                  value={row.key}
+                  onChange={(e) => update(i, { key: e.target.value })}
+                  maxLength={ENV_KEY_MAX}
+                  aria-invalid={err?.key ? true : undefined}
+                />
+                {err?.key && <FieldError>{err.key}</FieldError>}
+              </div>
+              <div className="new-env-kv__cell">
+                <Input
+                  placeholder="Value"
+                  type={isSecret ? "password" : "text"}
+                  value={row.value}
+                  onChange={(e) => update(i, { value: e.target.value })}
+                  aria-invalid={err?.value ? true : undefined}
+                  onFocus={() => {
+                    // For existing secret rows, clear the placeholder so the user
+                    // can type a new value. The original is tracked via originalValue.
+                    if (isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
+                      update(i, { value: "" });
+                    }
+                  }}
+                />
+                {err?.value && <FieldError>{err.value}</FieldError>}
+              </div>
+              <button
+                type="button"
+                className="new-env-kv__remove"
+                aria-label="Remove row"
+                onClick={() => remove(i)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          );
+        })}
         <button type="button" className="new-build-link-button" onClick={add}>
           <Plus size={12} /> Add another
         </button>
@@ -463,16 +581,22 @@ function DuplicateEnvironmentDialog({
     setName(`${source.name} (copy)`);
   }, [source.name]);
 
+  const nameError = useMemo(() => {
+    const t = name.trim();
+    if (!t) return "Name is required";
+    if (t.length > ENV_NAME_MAX) return `Name must be ${ENV_NAME_MAX} characters or fewer`;
+    return null;
+  }, [name]);
+
   const run = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Name is required");
+    if (nameError) {
+      setError(nameError);
       return;
     }
     setError(null);
     setSubmitting(true);
     try {
-      const created = await api.createEnvironment(appId, trimmed);
+      const created = await api.createEnvironment(appId, name.trim());
       // Copy non-secret vars verbatim. Secrets can't be duplicated because the
       // server only returns a placeholder for them — we surface a note below.
       for (const v of source.vars) {
@@ -504,7 +628,11 @@ function DuplicateEnvironmentDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
+              maxLength={ENV_NAME_MAX}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "dup-env-name-error" : undefined}
             />
+            {nameError && <FieldError id="dup-env-name-error">{nameError}</FieldError>}
           </div>
           <p className="text-help">
             Variables will be copied. {hasSecrets && "Secrets will not be copied — re-enter them on the new environment."}
@@ -517,7 +645,7 @@ function DuplicateEnvironmentDialog({
           </Button>
           <Button
             onClick={run}
-            disabled={!name.trim() || submitting}
+            disabled={!!nameError || submitting}
             loading={submitting}
           >
             Duplicate
@@ -525,5 +653,47 @@ function DuplicateEnvironmentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Delete confirmation ────────────────────────────────────────────────────
+
+function DeleteEnvironmentDialog({
+  env,
+  onClose,
+}: {
+  env: EnvironmentWithVars;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => api.deleteEnvironment(env.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["envs", env.appId] });
+      onClose();
+    },
+  });
+  const secretCount = env.vars.filter((v) => v.isSecret).length;
+  const varCount = env.vars.length - secretCount;
+  const details: string[] = [];
+  if (varCount > 0) details.push(`${varCount} variable${varCount === 1 ? "" : "s"} will be removed`);
+  if (secretCount > 0) {
+    details.push(
+      `${secretCount} secret${secretCount === 1 ? "" : "s"} will be permanently destroyed and cannot be recovered`,
+    );
+  }
+  details.push("Builds that reference this environment will lose its values");
+
+  return (
+    <ConfirmDeleteDialog
+      title="Delete environment"
+      itemName={env.name}
+      details={details}
+      error={remove.error}
+      pending={remove.isPending}
+      onCancel={onClose}
+      onConfirm={() => remove.mutate()}
+      confirmLabel="Delete environment"
+    />
   );
 }

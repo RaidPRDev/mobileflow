@@ -5,19 +5,128 @@ import { db } from "../db/client.js";
 import { apps, builds, deployments, storeDestinations, users } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import { sanitizeLabel } from "../lib/sanitize.js";
 
 // Going forward only "app_store" and "play_store" are accepted on creation.
 // (Legacy "testflight" / "play_internal" values may still exist in the enum
 // for any old rows but the create UI consolidates them under these two.)
 const StoreType = z.enum(["app_store", "play_store"]);
 
+// Patterns mirror the client-side validators in StoreDestinationDialog.tsx —
+// both sides enforce the same shape so an attacker bypassing the UI can't
+// smuggle malformed credentials past the API. Update both sides together.
+const APP_APPLE_ID_RE = /^\d{1,20}$/;
+const APP_SPECIFIC_PASSWORD_RE = /^[a-z]{4}-[a-z]{4}-[a-z]{4}-[a-z]{4}$/;
+const TEAM_ID_RE = /^[A-Z0-9]{10}$/;
+const KEY_ID_RE = /^[A-Z0-9]{10}$/;
+const ISSUER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PACKAGE_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
+// Cap individual credential strings well below the 1MB body limit Fastify
+// allows so a malformed payload can't blow up the encryption step or the
+// database column. .p8 and service-account JSON get larger ceilings because
+// the legitimate values can run a few KB.
+const SHORT = 200;
+const MEDIUM = 1_000;
+const LARGE = 16_000;
+
+// `.or(z.literal(""))` is used for secret fields so PATCH callers can send an
+// empty string meaning "keep the existing value" — the mergeConfig step below
+// drops empty secrets before persisting. POST callers fail validation later
+// in `assertNoEmptySecrets` because an empty secret on create would persist
+// blank credentials.
+const AppleAltoolConfig = z.object({
+  authMode: z.literal("altool"),
+  appleId: z.string().trim().min(1).max(SHORT).email(),
+  appSpecificPassword: z.string().regex(APP_SPECIFIC_PASSWORD_RE).or(z.literal("")),
+  appAppleId: z.string().trim().regex(APP_APPLE_ID_RE),
+  teamId: z.string().trim().regex(TEAM_ID_RE),
+}).strict();
+
+const AppleApiKeyConfig = z.object({
+  authMode: z.literal("api_key"),
+  issuerId: z.string().trim().regex(ISSUER_ID_RE),
+  keyId: z.string().trim().regex(KEY_ID_RE),
+  privateKeyP8: z
+    .string()
+    .max(LARGE)
+    .refine((v) => v === "" || v.includes("BEGIN PRIVATE KEY"), {
+      message: "Private key must be a valid PEM-formatted .p8",
+    }),
+}).strict();
+
+const AppStoreConfig = z.discriminatedUnion("authMode", [AppleAltoolConfig, AppleApiKeyConfig]);
+
+const PlayStoreConfig = z.object({
+  artifactKind: z.enum(["aab", "apk"]),
+  serviceAccountJson: z
+    .string()
+    .max(LARGE)
+    .refine((v) => {
+      if (v === "") return true;
+      try {
+        const parsed = JSON.parse(v);
+        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+      } catch {
+        return false;
+      }
+    }, { message: "serviceAccountJson must be valid JSON" })
+    .optional(),
+}).strict();
+
+function parseConfig(type: z.infer<typeof StoreType>, raw: unknown) {
+  if (type === "app_store") return AppStoreConfig.parse(raw);
+  return PlayStoreConfig.parse(raw);
+}
+
+// On create, secrets must be present (mergeConfig only "keeps" what's already
+// stored). Reject empty secret strings to avoid persisting blank credentials
+// that would silently fail later in the deploy runner.
+function assertNoEmptySecrets(type: z.infer<typeof StoreType>, cfg: Record<string, unknown>) {
+  if (type === "app_store") {
+    if (cfg.authMode === "altool" && !cfg.appSpecificPassword) {
+      throw new z.ZodError([{ code: "custom", path: ["config", "appSpecificPassword"], message: "Required" }]);
+    }
+    if (cfg.authMode === "api_key" && !cfg.privateKeyP8) {
+      throw new z.ZodError([{ code: "custom", path: ["config", "privateKeyP8"], message: "Required" }]);
+    }
+  } else if (type === "play_store") {
+    if (!cfg.serviceAccountJson) {
+      throw new z.ZodError([{ code: "custom", path: ["config", "serviceAccountJson"], message: "Required" }]);
+    }
+  }
+}
+
+// Short label-style fields go through sanitizeLabel to strip C0/C1 controls
+// and bidi-override codepoints — name appears in the destinations list and
+// build logs, bundleId is echoed into deploy command lines.
+const StoreNameSchema = z
+  .string()
+  .max(400)
+  .transform((s) => sanitizeLabel(s).trim())
+  .pipe(z.string().min(1).max(80));
+
+const StoreBundleIdSchema = z
+  .string()
+  .max(400)
+  .transform((s) => sanitizeLabel(s).trim())
+  .pipe(z.string().min(1).max(SHORT));
+
 const StoreBody = z.object({
-  name: z.string().min(1).max(80),
+  name: StoreNameSchema,
   type: StoreType,
-  bundleId: z.string().min(1).max(200).nullable().optional(),
-  trackOrChannel: z.string().max(80).nullable().optional(),
-  config: z.record(z.unknown()),
-});
+  bundleId: StoreBundleIdSchema.nullable().optional(),
+  trackOrChannel: z.enum(["internal", "alpha", "beta", "production"]).nullable().optional(),
+  config: z.record(z.unknown()).refine((v) => Object.keys(v).length <= 20, "config too large"),
+}).strict();
+
+// PATCH variant: every top-level field is optional, but if `config` is sent we
+// still validate it the same way. `type` isn't editable so we don't accept it.
+const StorePatchBody = z.object({
+  name: StoreNameSchema.optional(),
+  bundleId: StoreBundleIdSchema.nullable().optional(),
+  trackOrChannel: z.enum(["internal", "alpha", "beta", "production"]).nullable().optional(),
+  config: z.record(z.unknown()).refine((v) => Object.keys(v).length <= 20, "config too large").optional(),
+}).strict();
 
 async function appOrFail(appId: string) {
   const [a] = await db.select().from(apps).where(and(eq(apps.id, appId), isNull(apps.deletedAt))).limit(1);
@@ -114,6 +223,8 @@ export async function deploymentRoutes(server: FastifyInstance) {
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
     const body = StoreBody.parse(req.body);
+    const config = parseConfig(body.type, body.config);
+    assertNoEmptySecrets(body.type, config as Record<string, unknown>);
     const [created] = await db
       .insert(storeDestinations)
       .values({
@@ -122,7 +233,7 @@ export async function deploymentRoutes(server: FastifyInstance) {
         type: body.type,
         bundleId: body.bundleId ?? null,
         trackOrChannel: body.trackOrChannel ?? null,
-        configEnc: encryptString(JSON.stringify(body.config)),
+        configEnc: encryptString(JSON.stringify(config)),
       })
       .returning({
         id: storeDestinations.id,
@@ -143,7 +254,7 @@ export async function deploymentRoutes(server: FastifyInstance) {
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
 
-    const body = StoreBody.partial().parse(req.body);
+    const body = StorePatchBody.parse(req.body);
     const updates: Partial<typeof storeDestinations.$inferInsert> = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.bundleId !== undefined) updates.bundleId = body.bundleId ?? null;
@@ -154,9 +265,12 @@ export async function deploymentRoutes(server: FastifyInstance) {
     // post empty strings rather than the old ciphertext. Non-secret fields
     // (e.g. appleId email) overwrite normally.
     if (body.config) {
+      // Validate the incoming patch against the destination's stored type so
+      // the client can't post an app_store config to a play_store row.
+      const parsedPatch = parseConfig(d.type as z.infer<typeof StoreType>, body.config);
       let existing: Record<string, unknown> = {};
       try { existing = JSON.parse(decryptString(d.configEnc)) as Record<string, unknown>; } catch { /* corrupt — replace wholesale */ }
-      const merged = mergeConfig(d.type, existing, body.config);
+      const merged = mergeConfig(d.type, existing, parsedPatch as Record<string, unknown>);
       updates.configEnc = encryptString(JSON.stringify(merged));
     }
 

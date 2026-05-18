@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Check, Copy, Upload } from "lucide-react";
@@ -17,13 +17,19 @@ import {
 } from "@mobileflow/ui";
 import { ApiError, api, type OrgRow } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { FieldError } from "../components/FieldError";
 
 const MAX_ICON_BYTES = 256 * 1024;
+// Validation limits — mirror apps/api/src/routes/orgs.ts.
+const ORG_NAME_MAX = 120;
+const ORG_DESCRIPTION_MAX = 500;
+const ORG_BILLING_EMAIL_MAX = 254;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function AccountPage() {
   const { orgId } = useParams();
   const qc = useQueryClient();
-  const { refresh } = useAuth();
+  const { me, refresh } = useAuth();
 
   const orgQ = useQuery({
     queryKey: ["org", orgId],
@@ -42,20 +48,55 @@ export function AccountPage() {
 
   useEffect(() => {
     if (org) {
-      setName(org.name);
+      // Pre-populate the org name from the row when set, otherwise fall back
+      // to the signed-in user's name (and finally email local-part) so the
+      // field isn't blank on first visit for orgs created with no explicit
+      // name. Users can override this and Save like any other edit.
+      const fallback =
+        me?.user.name?.trim() ||
+        (me?.user.email ? me.user.email.split("@")[0]! : "");
+      setName(org.name || fallback);
       setIconUrl(org.iconUrl);
       setDescription(org.description ?? "");
       setBillingEmail(org.billingEmail ?? "");
     }
-  }, [org?.id, org?.name, org?.iconUrl, org?.description, org?.billingEmail]);
+  }, [org?.id, org?.name, org?.iconUrl, org?.description, org?.billingEmail, me?.user.name, me?.user.email]);
 
+  // Per-field validation — mirrors the backend zod schema so the user gets
+  // the same answer locally that the server would return on submit.
+  const nameError = useMemo(() => {
+    const trimmed = name.trim();
+    if (!trimmed) return "Organization name is required";
+    if (trimmed.length > ORG_NAME_MAX) return `Organization name must be ${ORG_NAME_MAX} characters or fewer`;
+    return null;
+  }, [name]);
+
+  const descriptionError = useMemo(() => {
+    if (description.trim().length > ORG_DESCRIPTION_MAX) {
+      return `Description must be ${ORG_DESCRIPTION_MAX} characters or fewer`;
+    }
+    return null;
+  }, [description]);
+
+  const billingEmailError = useMemo(() => {
+    const trimmed = billingEmail.trim();
+    // Billing email is optional. Only validate format when the user typed
+    // something — empty means "no billing email", not an error.
+    if (!trimmed) return null;
+    if (trimmed.length > ORG_BILLING_EMAIL_MAX) {
+      return `Billing email must be ${ORG_BILLING_EMAIL_MAX} characters or fewer`;
+    }
+    if (!EMAIL_RE.test(trimmed)) return "Enter a valid email address";
+    return null;
+  }, [billingEmail]);
+
+  const hasErrors = !!nameError || !!descriptionError || !!billingEmailError;
   const dirty =
     !!org &&
     (name.trim() !== org.name ||
       (iconUrl ?? null) !== (org.iconUrl ?? null) ||
       (description.trim() || null) !== (org.description ?? null) ||
       (billingEmail.trim() || null) !== (org.billingEmail ?? null));
-  const nameValid = name.trim().length > 0;
 
   const update = useMutation({
     mutationFn: () =>
@@ -129,7 +170,15 @@ export function AccountPage() {
             <label className="settings-field__label" htmlFor="org-name">
               Organization name
             </label>
-            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="org-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={ORG_NAME_MAX}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "org-name-error" : undefined}
+            />
+            {nameError && <FieldError id="org-name-error">{nameError}</FieldError>}
           </div>
 
           <div className="settings-field">
@@ -140,7 +189,13 @@ export function AccountPage() {
               id="org-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              maxLength={ORG_DESCRIPTION_MAX}
+              aria-invalid={descriptionError ? true : undefined}
+              aria-describedby={descriptionError ? "org-description-error" : undefined}
             />
+            {descriptionError && (
+              <FieldError id="org-description-error">{descriptionError}</FieldError>
+            )}
           </div>
 
           <div className="settings-field">
@@ -152,13 +207,19 @@ export function AccountPage() {
               type="email"
               value={billingEmail}
               onChange={(e) => setBillingEmail(e.target.value)}
+              maxLength={ORG_BILLING_EMAIL_MAX}
+              aria-invalid={billingEmailError ? true : undefined}
+              aria-describedby={billingEmailError ? "org-billing-email-error" : undefined}
             />
+            {billingEmailError && (
+              <FieldError id="org-billing-email-error">{billingEmailError}</FieldError>
+            )}
           </div>
 
           <div>
             <Button
               onClick={() => update.mutate()}
-              disabled={!dirty || !nameValid || update.isPending}
+              disabled={!dirty || hasErrors || update.isPending}
               loading={update.isPending}
             >
               Save settings
