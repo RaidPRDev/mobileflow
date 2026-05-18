@@ -4,6 +4,23 @@
 # Detect if running on MacOS
 export IS_DARWIN=$([ -x "$(command -v sw_vers)" ] && echo true || echo false)
 
+# Force ANSI color output even though the SSH session has no PTY. Tools that
+# look at isatty(stdout) — clang, pod, brew, npm, etc. — honor these and emit
+# escape codes that the MobileFlow web UI parses. xcodebuild itself does NOT
+# honor FORCE_COLOR; if we want richer iOS color we'll wrap with xcbeautify
+# later, but the regex highlighter on the frontend already paints timestamps,
+# levels, paths, and SUCCEEDED/FAILED markers from the raw output.
+export FORCE_COLOR=1
+export CLICOLOR_FORCE=1
+export TERM=xterm-256color
+
+# Non-interactive SSH sessions don't always inherit the brew prefix in PATH,
+# so xcbeautify (/opt/homebrew/bin/xcbeautify on Apple Silicon) becomes "command
+# not found" inside our build pipe. Prepend the brew bin dir defensively.
+if [ -d "/opt/homebrew/bin" ] && [[ ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+  export PATH="/opt/homebrew/bin:$PATH"
+fi
+
 # Server credentials (from .env - no hardcoded fallbacks for security)
 export SERVER_IP="${MAC_SERVER_IP:?MAC_SERVER_IP not set in .env}"
 export SERVER_PORT="${MAC_SERVER_PORT:-22}"

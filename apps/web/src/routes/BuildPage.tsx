@@ -20,6 +20,7 @@ import {
 } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { stackLabel, useStacks } from "../lib/stacks";
+import { LogView } from "../components/LogView";
 
 interface SnapshotEvent {
   type: "snapshot";
@@ -234,7 +235,7 @@ export function BuildPage() {
 
   // Auto-scroll logs to the bottom when new content arrives, unless the user
   // has scrolled away from the bottom.
-  const logRef = useRef<HTMLPreElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
   const stuckToBottomRef = useRef(true);
   // True for the brief window between our programmatic scrollTop write and the
   // resulting scroll event — keeps the user-scroll detector from mistakenly
@@ -368,9 +369,13 @@ export function BuildPage() {
             <h2 className="build-logs__title">Logs</h2>
             <span className="build-logs__count">{logBuf ? `${logBuf.length.toLocaleString()} chars` : ""}</span>
           </header>
-          <pre ref={logRef} onScroll={onLogScroll} className="build-logs__pre">
-            {logBuf || <span className="build-logs__empty">(no output yet)</span>}
-          </pre>
+          <LogView
+            ref={logRef}
+            raw={logBuf}
+            onScroll={onLogScroll}
+            className="build-logs__pre"
+            empty={<span className="build-logs__empty">(no output yet)</span>}
+          />
           {b.errorMessage && (
             <div className="build-logs__error">
               <span className="build-logs__error-label">Error</span>

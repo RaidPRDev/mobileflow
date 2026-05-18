@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RUNTIME_IDS } from "./runtimes.js";
+import { RUNTIME_IDS } from "./runtimes";
 
 export const RuntimeSchema = z.enum(RUNTIME_IDS);
 

@@ -1,2 +1,2 @@
-export * from "./domain.js";
-export * from "./runtimes.js";
+export * from "./domain";
+export * from "./runtimes";

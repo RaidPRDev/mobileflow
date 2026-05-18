@@ -309,6 +309,49 @@
   &::-webkit-scrollbar-thumb:hover { background: #3a4049; }
 }
 
+// ── Tokenized log lines ─────────────────────────────────────────────────────
+// LogView renders one <div> per line with <span> per token. Each token gets
+// `log-tok log-tok--<kind>` (and an `is-<variant>` modifier for level tokens).
+// ANSI tokens carry inline color from the parser; we only define rules for
+// the structural (regex-matched) tokens here.
+
+.build-logs__line {
+  display: block;
+  // Preserve whitespace/wrap behavior the old <pre> had.
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  &.is-stderr {
+    // Subtle red wash so a stderr block reads as "noisy" without overpowering
+    // the token colors inside.
+    background: rgba(220, 38, 38, 0.06);
+  }
+
+  &.is-phase {
+    color: #c0c5cc;
+    font-weight: 600;
+    margin-top: 6px;
+  }
+}
+
+.log-tok--timestamp     { color: #6b7280; }
+.log-tok--level         { color: #9ca3af; font-weight: 600; }
+.log-tok--level.is-info    { color: #60a5fa; }
+.log-tok--level.is-warn    { color: #fbbf24; }
+.log-tok--level.is-error   { color: #f87171; }
+.log-tok--level.is-debug   { color: #a78bfa; }
+
+.log-tok--phase         { color: #34d399; font-weight: 600; }
+.log-tok--path          { color: #93c5fd; }
+.log-tok--url           { color: #93c5fd; text-decoration: underline; }
+.log-tok--duration,
+.log-tok--size          { color: #a3e635; }
+
+.log-tok--success       { color: #34d399; font-weight: 600; }
+.log-tok--failure       { color: #f87171; font-weight: 700; }
+
+.log-tok--stderr-marker { color: #f87171; opacity: 0.7; }
+
 .build-logs__empty {
   color: #6b7280;
   font-style: italic;

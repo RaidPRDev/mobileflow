@@ -23,7 +23,7 @@ import {
 } from "@mobileflow/ui";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
 import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
-import { ApiError, api } from "../api/client";
+import { ApiError, api, type DestinationRow } from "../api/client";
 
 type DestType = "app_store" | "play_store";
 
@@ -63,7 +63,7 @@ type AndroidArtifactKind = "aab" | "apk";
 export function StoreDestinationsPage() {
   const { appId } = useParams();
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState<{ mode: "create" } | { mode: "edit"; row: DestinationRow } | null>(null);
 
   const q = useQuery({
     queryKey: ["destinations", appId],
@@ -81,11 +81,17 @@ export function StoreDestinationsPage() {
       <div className="page-header">
         <h1 className="page-title">Store destinations</h1>
         <div className="page-actions">
-          <Button onClick={() => setOpen(true)}>Add destination</Button>
+          <Button onClick={() => setDialog({ mode: "create" })}>Add destination</Button>
         </div>
       </div>
 
-      {open && <DestDialog appId={appId!} onClose={() => setOpen(false)} />}
+      {dialog && (
+        <DestDialog
+          appId={appId!}
+          existing={dialog.mode === "edit" ? dialog.row : undefined}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {!!q.data?.length && (
         <div className="data-grid destinations-table" role="table">
@@ -130,6 +136,9 @@ export function StoreDestinationsPage() {
                       </IconButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
+                      <DropdownMenuItem onSelect={() => setDialog({ mode: "edit", row: d })}>
+                        Edit
+                      </DropdownMenuItem>
                       <DropdownMenuItem destructive onSelect={() => remove.mutate(d.id)}>
                         Delete
                       </DropdownMenuItem>
@@ -145,32 +154,54 @@ export function StoreDestinationsPage() {
         <div className="empty-state">
           <h2 className="empty-state__title">No destinations yet</h2>
           <p className="empty-state__body">Add a store destination to enable deployments.</p>
-          <Button onClick={() => setOpen(true)}>Add destination</Button>
+          <Button onClick={() => setDialog({ mode: "create" })}>Add destination</Button>
         </div>
       )}
     </div>
   );
 }
 
-function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
+function DestDialog({
+  appId,
+  existing,
+  onClose,
+}: {
+  appId: string;
+  existing?: DestinationRow;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
-  const [type, setType] = useState<DestType>("app_store");
-  const [name, setName] = useState("");
+  const isEdit = !!existing;
 
-  // Apple fields
-  const [appleAuthMode, setAppleAuthMode] = useState<AppleAuthMode>("altool");
-  const [appleId, setAppleId] = useState("");
+  // Type isn't editable once a destination exists — switching app_store <→>
+  // play_store would change which credentials apply. Default to existing or
+  // app_store. Cast covers legacy DB values (testflight/play_internal): we
+  // still let the user edit them, just under the closest current label.
+  const initialType: DestType = existing?.type === "play_store" ? "play_store" : "app_store";
+  const [type, setType] = useState<DestType>(initialType);
+  const [name, setName] = useState(existing?.name ?? "");
+
+  // Seed Apple fields from configSummary so an edit dialog round-trips the
+  // non-secret values. Secrets stay blank; an empty submit preserves the
+  // existing ones server-side.
+  const appleSeed = existing?.configSummary && "authMode" in existing.configSummary ? existing.configSummary : null;
+  const seedAuthMode: AppleAuthMode = appleSeed?.authMode === "api_key" ? "api_key" : "altool";
+  const [appleAuthMode, setAppleAuthMode] = useState<AppleAuthMode>(seedAuthMode);
+  const [appleId, setAppleId] = useState(appleSeed?.authMode === "altool" ? appleSeed.appleId : "");
   const [appSpecificPassword, setAppSpecificPassword] = useState("");
-  const [appAppleId, setAppAppleId] = useState("");
-  const [teamId, setTeamId] = useState("");
-  const [issuerId, setIssuerId] = useState("");
-  const [keyId, setKeyId] = useState("");
+  const [appAppleId, setAppAppleId] = useState(
+    appleSeed?.authMode === "altool" ? appleSeed.appAppleId : existing?.bundleId ?? "",
+  );
+  const [teamId, setTeamId] = useState(appleSeed?.authMode === "altool" ? appleSeed.teamId : "");
+  const [issuerId, setIssuerId] = useState(appleSeed?.authMode === "api_key" ? appleSeed.issuerId : "");
+  const [keyId, setKeyId] = useState(appleSeed?.authMode === "api_key" ? appleSeed.keyId : "");
   const [p8, setP8] = useState("");
 
   // Android fields
-  const [track, setTrack] = useState<string>("internal");
-  const [packageName, setPackageName] = useState("");
-  const [artifactKind, setArtifactKind] = useState<AndroidArtifactKind>("aab");
+  const googleSeed = existing?.configSummary && "artifactKind" in existing.configSummary ? existing.configSummary : null;
+  const [track, setTrack] = useState<string>(existing?.trackOrChannel ?? "internal");
+  const [packageName, setPackageName] = useState(existing?.bundleId ?? "");
+  const [artifactKind, setArtifactKind] = useState<AndroidArtifactKind>(googleSeed?.artifactKind ?? "aab");
   const [jsonKeyFile, setJsonKeyFile] = useState<File | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -183,25 +214,46 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
       fr.readAsText(file);
     });
 
-  const create = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
       if (type === "app_store") {
         const config =
           appleAuthMode === "api_key"
             ? { authMode: "api_key", issuerId, keyId, privateKeyP8: p8 }
             : { authMode: "altool", appleId, appSpecificPassword, appAppleId, teamId };
+        if (isEdit && existing) {
+          return api.updateDestination(existing.id, {
+            name: name.trim(),
+            bundleId: appAppleId.trim() || null,
+            trackOrChannel: null,
+            config,
+          });
+        }
         return api.createDestination(appId, {
           name: name.trim(),
-          type,
+          type: "app_store",
           bundleId: appAppleId.trim() || null,
           trackOrChannel: null,
           config,
         });
       } else {
+        // For Google, only include serviceAccountJson when a new file was
+        // chosen; the backend's mergeConfig preserves the existing key when
+        // we omit it on edit.
         const serviceAccountJson = jsonKeyFile ? await readFileText(jsonKeyFile) : "";
+        const config: Record<string, unknown> = { artifactKind };
+        if (serviceAccountJson || !isEdit) config.serviceAccountJson = serviceAccountJson;
+        if (isEdit && existing) {
+          return api.updateDestination(existing.id, {
+            name: name.trim(),
+            bundleId: packageName.trim() || null,
+            trackOrChannel: track,
+            config,
+          });
+        }
         return api.createDestination(appId, {
           name: name.trim(),
-          type,
+          type: "play_store",
           bundleId: packageName.trim() || null,
           trackOrChannel: track,
           config: { serviceAccountJson, artifactKind },
@@ -218,18 +270,23 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
   const canSubmit = (() => {
     if (!name.trim()) return false;
     if (type === "app_store") {
-      return appleAuthMode === "api_key"
-        ? issuerId.trim() && keyId.trim() && p8.trim().length > 0
-        : appleId.trim() && appSpecificPassword.length > 0;
+      if (appleAuthMode === "api_key") {
+        // Re-entering the .p8 is required on create, and whenever the user
+        // switches auth modes (the existing api_key block may not exist yet).
+        const needSecret = !isEdit || seedAuthMode !== "api_key";
+        return !!issuerId.trim() && !!keyId.trim() && (!needSecret || p8.trim().length > 0);
+      }
+      const needSecret = !isEdit || seedAuthMode !== "altool";
+      return !!appleId.trim() && (!needSecret || appSpecificPassword.length > 0);
     }
-    return packageName.trim() && jsonKeyFile != null;
+    return !!packageName.trim() && (isEdit || jsonKeyFile != null);
   })();
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Store Destination</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit Store Destination" : "Add Store Destination"}</DialogTitle>
         </DialogHeader>
         <div className="dialog-body">
           <div className="field-group">
@@ -244,13 +301,16 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
               value={type}
               onChange={setType}
               options={DEST_OPTIONS}
+              disabled={isEdit}
             />
           </div>
 
           {type === "app_store" ? (
             <AppleFields
+              isEdit={isEdit}
               authMode={appleAuthMode}
               setAuthMode={setAppleAuthMode}
+              originalAuthMode={isEdit ? seedAuthMode : null}
               appleId={appleId}
               setAppleId={setAppleId}
               appSpecificPassword={appSpecificPassword}
@@ -268,6 +328,7 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
             />
           ) : (
             <GoogleFields
+              isEdit={isEdit}
               track={track}
               setTrack={setTrack}
               packageName={packageName}
@@ -285,7 +346,7 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => create.mutate()} loading={create.isPending} disabled={!canSubmit}>
+          <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!canSubmit}>
             Save
           </Button>
         </DialogFooter>
@@ -295,8 +356,11 @@ function DestDialog({ appId, onClose }: { appId: string; onClose: () => void }) 
 }
 
 interface AppleFieldsProps {
+  isEdit: boolean;
   authMode: AppleAuthMode;
   setAuthMode: (m: AppleAuthMode) => void;
+  /** Auth mode the destination was saved with — secret prefills only "keep" when this matches the current mode. */
+  originalAuthMode: AppleAuthMode | null;
   appleId: string; setAppleId: (v: string) => void;
   appSpecificPassword: string; setAppSpecificPassword: (v: string) => void;
   appAppleId: string; setAppAppleId: (v: string) => void;
@@ -307,6 +371,9 @@ interface AppleFieldsProps {
 }
 
 function AppleFields(p: AppleFieldsProps) {
+  const keepHint = "Leave blank to keep current";
+  const passwordKeep = p.isEdit && p.originalAuthMode === "altool";
+  const p8Keep = p.isEdit && p.originalAuthMode === "api_key";
   return (
     <>
       <div className="field-group">
@@ -330,7 +397,13 @@ function AppleFields(p: AppleFieldsProps) {
           </div>
           <div className="field-group">
             <Label htmlFor="asp">App-specific password</Label>
-            <Input id="asp" type="password" value={p.appSpecificPassword} onChange={(e) => p.setAppSpecificPassword(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" />
+            <Input
+              id="asp"
+              type="password"
+              value={p.appSpecificPassword}
+              onChange={(e) => p.setAppSpecificPassword(e.target.value)}
+              placeholder={passwordKeep ? keepHint : "xxxx-xxxx-xxxx-xxxx"}
+            />
           </div>
           <div className="field-group">
             <Label htmlFor="app-apple-id">App Apple ID</Label>
@@ -358,7 +431,7 @@ function AppleFields(p: AppleFieldsProps) {
               className="textarea"
               value={p.p8}
               onChange={(e) => p.setP8(e.target.value)}
-              placeholder="-----BEGIN PRIVATE KEY-----..."
+              placeholder={p8Keep ? keepHint : "-----BEGIN PRIVATE KEY-----..."}
             />
           </div>
         </>
@@ -368,6 +441,7 @@ function AppleFields(p: AppleFieldsProps) {
 }
 
 interface GoogleFieldsProps {
+  isEdit: boolean;
   track: string; setTrack: (v: string) => void;
   packageName: string; setPackageName: (v: string) => void;
   artifactKind: AndroidArtifactKind; setArtifactKind: (v: AndroidArtifactKind) => void;
@@ -404,7 +478,11 @@ function GoogleFields(p: GoogleFieldsProps) {
 
       <div className="field-group">
         <Label htmlFor="sa-json">JSON key file</Label>
-        <p className="new-build-help">JSON file from Google that contains the keys needed to upload.</p>
+        <p className="new-build-help">
+          {p.isEdit
+            ? "Leave empty to keep the current key. Drop a new JSON file to replace it."
+            : "JSON file from Google that contains the keys needed to upload."}
+        </p>
         <FileDrop
           id="sa-json"
           accept="application/json,.json"

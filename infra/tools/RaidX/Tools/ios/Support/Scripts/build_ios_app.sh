@@ -89,7 +89,7 @@ build_pods_target() {
         -configuration "$IOS_CONFIGURATION" \
         -sdk iphoneos \
         ONLY_ACTIVE_ARCH=NO \
-        BUILD_LIBRARY_FOR_DISTRIBUTION=YES | xcpretty
+        BUILD_LIBRARY_FOR_DISTRIBUTION=YES | xcbeautify --renderer terminal
     
     if [[ $? -eq 0 ]]; then
         echo "CocoaPods target built successfully"
@@ -120,11 +120,11 @@ mkdir -p "$DERIVED_DATA_PATH"
 
 # Resolving Swift Package Manager dependencies...
 echo "🧹 Resolving Swift Package Manager dependencies..."
-xcodebuild -resolvePackageDependencies -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcpretty
+xcodebuild -resolvePackageDependencies -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcbeautify --renderer terminal
 
 # Xcode 26 requires -destination on -showBuildSettings; without it, it errors
 # with "Found no destinations for the scheme ... and action build".
-xcodebuild -showBuildSettings -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcpretty
+xcodebuild -showBuildSettings -workspace "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/$APP_WORKSPACE_NAME" -scheme "$APP_SCHEME" -destination 'generic/platform=iOS' -derivedDataPath "$DERIVED_DATA_PATH" | xcbeautify --renderer terminal
 
 build_pods_target
 
@@ -146,7 +146,7 @@ xcodebuild \
   CODE_SIGN_STYLE="Manual" \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
-  -verbose | xcbeautify
+  -verbose | xcbeautify --renderer terminal
 
 # Archive done → enter signing phase. xcodebuild's exportArchive does the
 # re-signing for distribution, so we surface that as the "signing" phase.
@@ -187,7 +187,7 @@ xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
   -exportOptionsPlist "$EXPORT_PLIST" \
-  | xcbeautify
+  | xcbeautify --renderer terminal
 
 # Capture the exit code
 EXIT_CODE=${PIPESTATUS[0]}   # ${PIPESTATUS[0]} is xcodebuild's exit code

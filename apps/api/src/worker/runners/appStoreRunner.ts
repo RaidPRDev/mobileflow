@@ -24,43 +24,60 @@ export class AppStoreUploadRunner implements DeployRunner {
     if (!ipa) throw new Error("Build has no .ipa artifact to upload");
 
     const fileName = fileNameFromUrl(ipa.url);
-    const ipaPath = `${target.downloadsBase}/${ctx.app.orgId}/${ctx.build.id}/${fileName}`;
     const auth = parseAppStoreAuth(ctx.config as Record<string, unknown>);
 
     await ctx.log(`App Store upload (${auth.mode}) via altool: ${target.username}@${target.host}`);
-    await ctx.log(`Artifact: ${ipaPath}`);
+    await ctx.log(`Artifact URL: ${ipa.url}`);
 
     await withSsh(target, async (ssh) => {
-      const presence = await exec(ssh, `bash -lc ${shq(`[ -f ${shq(ipaPath)} ] && echo present || echo missing`)}`, () => {});
-      if (presence.exitCode !== 0) throw new Error(`IPA not found on Mac host: ${ipaPath}`);
+      // altool needs a local file on the Mac. The IPA was published to the
+      // Linux artifact host by macRunner (the Mac build sandbox may be gone
+      // by the time a deploy retries), so fetch it back over HTTPS.
+      const tmpDir = `/tmp/altool-${ctx.build.id}`;
+      const ipaPath = `${tmpDir}/${fileName}`;
+      await ctx.log(`Downloading IPA onto Mac: ${ipaPath}`);
+      const dl = await exec(
+        ssh,
+        `bash -lc ${shq(
+          `set -e; mkdir -p ${shq(tmpDir)} && ` +
+          `curl -fSL --retry 3 --retry-delay 2 -o ${shq(ipaPath)} ${shq(ipa.url)} && ` +
+          `test -s ${shq(ipaPath)}`,
+        )}`,
+        (line) => ctx.log(line),
+      );
+      if (dl.exitCode !== 0) throw new Error(`Failed to fetch IPA onto Mac from ${ipa.url}`);
 
-      if (auth.mode === "api_key") {
-        await ctx.log(`Writing ASC API key (id=${auth.keyId})…`);
-        await writeFileOverSsh(ssh, "~/.appstoreconnect/private_keys", `AuthKey_${auth.keyId}.p8`, auth.privateKeyP8);
-        const cmd = `xcrun altool --upload-app --type ios --file ${shq(ipaPath)} --apiKey ${shq(auth.keyId)} --apiIssuer ${shq(auth.issuerId)}`;
-        await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> --apiKey <KEY_ID> --apiIssuer <ISSUER>`);
-        const r = await exec(ssh, `bash -lc ${shq(cmd)}`, (line) => ctx.log(line));
-        // Best-effort: shred the key after upload regardless of success.
-        await exec(ssh, `bash -lc ${shq(`rm -f ~/.appstoreconnect/private_keys/AuthKey_${auth.keyId}.p8`)}`, () => {});
-        if (r.exitCode !== 0) throw new Error(`altool failed (exit ${r.exitCode})`);
-      } else {
-        // altool reads the password from stdin when -p @stdin is passed. We
-        // never spell the password into the command line.
-        const args = [
-          "--upload-app",
-          "--type", "ios",
-          "--file", shq(ipaPath),
-          "-u", shq(auth.appleId),
-          "-p", "@stdin",
-        ];
-        if (auth.appAppleId) args.push("--apple-id", shq(auth.appAppleId));
-        if (auth.teamId) args.push("--team-id", shq(auth.teamId));
-        const cmd = `xcrun altool ${args.join(" ")}`;
-        await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> -u <APPLE_ID> -p @stdin${auth.appAppleId ? " --apple-id <APP_APPLE_ID>" : ""}${auth.teamId ? " --team-id <TEAM_ID>" : ""}`);
-        const r = await execWithStdin(ssh, `bash -lc ${shq(cmd)}`, auth.appSpecificPassword + "\n", (line) => ctx.log(line));
-        if (r.exitCode !== 0) throw new Error(`altool failed (exit ${r.exitCode})`);
+      try {
+        if (auth.mode === "api_key") {
+          await ctx.log(`Writing ASC API key (id=${auth.keyId})…`);
+          await writeFileOverSsh(ssh, "~/.appstoreconnect/private_keys", `AuthKey_${auth.keyId}.p8`, auth.privateKeyP8);
+          const cmd = `xcrun altool --upload-app --type ios --file ${shq(ipaPath)} --apiKey ${shq(auth.keyId)} --apiIssuer ${shq(auth.issuerId)}`;
+          await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> --apiKey <KEY_ID> --apiIssuer <ISSUER>`);
+          const r = await exec(ssh, `bash -lc ${shq(cmd)}`, (line) => ctx.log(line));
+          // Best-effort: shred the key after upload regardless of success.
+          await exec(ssh, `bash -lc ${shq(`rm -f ~/.appstoreconnect/private_keys/AuthKey_${auth.keyId}.p8`)}`, () => {});
+          if (r.exitCode !== 0) throw new Error(`altool failed (exit ${r.exitCode})`);
+        } else {
+          // altool reads the password from stdin when -p @stdin is passed. We
+          // never spell the password into the command line.
+          const args = [
+            "--upload-app",
+            "--type", "ios",
+            "--file", shq(ipaPath),
+            "-u", shq(auth.appleId),
+            "-p", "@stdin",
+          ];
+          if (auth.appAppleId) args.push("--apple-id", shq(auth.appAppleId));
+          if (auth.teamId) args.push("--team-id", shq(auth.teamId));
+          const cmd = `xcrun altool ${args.join(" ")}`;
+          await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> -u <APPLE_ID> -p @stdin${auth.appAppleId ? " --apple-id <APP_APPLE_ID>" : ""}${auth.teamId ? " --team-id <TEAM_ID>" : ""}`);
+          const r = await execWithStdin(ssh, `bash -lc ${shq(cmd)}`, auth.appSpecificPassword + "\n", (line) => ctx.log(line));
+          if (r.exitCode !== 0) throw new Error(`altool failed (exit ${r.exitCode})`);
+        }
+        await ctx.log("Upload accepted by App Store Connect.");
+      } finally {
+        await exec(ssh, `bash -lc ${shq(`rm -rf ${shq(tmpDir)}`)}`, () => {});
       }
-      await ctx.log("Upload accepted by App Store Connect.");
     });
   }
 }

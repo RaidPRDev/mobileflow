@@ -11,8 +11,8 @@
 // Credentials come from apps/api/.env (same source as the worker).
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const isWin = process.platform === "win32";
@@ -119,10 +119,14 @@ function deployTree({ label, localDir, host, port, user, keyPath, remoteDir, dry
     { dryRun }
   );
 
-  // `localDir/.` copies the *contents* of localDir into remoteDir, not the
-  // dir itself. -p preserves modes (notably exec bits) and mtimes. -r recursive.
-  // Note: scp does not delete remote-only files. That's intentional — we don't
-  // want a stale local checkout to wipe ad-hoc fixes on the build host.
+  // Windows' bundled OpenSSH scp doesn't expand `dir/.` to "contents of dir"
+  // even in legacy mode (-O), so we enumerate top-level entries and pass them
+  // as explicit sources. -p preserves modes (notably exec bits) and mtimes.
+  // -r recursive. scp does not delete remote-only files — intentional, so a
+  // stale local checkout doesn't wipe ad-hoc fixes on the build host.
+  const entries = readdirSync(localDir);
+  if (entries.length === 0) throw new Error(`${label}: source dir is empty: ${localDir}`);
+  const sources = entries.map((name) => join(localDir, name));
   runSync(
     label,
     "scp",
@@ -130,7 +134,7 @@ function deployTree({ label, localDir, host, port, user, keyPath, remoteDir, dry
       ...commonSshOpts(keyPath, port),
       "-r",
       "-p",
-      `${localDir}/.`,
+      ...sources,
       `${user}@${host}:${remoteDir}/`,
     ],
     { dryRun }

@@ -20,15 +20,20 @@ else
   GRADLE_CMD="gradle"
 fi
 
+# `--console=rich` forces ANSI output even though docker run has no TTY. Pairs
+# with the GRADLE_OPTS export in globals.sh; either alone is sufficient but
+# both is unambiguous.
+GRADLE_FLAGS="--console=rich"
+
 # Clean previous builds
 echo "🧹 Cleaning previous builds..."
-$GRADLE_CMD clean
+$GRADLE_CMD $GRADLE_FLAGS clean
 
 # Build signed release
 if [ -n "${ANDROID_KEYSTORE:-}" ] && [ -f "$ANDROID_KEYSTORE" ]; then
   echo "🔐 Building signed release AAB..."
 
-  $GRADLE_CMD bundleRelease \
+  $GRADLE_CMD $GRADLE_FLAGS bundleRelease \
     -Pandroid.injected.signing.store.file="$ANDROID_KEYSTORE" \
     -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASS" \
     -Pandroid.injected.signing.key.alias="$ANDROID_ALIAS" \
@@ -36,14 +41,14 @@ if [ -n "${ANDROID_KEYSTORE:-}" ] && [ -f "$ANDROID_KEYSTORE" ]; then
 
   echo "🔐 Building signed release APK..."
 
-  $GRADLE_CMD assembleRelease \
+  $GRADLE_CMD $GRADLE_FLAGS assembleRelease \
     -Pandroid.injected.signing.store.file="$ANDROID_KEYSTORE" \
     -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASS" \
     -Pandroid.injected.signing.key.alias="$ANDROID_ALIAS" \
     -Pandroid.injected.signing.key.password="$ANDROID_KEYSTORE_PASS"
 else
   echo "⚠️  No keystore configured. Building unsigned release..."
-  $GRADLE_CMD assembleRelease
+  $GRADLE_CMD $GRADLE_FLAGS assembleRelease
 fi
 
 # Verify output

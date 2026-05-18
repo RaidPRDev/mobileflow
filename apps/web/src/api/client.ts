@@ -233,6 +233,23 @@ export interface BuildDetail extends Omit<BuildRow, never> {
 export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "cancelled";
 export type DestinationType = "app_store" | "testflight" | "play_store" | "play_internal";
 
+export type DestinationConfigSummary =
+  | { authMode: "altool"; appleId: string; appAppleId: string; teamId: string }
+  | { authMode: "api_key"; issuerId: string; keyId: string }
+  | { artifactKind: "aab" | "apk" }
+  | Record<string, never>;
+
+export interface DestinationRow {
+  id: string;
+  appId: string;
+  name: string;
+  type: DestinationType;
+  bundleId: string | null;
+  trackOrChannel: string | null;
+  createdAt: string;
+  configSummary: DestinationConfigSummary;
+}
+
 export interface DeploymentRow {
   id: string;
   buildId: string;
@@ -411,9 +428,7 @@ export const api = {
 
   // Deployments
   listDestinations: (appId: string) =>
-    request<{ id: string; appId: string; name: string; type: "app_store" | "testflight" | "play_store" | "play_internal"; bundleId: string | null; trackOrChannel: string | null; createdAt: string }[]>(
-      `/apps/${appId}/destinations`,
-    ),
+    request<DestinationRow[]>(`/apps/${appId}/destinations`),
   createDestination: (
     appId: string,
     body: {
@@ -424,6 +439,15 @@ export const api = {
       config: Record<string, unknown>;
     },
   ) => request<unknown>(`/apps/${appId}/destinations`, { method: "POST", body: JSON.stringify(body) }),
+  updateDestination: (
+    id: string,
+    body: {
+      name?: string;
+      bundleId?: string | null;
+      trackOrChannel?: string | null;
+      config?: Record<string, unknown>;
+    },
+  ) => request<DestinationRow>(`/destinations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteDestination: (id: string) => request<void>(`/destinations/${id}`, { method: "DELETE" }),
 
   listDeployments: (appId: string) =>
