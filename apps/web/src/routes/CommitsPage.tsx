@@ -1,12 +1,12 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Button } from "@mobileflow/ui";
 import { ExternalLink, GitBranch, Search } from "lucide-react";
 import { ApiError, api, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
-
-const PER_PAGE = 10;
+import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { ListFooter } from "../components/ListFooter";
 
 export function CommitsPage() {
   const { appId } = useParams();
@@ -20,14 +20,25 @@ export function CommitsPage() {
     enabled: !!appId,
   });
 
-  const commitsQ = useQuery({
-    queryKey: ["commits", appId, page],
-    queryFn: () => api.listCommits(appId!, { page, perPage: PER_PAGE }),
-    enabled: !!appQ.data?.gitRepoFullName,
-    placeholderData: keepPreviousData,
+  // Commit row is ~72 px (avatar + two lines of meta). Anchor on the list
+  // container so we measure space from its top down to the viewport.
+  const listRef = useRef<HTMLDivElement>(null);
+  const perPage = useAdaptivePageSize({
+    rowHeight: 72,
+    anchorRef: listRef,
+    reserve: 90,
+    min: 5,
+    max: 30,
   });
 
   const branchName = appQ.data?.gitDefaultBranch ?? "main";
+
+  const commitsQ = useQuery({
+    queryKey: ["commits", appId, branchName, page, perPage],
+    queryFn: () => api.listCommits(appId!, { branch: branchName, page, perPage }),
+    enabled: !!appQ.data?.gitRepoFullName,
+    placeholderData: keepPreviousData,
+  });
   const accountAvatarUrl = commitsQ.data?.accountAvatarUrl ?? null;
   const accountLogin = commitsQ.data?.accountLogin ?? null;
 
@@ -83,7 +94,7 @@ export function CommitsPage() {
         </div>
       </div>
 
-      <div className="commits-list">
+      <div className="commits-list" ref={listRef}>
         {commitsQ.isLoading && <div className="commits-page__status">Loading commits…</div>}
         {commitsQ.error && (
           <div className="commits-page__status is-error">
@@ -107,31 +118,23 @@ export function CommitsPage() {
         ))}
       </div>
 
-      <div className="commits-footer">
-        <span className="commits-footer__count">
-          {totalCount != null
-            ? `${totalCount.toLocaleString()} commit${totalCount === 1 ? "" : "s"}`
-            : ""}
-        </span>
-        <div className="commits-footer__pager">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1 || commitsQ.isFetching}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={!hasNext || commitsQ.isFetching}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <ListFooter
+        // `page` is 1-indexed; `pageCount` derives from totalCount when known,
+        // otherwise we infer one more page exists whenever the API says
+        // `hasNext` so the Next button stays clickable through unknown depths.
+        pageIdx={page - 1}
+        pageCount={
+          totalCount != null
+            ? Math.max(1, Math.ceil(totalCount / perPage))
+            : page + (hasNext ? 1 : 0)
+        }
+        total={totalCount ?? undefined}
+        unit="commit"
+        countLabel={totalCount == null ? "" : undefined}
+        busy={commitsQ.isFetching}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => p + 1)}
+      />
     </div>
   );
 }

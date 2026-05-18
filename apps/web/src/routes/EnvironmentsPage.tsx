@@ -138,25 +138,47 @@ function KvPreview({ rows }: { rows: EnvVarRow[] }) {
   );
 }
 
-// ─── New Environment (name only) ─────────────────────────────────────────────
+// ─── New Environment (name + secrets + variables) ───────────────────────────
 
 function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
+  const [secrets, setSecrets] = useState<FormKV[]>([blankRow(true)]);
+  const [variables, setVariables] = useState<FormKV[]>([blankRow(false)]);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const create = useMutation({
-    mutationFn: () => api.createEnvironment(appId, name.trim()),
-    onSuccess: () => {
+  const create = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Name is required");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const created = await api.createEnvironment(appId, trimmedName);
+      // Filter out blank rows. Keys are uppercased to match the Edit dialog.
+      const all = [...secrets, ...variables].filter((r) => r.key.trim());
+      for (const row of all) {
+        await api.createEnvVar(created.id, {
+          key: row.key.trim().toUpperCase(),
+          value: row.value,
+          isSecret: row.isSecret,
+        });
+      }
       qc.invalidateQueries({ queryKey: ["envs", appId] });
       onClose();
-    },
-    onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
-  });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="new-env-dialog">
+      <DialogContent className="new-env-dialog" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>New Environment</DialogTitle>
         </DialogHeader>
@@ -171,16 +193,32 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
               placeholder="staging, production…"
             />
           </div>
+
+          <KvSection
+            title="Secrets"
+            description="Encrypted values available only to your build at runtime."
+            rows={secrets}
+            isSecret
+            onChange={setSecrets}
+          />
+          <KvSection
+            title="Variables"
+            description="Values available to your builds at runtime. Use secrets (above) for sensitive data."
+            rows={variables}
+            isSecret={false}
+            onChange={setVariables}
+          />
+
           {error && <p className="new-env-error">{error}</p>}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={create.isPending}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
           <Button
-            onClick={() => create.mutate()}
-            disabled={!name.trim() || create.isPending}
-            loading={create.isPending}
+            onClick={create}
+            disabled={!name.trim() || submitting}
+            loading={submitting}
           >
             Create
           </Button>
@@ -293,7 +331,7 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="new-env-dialog">
+      <DialogContent className="new-env-dialog" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Edit Environment</DialogTitle>
         </DialogHeader>
@@ -454,7 +492,7 @@ function DuplicateEnvironmentDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="new-env-dialog">
+      <DialogContent className="new-env-dialog" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Duplicate Environment</DialogTitle>
         </DialogHeader>

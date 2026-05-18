@@ -69,14 +69,14 @@ function SelectCommit({ appId }: { appId: string }) {
     enabled: !!appId,
   });
 
+  const branchName = appQ.data?.gitDefaultBranch ?? "main";
+
   const commitsQ = useQuery({
-    queryKey: ["commits", appId, page],
-    queryFn: () => api.listCommits(appId, { page, perPage: PER_PAGE }),
+    queryKey: ["commits", appId, branchName, page],
+    queryFn: () => api.listCommits(appId, { branch: branchName, page, perPage: PER_PAGE }),
     enabled: !!appQ.data?.gitRepoFullName,
     placeholderData: keepPreviousData,
   });
-
-  const branchName = appQ.data?.gitDefaultBranch ?? "main";
   const accountAvatarUrl = commitsQ.data?.accountAvatarUrl ?? null;
   const accountLogin = commitsQ.data?.accountLogin ?? null;
 
@@ -624,7 +624,7 @@ function DestinationsSection({
             ) : (
               <p className="new-build-help">
                 No {meta.emptyLabel} destinations yet.{" "}
-                <Link to={`/app/${appId}/deploy/destinations`} className="new-build-link">
+                <Link to={`/app/${appId}/deploy/store-destinations`} className="new-build-link">
                   Add one
                 </Link>{" "}
                 to enable auto-deploy.
@@ -743,7 +743,7 @@ function collectClientIssues(i: ClientIssueInput): ValidationIssue[] {
     issues.push({
       title: "Pick a destination",
       detail: "Auto-deploy is on, but no destination is selected. Pick one, or turn off auto-deploy.",
-      action: { label: "Manage destinations", to: `/app/${i.appId}/deploy/destinations` },
+      action: { label: "Manage destinations", to: `/app/${i.appId}/deploy/store-destinations` },
     });
   }
 

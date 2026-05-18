@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -19,6 +19,8 @@ import {
   type DestinationType,
 } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
+import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { ListFooter } from "../components/ListFooter";
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
   ios: { label: "iOS", iconBg: "#0a0a0a", icon: <AppleIcon /> },
@@ -73,6 +75,21 @@ export function DeploymentsPage() {
     refetchInterval: 4000,
   });
 
+  const gridRef = useRef<HTMLDivElement>(null);
+  const pageSize = useAdaptivePageSize({
+    rowHeight: 56,
+    anchorRef: gridRef,
+    reserve: 130,
+    min: 5,
+    max: 30,
+  });
+  const [page, setPage] = useState(0);
+  const all = useMemo(() => list.data ?? [], [list.data]);
+  const total = all.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageIdx = Math.min(page, pageCount - 1);
+  const visible = all.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
+
   return (
     <div className="builds-page">
       <header className="builds-page__header">
@@ -92,7 +109,7 @@ export function DeploymentsPage() {
           <h2 className="builds-empty__title">No deployments yet</h2>
           <p className="builds-empty__body">
             Pick a successful build and a destination to deploy.{" "}
-            <Link to={`/app/${appId}/deploy/destinations`} className="builds-empty__link">
+            <Link to={`/app/${appId}/deploy/store-destinations`} className="builds-empty__link">
               Manage destinations
             </Link>
           </p>
@@ -102,20 +119,30 @@ export function DeploymentsPage() {
         </div>
       )}
 
-      {!!list.data?.length && (
-        <div className="data-grid deployments-table" role="table">
-          <div className="data-grid__head" role="row">
-            <span role="columnheader">Triggered by</span>
-            <span role="columnheader">Type</span>
-            <span role="columnheader">Status</span>
-            <span role="columnheader">Target</span>
-            <span role="columnheader">Build</span>
-            <span role="columnheader">Commit</span>
+      {total > 0 && (
+        <>
+          <div className="data-grid deployments-table" role="table" ref={gridRef}>
+            <div className="data-grid__head" role="row">
+              <span role="columnheader">Triggered by</span>
+              <span role="columnheader">Type</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Target</span>
+              <span role="columnheader">Build</span>
+              <span role="columnheader">Commit</span>
+            </div>
+            {visible.map((d) => (
+              <DeploymentRowItem key={d.id} dep={d} onOpen={() => setOpenId(d.id)} />
+            ))}
           </div>
-          {list.data.map((d) => (
-            <DeploymentRowItem key={d.id} dep={d} onOpen={() => setOpenId(d.id)} />
-          ))}
-        </div>
+          <ListFooter
+            total={total}
+            pageIdx={pageIdx}
+            pageCount={pageCount}
+            unit="deployment"
+            onPrev={() => setPage((p) => Math.max(0, p - 1))}
+            onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+          />
+        </>
       )}
 
       <DeploymentLogDialog
@@ -255,7 +282,7 @@ function DeploymentLogDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="deployment-log-dialog">
+      <DialogContent className="deployment-log-dialog" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="deployment-log-dialog__title">
             <span>Deployment {shortId}</span>

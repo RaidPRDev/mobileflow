@@ -116,7 +116,7 @@ function InnerRail({
               landingPath={`/app/${appId}/deploy/deployments`}
             >
               <NavItem to={`/app/${appId}/deploy/deployments`} label="Deployments" sub />
-              <NavItem to={`/app/${appId}/deploy/destinations`} label="Store Destinations" sub />
+              <NavItem to={`/app/${appId}/deploy/store-destinations`} label="Store Destinations" sub />
             </NavSection>
             <div className="app-rail-section-divider">App</div>
             <NavSection

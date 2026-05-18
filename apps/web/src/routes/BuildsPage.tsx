@@ -1,17 +1,21 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Combobox,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  type ComboboxOption,
 } from "@mobileflow/ui";
 import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
 import { ApiError, api, type BuildRow, type BuildStatus, type BuildTarget } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
+import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { ListFooter } from "../components/ListFooter";
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
   ios: { label: "iOS", iconBg: "#0a0a0a", icon: <AppleIcon /> },
@@ -34,6 +38,25 @@ const DESTINATION_LABEL: Record<string, string> = {
   play_internal: "play internal",
 };
 
+type StateFilter = "all" | BuildStatus;
+type PlatformFilter = "all" | BuildTarget;
+
+const STATE_OPTIONS: ComboboxOption<StateFilter>[] = [
+  { value: "all", label: "All" },
+  { value: "queued", label: "Queued" },
+  { value: "running", label: "Running" },
+  { value: "success", label: "Success" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const PLATFORM_OPTIONS: ComboboxOption<PlatformFilter>[] = [
+  { value: "all", label: "All" },
+  { value: "android", label: "Android" },
+  { value: "ios", label: "iOS" },
+  { value: "web", label: "Web" },
+];
+
 export function BuildsPage() {
   const { appId } = useParams();
   const navigate = useNavigate();
@@ -46,12 +69,22 @@ export function BuildsPage() {
     refetchInterval: 4000,
   });
 
-  // Builds returned newest first; assign sequential numbers so the latest gets the highest #.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
+
+  // Number builds against the full list so #N stays stable when filtering,
+  // then drop rows that don't match the active state/platform filters.
   const numbered = useMemo(() => {
     const list = buildsQ.data ?? [];
     const total = list.length;
-    return list.map((b, i) => ({ build: b, number: total - i }));
-  }, [buildsQ.data]);
+    return list
+      .map((b, i) => ({ build: b, number: total - i }))
+      .filter(({ build }) => stateFilter === "all" || build.status === stateFilter)
+      .filter(({ build }) => platformFilter === "all" || build.target === platformFilter);
+  }, [buildsQ.data, stateFilter, platformFilter]);
+
+  const filterCount = (stateFilter !== "all" ? 1 : 0) + (platformFilter !== "all" ? 1 : 0);
 
   const rerun = useMutation({
     mutationFn: (b: BuildRow) =>
@@ -75,9 +108,15 @@ export function BuildsPage() {
       <header className="builds-page__header">
         <h1 className="page-title">Builds</h1>
         <div className="builds-page__actions">
-          <Button variant="outline" size="sm">
-            Filter
-          </Button>
+          <BuildsFilter
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+            stateFilter={stateFilter}
+            onStateChange={setStateFilter}
+            platformFilter={platformFilter}
+            onPlatformChange={setPlatformFilter}
+            count={filterCount}
+          />
           <Button size="sm" onClick={() => navigate(`/app/${appId}/build/builds/new`)}>
             New build
           </Button>
@@ -99,30 +138,87 @@ export function BuildsPage() {
         </div>
       )}
 
-      {!!numbered.length && (
-        <div className="data-grid builds-table" role="table">
-          <div className="data-grid__head" role="row">
-            <span role="columnheader">Build</span>
-            <span role="columnheader">Status</span>
-            <span role="columnheader">Platform</span>
-            <span role="columnheader">Triggered by</span>
-            <span role="columnheader">Commit</span>
-            <span role="columnheader">Deployment</span>
-            <span role="columnheader" aria-label="Actions"></span>
-          </div>
-          {numbered.map(({ build, number }) => (
-            <BuildRowItem
-              key={build.id}
-              build={build}
-              number={number}
-              accountAvatarUrl={null}
-              onRerun={() => rerun.mutate(build)}
-            />
-          ))}
+      {!!buildsQ.data?.length && numbered.length === 0 && (
+        <div className="builds-empty">
+          <h2 className="builds-empty__title">No builds match your filters</h2>
+          <p className="builds-empty__body">
+            Try a different {filterCount > 1 ? "combination" : "filter"} or clear it to see all builds.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStateFilter("all");
+              setPlatformFilter("all");
+            }}
+          >
+            Clear filters
+          </Button>
         </div>
       )}
 
+      {!!numbered.length && (
+        <BuildsList numbered={numbered} onRerun={(b) => rerun.mutate(b)} />
+      )}
+
     </div>
+  );
+}
+
+function BuildsList({
+  numbered,
+  onRerun,
+}: {
+  numbered: { build: BuildRow; number: number }[];
+  onRerun: (b: BuildRow) => void;
+}) {
+  // Anchor on the data-grid container (not its head, which uses
+  // `display: contents` and reports an unreliable bounding rect). Reserve
+  // covers the column header row + footer + app-content bottom padding.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const pageSize = useAdaptivePageSize({
+    rowHeight: 68,
+    anchorRef: gridRef,
+    reserve: 130,
+    min: 5,
+    max: 30,
+  });
+  const [page, setPage] = useState(0);
+  const total = numbered.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageIdx = Math.min(page, pageCount - 1);
+  const visible = numbered.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
+
+  return (
+    <>
+      <div className="data-grid builds-table" role="table" ref={gridRef}>
+        <div className="data-grid__head" role="row">
+          <span role="columnheader">Build</span>
+          <span role="columnheader">Status</span>
+          <span role="columnheader">Platform</span>
+          <span role="columnheader">Triggered by</span>
+          <span role="columnheader">Commit</span>
+          <span role="columnheader">Deployment</span>
+          <span role="columnheader" aria-label="Actions"></span>
+        </div>
+        {visible.map(({ build, number }) => (
+          <BuildRowItem
+            key={build.id}
+            build={build}
+            number={number}
+            accountAvatarUrl={null}
+            onRerun={() => onRerun(build)}
+          />
+        ))}
+      </div>
+      <ListFooter
+        total={total}
+        pageIdx={pageIdx}
+        pageCount={pageCount}
+        unit="build"
+        onPrev={() => setPage((p) => Math.max(0, p - 1))}
+        onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+      />
+    </>
   );
 }
 
@@ -285,6 +381,81 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </div>
+  );
+}
+
+interface BuildsFilterProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  stateFilter: StateFilter;
+  onStateChange: (v: StateFilter) => void;
+  platformFilter: PlatformFilter;
+  onPlatformChange: (v: PlatformFilter) => void;
+  count: number;
+}
+
+function BuildsFilter({
+  open,
+  onOpenChange,
+  stateFilter,
+  onStateChange,
+  platformFilter,
+  onPlatformChange,
+  count,
+}: BuildsFilterProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (rootRef.current?.contains(target)) return;
+      // Combobox portals its options outside this popover; treat clicks inside
+      // a Radix popper as still "inside" so picking an option doesn't tear
+      // down the filter before Radix commits the value.
+      if (target.closest("[data-radix-popper-content-wrapper]")) return;
+      onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onOpenChange]);
+
+  return (
+    <div className="builds-filter" ref={rootRef}>
+      <Button variant="outline" size="sm" onClick={() => onOpenChange(!open)}>
+        Filter{count > 0 ? ` · ${count}` : ""}
+      </Button>
+      {open && (
+        <div className="builds-filter__popover" role="dialog" aria-label="Filter builds">
+          <div className="builds-filter__field">
+            <label className="builds-filter__label" htmlFor="builds-filter-state">State</label>
+            <Combobox<StateFilter>
+              id="builds-filter-state"
+              value={stateFilter}
+              onChange={onStateChange}
+              options={STATE_OPTIONS}
+            />
+          </div>
+          <div className="builds-filter__field">
+            <label className="builds-filter__label" htmlFor="builds-filter-platform">Platform</label>
+            <Combobox<PlatformFilter>
+              id="builds-filter-platform"
+              value={platformFilter}
+              onChange={onPlatformChange}
+              options={PLATFORM_OPTIONS}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

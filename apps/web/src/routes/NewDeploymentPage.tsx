@@ -272,13 +272,13 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
         ) : (
           <Button
             variant="outline"
-            onClick={() => navigate(`/app/${appId}/deploy/destinations`)}
+            onClick={() => navigate(`/app/${appId}/deploy/store-destinations`)}
           >
             Set up your first destination to store
           </Button>
         )}
         {matchingDestinations.length > 0 && (
-          <Link to={`/app/${appId}/deploy/destinations`} className="new-build-link new-deploy-add-link">
+          <Link to={`/app/${appId}/deploy/store-destinations`} className="new-build-link new-deploy-add-link">
             Create new destination to store
           </Link>
         )}

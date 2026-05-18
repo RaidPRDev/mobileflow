@@ -275,7 +275,11 @@ function AddCertDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent
+        aria-describedby={undefined}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div>
             <DialogTitle>Add signing certificate</DialogTitle>
@@ -477,7 +481,11 @@ function EditCertDialog({ cert, appId, onClose }: { cert: CertificateGroup; appI
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent
+        aria-describedby={undefined}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div>
             <DialogTitle>Edit signing certificate</DialogTitle>

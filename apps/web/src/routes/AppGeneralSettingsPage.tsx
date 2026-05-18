@@ -13,6 +13,7 @@ import {
   ImageDrop,
   Input,
   Switch,
+  Tooltip,
 } from "@mobileflow/ui";
 import { Info, Upload } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
@@ -196,9 +197,11 @@ export function AppGeneralSettingsPage() {
           <div className="settings-field">
             <label className="settings-field__label" htmlFor="transfer-org-id">
               Organization ID
-              <span className="settings-field__hint" title="Find the ID under that org's Account page">
-                <Info size={12} />
-              </span>
+              <Tooltip content="Find the ID under that org's Account page">
+                <span className="settings-field__hint" tabIndex={0} aria-label="Help">
+                  <Info size={12} />
+                </span>
+              </Tooltip>
             </label>
             <Input
               id="transfer-org-id"

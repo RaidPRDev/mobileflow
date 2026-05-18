@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -14,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Switch,
 } from "@mobileflow/ui";
 import { ChevronDown } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
@@ -25,6 +27,12 @@ export function AppsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState<AppRow | null>(null);
+  const [deleteAck, setDeleteAck] = useState(false);
+
+  const closeDelete = () => {
+    setPendingDelete(null);
+    setDeleteAck(false);
+  };
 
   const { data: apps, isLoading, error } = useQuery({
     queryKey: ["apps", orgId],
@@ -36,7 +44,7 @@ export function AppsPage() {
     mutationFn: (appId: string) => api.deleteApp(appId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["apps", orgId] });
-      setPendingDelete(null);
+      closeDelete();
     },
   });
 
@@ -95,39 +103,88 @@ export function AppsPage() {
       <Dialog
         open={!!pendingDelete}
         onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
+          if (!open) closeDelete();
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete app?</DialogTitle>
-            <DialogDescription>
-              This will permanently delete <strong>{pendingDelete?.name}</strong> and all of its
-              builds, environments, and deployments. This action cannot be undone.
-            </DialogDescription>
+            <DialogTitle>Delete app</DialogTitle>
           </DialogHeader>
-          {remove.error && (
-            <p className="apps-page__status is-danger">{(remove.error as ApiError).message}</p>
+          {pendingDelete && (
+            <DialogBody>
+              <div className="delete-app-summary">
+                <AppIconPreview app={pendingDelete} small />
+                <div>
+                  <div className="delete-app-summary__name">{pendingDelete.name}</div>
+                  <div className="delete-app-summary__meta">
+                    {RUNTIME_LABEL[pendingDelete.runtime] ?? pendingDelete.runtime}
+                    <span className="settings-page__sep">·</span>
+                    {pendingDelete.id.slice(0, 8)}
+                    <span className="settings-page__sep">·</span>
+                    Last updated {relativeTime(pendingDelete.createdAt)}
+                  </div>
+                </div>
+              </div>
+              <DialogDescription>Consider the following items before proceeding:</DialogDescription>
+              <ul className="delete-app-list with-bullets">
+                <li>All shared links, channels, and previews will be inaccessible</li>
+                <li>All feedback, comments, and activity history will be destroyed</li>
+                <li>All code, builds, and deploys will be deleted</li>
+                <li>This action cannot be undone</li>
+              </ul>
+              <div className="delete-app-confirm">
+                <Switch
+                  id="delete-app-ack"
+                  checked={deleteAck}
+                  onCheckedChange={setDeleteAck}
+                />
+                <span
+                  className="delete-app-confirm__text"
+                  onClick={() => setDeleteAck(!deleteAck)}
+                >
+                  I understand and wish to continue
+                </span>
+              </div>
+              {remove.error && (
+                <p className="settings-page__error">{(remove.error as ApiError).message}</p>
+              )}
+            </DialogBody>
           )}
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setPendingDelete(null)}
+              onClick={closeDelete}
               disabled={remove.isPending}
             >
-              Cancel
+              Nevermind
             </Button>
             <Button
               variant="destructive"
               onClick={() => pendingDelete && remove.mutate(pendingDelete.id)}
               loading={remove.isPending}
-              disabled={remove.isPending}
+              disabled={!deleteAck || remove.isPending}
             >
-              Delete
+              Delete app
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function AppIconPreview({ app, small }: { app: AppRow; small?: boolean }) {
+  const className = small ? "settings-icon settings-icon--sm" : "settings-icon";
+  const seed = useMemo(() => iconSeed(app), [app.id, app.name]);
+  if (app.iconUrl) {
+    return <img src={app.iconUrl} alt="" className={`${className} ${className}--img`} />;
+  }
+  const style = {
+    background: `linear-gradient(135deg, hsl(${seed.hue}, 70%, 78%) 0%, hsl(${(seed.hue + 30) % 360}, 65%, 60%) 100%)`,
+  };
+  return (
+    <div className={className} style={style} aria-hidden="true">
+      <span className="settings-icon__letter">{seed.letter}</span>
     </div>
   );
 }

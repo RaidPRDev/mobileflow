@@ -157,6 +157,11 @@ export interface RepoRow {
   description: string | null;
 }
 
+export interface BranchRow {
+  name: string;
+  isDefault: boolean;
+}
+
 export interface CommitRow {
   sha: string;
   message: string;
@@ -321,7 +326,13 @@ export const api = {
   listApps: (orgId: string) => request<AppRow[]>(`/orgs/${orgId}/apps`),
   createApp: (
     orgId: string,
-    body: { name: string; runtime: Runtime; gitConnectionId?: string | null; gitRepoFullName?: string | null },
+    body: {
+      name: string;
+      runtime: Runtime;
+      gitConnectionId?: string | null;
+      gitRepoFullName?: string | null;
+      gitDefaultBranch?: string | null;
+    },
   ) => request<AppRow>(`/orgs/${orgId}/apps`, { method: "POST", body: JSON.stringify(body) }),
   getApp: (appId: string) => request<AppRow>(`/apps/${appId}`),
   patchApp: (
@@ -338,6 +349,8 @@ export const api = {
   listGitConnections: (orgId: string) => request<GitConnectionRow[]>(`/orgs/${orgId}/git-connections`),
   deleteGitConnection: (id: string) => request<void>(`/git-connections/${id}`, { method: "DELETE" }),
   listRepos: (connectionId: string) => request<RepoRow[]>(`/git-connections/${connectionId}/repos`),
+  listBranches: (connectionId: string, fullName: string) =>
+    request<BranchRow[]>(`/git-connections/${connectionId}/branches?repo=${encodeURIComponent(fullName)}`),
 
   listCommits: (appId: string, opts: { branch?: string; page?: number; perPage?: number } = {}) => {
     const params = new URLSearchParams();

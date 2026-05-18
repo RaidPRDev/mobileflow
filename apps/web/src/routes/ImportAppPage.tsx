@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input } from "@mobileflow/ui";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Lock, Search, X } from "lucide-react";
 import type { Runtime } from "@mobileflow/shared";
-import { ApiError, api, type GitConnectionRow, type GitProvider, type RepoRow } from "../api/client";
+import { ApiError, api, type BranchRow, type GitConnectionRow, type GitProvider, type RepoRow } from "../api/client";
 import { RUNTIME_OPTIONS } from "../runtimes";
 
 type HostDef = {
@@ -20,7 +20,7 @@ const HOSTS: HostDef[] = [
   { id: "gitlab", label: "GitLab", bg: "#fc6d26", icon: <GitlabIcon /> },
 ];
 
-type Step = "setup" | "repo";
+type Step = "setup" | "repo" | "branch";
 
 // Stash key for the in-progress form. Connecting a Git host does a full-page
 // redirect to OAuth, so React state would be lost on return without this.
@@ -59,8 +59,13 @@ export function ImportAppPage() {
   const [host, setHost] = useState<GitProvider | null>(null);
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedRepo, setSelectedRepo] = useState<RepoRow | null>(null);
+  const [branch, setBranch] = useState<string | null>(null);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [branchPage, setBranchPage] = useState(1);
 
   const REPOS_PER_PAGE = 10;
+  const BRANCHES_PER_PAGE = 10;
 
   const connsQ = useQuery({
     queryKey: ["git-connections", orgId],
@@ -87,13 +92,33 @@ export function ImportAppPage() {
   const safePage = Math.min(page, totalPages);
   const pagedRepos = filteredRepos.slice((safePage - 1) * REPOS_PER_PAGE, safePage * REPOS_PER_PAGE);
 
+  const branchesQ = useQuery({
+    queryKey: ["branches", conn?.id, selectedRepo?.fullName],
+    queryFn: () => api.listBranches(conn!.id, selectedRepo!.fullName),
+    enabled: step === "branch" && !!conn && !!selectedRepo,
+  });
+
+  const filteredBranches = useMemo(() => {
+    const q = branchFilter.trim().toLowerCase();
+    const list = branchesQ.data ?? [];
+    return q ? list.filter((b) => b.name.toLowerCase().includes(q)) : list;
+  }, [branchesQ.data, branchFilter]);
+
+  const branchTotalPages = Math.max(1, Math.ceil(filteredBranches.length / BRANCHES_PER_PAGE));
+  const safeBranchPage = Math.min(branchPage, branchTotalPages);
+  const pagedBranches = filteredBranches.slice(
+    (safeBranchPage - 1) * BRANCHES_PER_PAGE,
+    safeBranchPage * BRANCHES_PER_PAGE,
+  );
+
   const createApp = useMutation({
-    mutationFn: (opts: { gitConnectionId?: string; gitRepoFullName?: string }) =>
+    mutationFn: (opts: { gitConnectionId?: string; gitRepoFullName?: string; gitDefaultBranch?: string }) =>
       api.createApp(orgId!, {
         name: name.trim(),
         runtime,
         gitConnectionId: opts.gitConnectionId ?? null,
         gitRepoFullName: opts.gitRepoFullName ?? null,
+        gitDefaultBranch: opts.gitDefaultBranch ?? null,
       }),
     onSuccess: (created) => {
       const key = draftKey(orgId);
@@ -152,7 +177,22 @@ export function ImportAppPage() {
   function handlePickRepo(repo: RepoRow) {
     if (!conn || submitting) return;
     setError(null);
-    createApp.mutate({ gitConnectionId: conn.id, gitRepoFullName: repo.fullName });
+    setSelectedRepo(repo);
+    setBranch(repo.defaultBranch);
+    setBranchFilter("");
+    setBranchPage(1);
+    setStep("branch");
+  }
+
+  function handlePickBranch(name: string) {
+    if (!conn || !selectedRepo || submitting) return;
+    setError(null);
+    setBranch(name);
+    createApp.mutate({
+      gitConnectionId: conn.id,
+      gitRepoFullName: selectedRepo.fullName,
+      gitDefaultBranch: name,
+    });
   }
 
   return (
@@ -182,8 +222,25 @@ export function ImportAppPage() {
             )}
             <span> Set up app</span>
           </button>
-          <span className={`import-page__step${step === "repo" ? " is-active" : ""}`}>
-            2. Select repo
+          <button
+            type="button"
+            className={`import-page__step${
+              step === "repo" ? " is-active" : step === "branch" ? " is-done" : ""
+            }`}
+            onClick={() => {
+              if (step === "branch") setStep("repo");
+            }}
+            disabled={step !== "branch"}
+          >
+            {step === "branch" ? (
+              <Check size={14} className="import-page__step-check" aria-hidden />
+            ) : (
+              <span>2.</span>
+            )}
+            <span> Select repo</span>
+          </button>
+          <span className={`import-page__step${step === "branch" ? " is-active" : ""}`}>
+            3. Select branch
           </span>
         </div>
       </header>
@@ -219,6 +276,30 @@ export function ImportAppPage() {
           page={safePage}
           totalPages={totalPages}
           onPageChange={setPage}
+        />
+      )}
+
+      {step === "branch" && hostDef && conn && selectedRepo && (
+        <BranchStep
+          hostDef={hostDef}
+          repo={selectedRepo}
+          branches={pagedBranches}
+          totalBranches={branchesQ.data?.length ?? 0}
+          filteredCount={filteredBranches.length}
+          filter={branchFilter}
+          onFilter={(v) => {
+            setBranchFilter(v);
+            setBranchPage(1);
+          }}
+          isLoading={branchesQ.isLoading}
+          loadError={branchesQ.error instanceof Error ? branchesQ.error.message : null}
+          selected={branch}
+          onBack={() => setStep("repo")}
+          onPick={handlePickBranch}
+          submitting={submitting}
+          page={safeBranchPage}
+          totalPages={branchTotalPages}
+          onPageChange={setBranchPage}
         />
       )}
 
@@ -449,6 +530,132 @@ function RepoStep(props: RepoStepProps) {
                 <Lock size={12} />
               </span>
             )}
+          </button>
+        ))}
+      </div>
+
+      {!isLoading && !loadError && filteredCount > 0 && (
+        <div className="import-repos__pager">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface BranchStepProps {
+  hostDef: HostDef;
+  repo: RepoRow;
+  branches: BranchRow[];
+  totalBranches: number;
+  filteredCount: number;
+  filter: string;
+  onFilter: (v: string) => void;
+  isLoading: boolean;
+  loadError: string | null;
+  selected: string | null;
+  onBack: () => void;
+  onPick: (name: string) => void;
+  submitting: boolean;
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}
+
+function BranchStep(props: BranchStepProps) {
+  const {
+    hostDef,
+    repo,
+    branches,
+    totalBranches,
+    filteredCount,
+    filter,
+    onFilter,
+    isLoading,
+    loadError,
+    selected,
+    onBack,
+    onPick,
+    submitting,
+    page,
+    totalPages,
+    onPageChange,
+  } = props;
+  return (
+    <div className="import-section">
+      <div className="import-repo-header">
+        <button type="button" className="import-repo-back" onClick={onBack} aria-label="Back to select repo">
+          <ArrowLeft size={14} />
+        </button>
+        <span className="import-section__label" style={{ marginBottom: 0 }}>
+          Select a branch
+        </span>
+      </div>
+
+      <div className="import-repo-controls">
+        <div className="import-repo-account">
+          <span className="import-repo-account__icon" style={{ background: hostDef.bg }}>
+            {hostDef.icon}
+          </span>
+          <span className="import-repo-account__name">{repo.fullName}</span>
+        </div>
+        <div className="import-repo-search">
+          <Search size={14} className="import-repo-search__icon" aria-hidden />
+          <input
+            className="import-repo-search__input"
+            placeholder="Find a branch..."
+            value={filter}
+            onChange={(e) => onFilter(e.target.value)}
+          />
+          {filter && (
+            <button
+              type="button"
+              className="import-repo-search__clear"
+              aria-label="Clear search"
+              onClick={() => onFilter("")}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="import-repos">
+        {isLoading && <div className="import-repos__empty">Loading branches…</div>}
+        {!isLoading && loadError && (
+          <div className="import-repos__empty is-error">{loadError}</div>
+        )}
+        {!isLoading && !loadError && totalBranches === 0 && (
+          <div className="import-repos__empty">No branches found for this repository.</div>
+        )}
+        {!isLoading && !loadError && totalBranches > 0 && filteredCount === 0 && (
+          <div className="import-repos__empty">No branches match "{filter}".</div>
+        )}
+        {branches.map((b) => (
+          <button
+            key={b.name}
+            type="button"
+            className={`import-repo${selected === b.name ? " is-selected" : ""}`}
+            onClick={() => onPick(b.name)}
+            disabled={submitting}
+          >
+            <span className="import-repo__name">{b.name}</span>
+            {b.isDefault && <span className="import-repo__lock">default</span>}
           </button>
         ))}
       </div>

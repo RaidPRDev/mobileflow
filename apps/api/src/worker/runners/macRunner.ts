@@ -1,4 +1,4 @@
-import { and, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { Client } from "ssh2";
 import { db } from "../../db/client.js";
 import { apps, buildStacks, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
@@ -465,14 +465,23 @@ async function materializeIosCerts(
   if (p12.kind !== "p12") throw new Error(`Selected signing certificate must be a .p12 (got kind=${p12.kind}).`);
 
   // Provisioning profile is the child row linked to this p12 (parentCertId).
-  // Multiple are allowed (extensions); we take the first by created_at.
+  // Multiple may exist when an app has extensions, but the primary build only
+  // needs one. We pick the oldest by createdAt for stability — and warn if
+  // more than one is attached so the user knows their choice is implicit.
   await ctx.log(`Looking up provisioning profile for ${p12.fileName}…`);
-  const [prov] = await db
+  const profiles = await db
     .select()
     .from(certificates)
     .where(and(eq(certificates.parentCertId, p12.id), eq(certificates.kind, "provisioning")))
-    .limit(1);
+    .orderBy(asc(certificates.createdAt));
+  const prov = profiles[0];
   if (!prov) throw new Error("No provisioning profile attached to the selected signing certificate.");
+  if (profiles.length > 1) {
+    await ctx.log(
+      `Note: ${profiles.length} provisioning profiles are attached to this .p12 — using the oldest (${prov.fileName}). ` +
+      `Other profiles: ${profiles.slice(1).map((p) => p.fileName).join(", ")}.`,
+    );
+  }
 
   const certsDir = `${remoteDir}/certs/ios`;
   const profilesDir = `${certsDir}/profiles`;

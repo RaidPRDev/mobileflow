@@ -70,10 +70,14 @@ npx cap telemetry off
 
 # Ensure the iOS app dir exists — mirrors the Android assets-dir guard.
 # Empty subdirs (e.g. public/) aren't tracked by git, so a client repo may
-# ship ios/App/App without public/, causing cap update/sync to ENOENT.
+# ship ios/App/App without public/, causing cap sync to ENOENT.
 mkdir -p ios/App/App/public
 
-npx cap update ios
+# `cap sync ios` is internally `cap copy ios` + `cap update ios` — copy
+# writes ios/App/App/capacitor.config.json from the root config, then update
+# reads that file to refresh CocoaPods. Running `cap update` separately
+# (or first) fails on a clean build because the iOS-side config hasn't
+# been generated yet.
 npx cap sync ios
 
 echo "🎉 Internal app build & iOS sync completed!"

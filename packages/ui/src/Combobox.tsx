@@ -40,6 +40,25 @@ export function Combobox<T extends string = string>({
   ariaLabel,
 }: ComboboxProps<T>) {
   const selected = options.find((o) => o.value === value);
+  const triggerButton = (
+    <button
+      id={id}
+      type="button"
+      disabled={disabled}
+      aria-label={ariaLabel ?? placeholder}
+      aria-disabled={disabled || undefined}
+      className={cn("combobox-trigger", triggerClassName)}
+    >
+      <span className="combobox-trigger-content">
+        {selected?.icon && <span className="combobox-icon is-tile">{selected.icon}</span>}
+        <span>{selected ? selected.label : placeholder}</span>
+      </span>
+      <ChevronDown size={16} className="combobox-chevron" />
+    </button>
+  );
+  if (disabled) {
+    return <div className={cn("combobox", className)}>{triggerButton}</div>;
+  }
   return (
     <div className={cn("combobox", className)}>
       {/* modal={false}: when a Combobox is rendered inside a Radix Dialog, both
@@ -47,21 +66,7 @@ export function Combobox<T extends string = string>({
           content inert (Dialog blocks pointer events outside its content). The
           symptom is "click the combobox trigger and nothing opens." */}
       <DropdownMenuPrimitive.Root modal={false}>
-        <DropdownMenuPrimitive.Trigger asChild>
-          <button
-            id={id}
-            type="button"
-            disabled={disabled}
-            aria-label={ariaLabel ?? placeholder}
-            className={cn("combobox-trigger", triggerClassName)}
-          >
-            <span className="combobox-trigger-content">
-              {selected?.icon && <span className="combobox-icon is-tile">{selected.icon}</span>}
-              <span>{selected ? selected.label : placeholder}</span>
-            </span>
-            <ChevronDown size={16} className="combobox-chevron" />
-          </button>
-        </DropdownMenuPrimitive.Trigger>
+        <DropdownMenuPrimitive.Trigger asChild>{triggerButton}</DropdownMenuPrimitive.Trigger>
         <DropdownMenuPrimitive.Portal>
           <DropdownMenuPrimitive.Content
             align={align}

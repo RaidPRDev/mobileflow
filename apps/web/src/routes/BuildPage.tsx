@@ -430,7 +430,7 @@ export function BuildPage() {
                 ) : (
                   <span className="build-side-panel__muted">
                     No {b.target === "ios" ? "App Store" : "Google Play"} destination —{" "}
-                    <Link to={`/app/${effectiveAppId}/deploy/destinations`} className="build-side-panel__link">
+                    <Link to={`/app/${effectiveAppId}/deploy/store-destinations`} className="build-side-panel__link">
                       add one
                     </Link>
                   </span>

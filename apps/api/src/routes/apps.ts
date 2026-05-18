@@ -13,6 +13,7 @@ const CreateBody = z.object({
   runtime: RuntimeSchema,
   gitConnectionId: z.string().uuid().nullish(),
   gitRepoFullName: z.string().min(1).max(200).nullish(),
+  gitDefaultBranch: z.string().min(1).max(120).nullish(),
 });
 
 const IconUrlSchema = z
@@ -88,6 +89,7 @@ export async function appsRoutes(app: FastifyInstance) {
         runtime: body.runtime,
         gitConnectionId: body.gitConnectionId ?? null,
         gitRepoFullName: body.gitRepoFullName ?? null,
+        gitDefaultBranch: body.gitDefaultBranch ?? null,
       })
       .returning();
     return reply.code(201).send(created);

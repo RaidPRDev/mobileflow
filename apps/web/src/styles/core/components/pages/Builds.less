@@ -4,6 +4,38 @@
   gap: var(--space-sm);
 }
 
+.builds-filter {
+  position: relative;
+}
+
+.builds-filter__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 240px;
+  padding: var(--space-md);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.builds-filter__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builds-filter__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
 .builds-status {
   font-size: 13px;
   color: var(--color-fg-muted);
@@ -423,8 +455,8 @@
 // ─── Deployment log modal ────────────────────────────────────────────────────
 
 .deployment-log-dialog {
-  max-width: 760px;
-  width: calc(100vw - 48px);
+  width: 800px;
+  max-width: calc(100vw - 48px);
 }
 
 .deployment-log-dialog__title {
@@ -433,10 +465,14 @@
   gap: var(--space-sm);
 }
 
+// Without a DialogFooter the shared .dialog-body's `padding: 0 xl` leaves the
+// bottom edge flush against the modal. Match the header's top padding so the
+// modal has equal padding all around.
 .deployment-log-dialog__body {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+  padding-bottom: var(--space-xl);
 }
 
 .deployment-log-dialog__log {
@@ -448,7 +484,7 @@
   font-size: 12px;
   line-height: 1.5;
   border-radius: var(--radius-md);
-  max-height: 60vh;
+  height: 450px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;

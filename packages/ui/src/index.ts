@@ -47,3 +47,4 @@ export {
 } from "./ImageDrop";
 export { Switch, type SwitchProps } from "./Switch";
 export { RadioGroup, type RadioGroupProps, type RadioOption } from "./RadioGroup";
+export { Tooltip, type TooltipProps } from "./Tooltip";

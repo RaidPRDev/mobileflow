@@ -14,6 +14,7 @@ import { AppGitSettingsPage } from "./routes/AppGitSettingsPage";
 import { EnvironmentsPage } from "./routes/EnvironmentsPage";
 import { CertificatesPage } from "./routes/CertificatesPage";
 import { StoreDestinationsPage } from "./routes/StoreDestinationsPage";
+import { StoreDestinationDetailPage } from "./routes/StoreDestinationDetailPage";
 import { DeploymentsPage } from "./routes/DeploymentsPage";
 import { NewDeploymentPage } from "./routes/NewDeploymentPage";
 import { OrgSettingsLayout } from "./routes/OrgSettingsLayout";
@@ -67,7 +68,9 @@ export function App() {
         <Route path="/app/:appId/deploy" element={<Navigate to="deployments" replace />} />
         <Route path="/app/:appId/deploy/deployments" element={<DeploymentsPage />} />
         <Route path="/app/:appId/deploy/deployments/new" element={<NewDeploymentPage />} />
-        <Route path="/app/:appId/deploy/destinations" element={<StoreDestinationsPage />} />
+        <Route path="/app/:appId/deploy/destinations" element={<Navigate to="../store-destinations" replace />} />
+        <Route path="/app/:appId/deploy/store-destinations" element={<StoreDestinationsPage />} />
+        <Route path="/app/:appId/deploy/store-destinations/:destId" element={<StoreDestinationDetailPage />} />
         <Route path="/app/:appId/git" element={<Navigate to="../settings/git" replace />} />
         <Route path="/app/:appId/settings" element={<AppSettingsLayout />}>
           <Route index element={<Navigate to="general" replace />} />

@@ -1,0 +1,240 @@
+// Store Destinations: list page + detail page.
+// The list uses a card-style row (icon + name + sub) instead of a column
+// data-grid because there are only three meaningful pieces of info per row
+// (name, latest deployment, deployed build). The detail page reuses the
+// settings-page layout for its header/sections.
+
+// ─── List page ───────────────────────────────────────────────────────────────
+
+.destination-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.destination-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 14px var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  cursor: default;
+  outline: none;
+
+  &:hover {
+    background: var(--color-bg-subtle);
+  }
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-accent-soft);
+  }
+}
+
+.destination-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: #3b82f6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  img {
+    border-radius: 0;
+  }
+}
+
+.destination-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.destination-card__name {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.destination-card__sub {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+
+  .tooltip-wrap {
+    color: var(--color-fg);
+  }
+}
+
+.destination-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.deployed-build-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+
+  &:hover {
+    background: var(--color-bg-elevated);
+  }
+}
+
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+// The shared SVG assets are black silhouettes; invert them so they read white
+// against the colored badge background without needing a separate set of files.
+.platform-badge__icon {
+  filter: brightness(0) invert(1);
+}
+
+.platform-badge__web {
+  font-size: 9px;
+  font-weight: 700;
+  color: #0a0a0a;
+}
+
+// ─── Shared list footer (count + pager) ──────────────────────────────────────
+
+.list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-md);
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.list-footer__pager {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+// ─── Detail page ─────────────────────────────────────────────────────────────
+
+.dest-detail-page {
+  .page-header {
+    align-items: center;
+  }
+
+  .page-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+}
+
+.dest-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--color-fg);
+  }
+}
+
+.dest-details-grid {
+  // All columns hug their content so Team ID sits right next to Username
+  // instead of being pushed to the far edge by a 1fr stretch column.
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  column-gap: var(--space-2xl);
+  row-gap: var(--space-md);
+  justify-content: start;
+}
+
+.dest-details-cell__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-subtle);
+  margin-bottom: 4px;
+}
+
+.dest-details-cell__value {
+  font-size: 14px;
+  color: var(--color-fg);
+  word-break: break-word;
+}
+
+.dest-target-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// History grid lives inside the settings-row content column, so it stretches
+// to fill the available width.
+.dest-history {
+  width: 100%;
+}
+
+.dest-history-table {
+  grid-template-columns:
+    minmax(100px, 0.6fr) // build
+    minmax(70px, 0.4fr)  // status icon
+    minmax(160px, 1fr)   // triggered by
+    minmax(200px, 1.6fr) // commit
+    minmax(110px, 0.6fr); // outcome label
+
+  .data-grid__row > * {
+    padding: 10px var(--space-sm);
+  }
+}
+
+.dest-history-row__build .deployments-row__build-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--color-fg);
+
+  &:hover {
+    color: var(--color-accent);
+  }
+}
+
+// The triggered-by and commit cells render an avatar + a two-line meta block;
+// the data-grid sets the cell to flex but no gap, so wire one in explicitly so
+// the icon doesn't sit flush against the text.
+.dest-history-row__triggered,
+.dest-history-row__commit {
+  gap: var(--space-sm);
+}
+
+.dest-history-row__outcome {
+  justify-content: flex-end;
+}
+
+.dest-history-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+
+  &.is-success { color: var(--color-success, #16a34a); }
+  &.is-failed { color: var(--color-danger, #dc2626); }
+}

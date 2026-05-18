@@ -2,9 +2,15 @@
 set -euo pipefail
 
 # ===========================================
-# macOS Cache Cleaner Script
-# This script removes common cache, log, and
-# temporary files to free up disk space.
+# Per-build cleanup. Removes ONLY artefacts this
+# build created — the keychain it imported, the
+# provisioning profile UUIDs it installed, and
+# its client/build working directory.
+#
+# Multi-tenant safety: this script must never
+# touch another build's keychain, profile, or
+# cache. All "matching" deletes happen by exact
+# BUILD_ID-scoped name or by tracked UUID.
 # ===========================================
 
 # ================================
@@ -37,169 +43,108 @@ if [[ -z "$MODE" || -z "$CLIENT_ID" || -z "$BUILD_ID" ]]; then
   exit 1
 fi
 
+# Load this build's env file so we know which profiles + keychain to clean.
+# It's written by build_codesign_profile.sh and contains
+# KEYCHAIN_NAME, KEYCHAIN_PASSWORD, PREVIOUS_DEFAULT_KEYCHAIN, INSTALLED_PROFILE_UUIDS.
+ENV_FILE="$HOME/RaidX/Clients/$CLIENT_ID/$BUILD_ID/.ios_build_env"
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+fi
+
+# If the build env didn't make it (e.g. codesign step crashed before writing
+# it), fall back to deriving the per-build keychain name from BUILD_ID. We
+# still won't touch anyone else's keychain because the name embeds BUILD_ID.
+if [[ -z "${KEYCHAIN_NAME:-}" || -z "${KEYCHAIN_PATH:-}" ]]; then
+  set_build_keychain "$BUILD_ID"
+fi
+
 if [[ "$MODE" == "dev" ]]; then
   echo "🔹 CLIENT_ID=$CLIENT_ID"
   echo "🔹 BUILD_ID=$BUILD_ID"
   echo "🔹 KEYCHAIN_NAME=$KEYCHAIN_NAME"
   echo "🔹 KEYCHAIN_PATH=$KEYCHAIN_PATH"
-  echo "🔹 RAIDX_CLIENTS_PATH=$RAIDX_CLIENTS_PATH"
+  echo "🔹 INSTALLED_PROFILE_UUIDS=${INSTALLED_PROFILE_UUIDS:-}"
+  echo "🔹 PREVIOUS_DEFAULT_KEYCHAIN=${PREVIOUS_DEFAULT_KEYCHAIN:-}"
 fi
 
-# Apple Keychain
-echo "🗑️  Remove Keychain: $KEYCHAIN_NAME | Path: $KEYCHAIN_PATH"
-if [ -f "$KEYCHAIN_PATH" ]; then
-  echo "📢 Deleting existing keychain: $KEYCHAIN_PATH"
-  
-  # deduplicate your user keychains and keep only valid .keychain-db files
-  security list-keychains -d user | tr -d ' "' | grep '\.keychain-db$' | sort -u | xargs security list-keychains -d user -s
+# ================================
+# 1️⃣ REMOVE OUR KEYCHAIN FROM SEARCH LIST (preserve others)
+# ================================
+# `security list-keychains -s ...` REPLACES the search list, so we have to
+# read it, filter out our own keychain, and write the rest back. Anything
+# else (login keychain, other tenants' build keychains) stays intact.
+if [ -n "${KEYCHAIN_NAME:-}" ]; then
+  echo "🔗 Removing $KEYCHAIN_NAME from keychain search list (keeping others)…"
+  CURRENT_LIST=$(security list-keychains -d user | tr -d '"' | xargs)
+  FILTERED=()
+  for kc in $CURRENT_LIST; do
+    # Match either the bare name or the full -db path so we catch both forms.
+    case "$kc" in
+      */${KEYCHAIN_NAME}-db|${KEYCHAIN_PATH}|${KEYCHAIN_NAME}) continue ;;
+      *) FILTERED+=("$kc") ;;
+    esac
+  done
+  if [ ${#FILTERED[@]} -gt 0 ]; then
+    with_keychain_search_lock list-keychains -d user -s "${FILTERED[@]}"
+  else
+    # Don't leave the list empty — Apple treats that as "use default only".
+    with_keychain_search_lock list-keychains -d user -s login.keychain-db
+  fi
+fi
 
-  # remove keychain
+# ================================
+# 2️⃣ RESTORE PREVIOUS DEFAULT KEYCHAIN
+# ================================
+# build_codesign_profile.sh saved the user's previous default before we
+# touched anything. Restore it so any other tool/shell that reads the
+# default keychain sees the state it expects.
+if [ -n "${PREVIOUS_DEFAULT_KEYCHAIN:-}" ] && [ "${PREVIOUS_DEFAULT_KEYCHAIN}" != "${KEYCHAIN_PATH:-}" ]; then
+  echo "♻️  Restoring previous default keychain: $PREVIOUS_DEFAULT_KEYCHAIN"
+  security default-keychain -d user -s "$PREVIOUS_DEFAULT_KEYCHAIN" 2>/dev/null || \
+    echo "⚠️  Could not restore previous default keychain (it may have been removed)."
+fi
+
+# ================================
+# 3️⃣ DELETE OUR KEYCHAIN FILE
+# ================================
+if [ -n "${KEYCHAIN_NAME:-}" ]; then
+  echo "🗑️  Deleting keychain: $KEYCHAIN_NAME ($KEYCHAIN_PATH)"
   security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true
-  
-  echo "✅ $KEYCHAIN_NAME has been deleted."
+  # delete-keychain usually removes the file too, but be defensive.
+  [ -n "${KEYCHAIN_PATH:-}" ] && rm -f "$KEYCHAIN_PATH"
+  echo "✅ Keychain removed."
 fi
 
-
-# # App node_modules
-# if [ -d "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/node_modules" ]; then
-#     /bin/rm -rf "$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/node_modules/"* &>/dev/null
-#     echo "✅ node_modules cleaned."
-# fi
-
-# --- 1. CLEAN XCODE AND iOS SIMULATOR CACHES ---
-echo "▶️  Cleaning Xcode Derived Data and Archives..."
-if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
-    /bin/rm -rf "Library/Developer/Xcode/DerivedData/"* &>/dev/null
-    echo "✅ Xcode DerivedData has been removed."
-fi
-
-if [ -d "$HOME/Library/Developer/Xcode/Archives" ]; then
-    /bin/rm -rf "$HOME/Library/Developer/Xcode/Archives/"* &>/dev/null
-    echo "✅ Xcode Archives have been removed."
-fi
-
-echo "▶️  Cleaning iOS Simulator cache..."
-if command -v xcrun &>/dev/null; then
-    xcrun simctl erase all
-    echo "✅ iOS Simulators have been reset."
-else
-    echo "⚠️ xcrun not found. Skipping simulator cleanup."
-fi
-
-# --- 2. CLEAN HOMEBREW, NPM, AND RUBY CACHES ---
-echo "▶️  Cleaning Homebrew caches..."
-if command -v brew &>/dev/null; then
-    brew cleanup
-    echo "✅ Homebrew cache cleaned."
-fi
-
-echo "▶️  Cleaning Node System caches..."
-if command -v npm &>/dev/null; then
-    npm cache clean --force
-    echo "✅ Node System cache cleaned."
-fi
-
-echo "▶️  Cleaning Node User caches..."
-if [ -d "$HOME/.npm" ]; then
-    /bin/rm -rf "$HOME/.npm/"* &>/dev/null
-    echo "✅ .npm User cache cleaned."
-fi
-
-# Check for .local/share, .rbenv, .npm, .gem, and .cocoapods caches
-echo "▶️  Cleaning other development-related caches..."
-if [ -d "$HOME/.local/share/gem" ]; then
-    /bin/rm -rf "$HOME/.local/share/gem/"* &>/dev/null
-    echo "✅ .local/share/gem cleaned."
-fi
-
-if [ -d "$HOME/.gem" ]; then
-    /bin/rm -rf "$HOME/.gem/"* &>/dev/null
-    echo "✅ .gem User cache cleaned."
-fi
-
-# if [ -d "$HOME/.cocoapods" ]; then
-#     /bin/rm -rf "$HOME/.cocoapods/repos/trunk/"* &>/dev/null
-#     echo "✅ CocoaPods cache cleaned (master repo)."
-# fi
-
-# --- 3. CLEAN GENERAL USER AND SYSTEM CACHES ---
-echo "▶️  Cleaning user and system caches..."
-# User Caches
-if [ -d "$HOME/Library/Caches" ]; then
-    du -sh "$HOME/Library/Caches/"
-    /bin/rm -rf "$HOME/Library/Caches/"* &>/dev/null
-    echo "✅ User caches cleaned."
-fi
-
-# User Logs
-if [ -d "$HOME/Library/Logs" ]; then
-    du -sh "$HOME/Library/Logs/"
-    /bin/rm -rf "$HOME/Library/Logs/"* &>/dev/null
-    echo "✅ User logs cleaned."
-fi
-
-# Crash Reports
-if [ -d "$HOME/Library/Application Support/CrashReporter" ]; then
-    du -sh "$HOME/Library/Application Support/CrashReporter/"
-    /bin/rm -rf "$HOME/Library/Application Support/CrashReporter/"* &>/dev/null
-    echo "✅ Crash reports cleaned."
-fi
-
-# System Caches (requires sudo)
-# if [ -d "/Library/Caches" ]; then
-#     sudo rm -rf "/Library/Caches/*"
-#     echo "✅ System caches cleaned."
-# fi
-
-# CoreSimulator Caches
-if [ -d "$HOME/Library/Developer/CoreSimulator" ]; then
-    du -sh "$HOME/Library/Developer/CoreSimulator/"
-    /bin/rm -rf "$HOME/Library/Developer/CoreSimulator/"* &>/dev/null
-    echo "✅ CoreSimulator caches cleaned."
-fi
-
-
-
-
-# System Logs (requires sudo)
-# if [ -d "/Library/Logs" ]; then
-#     sudo rm -rf "/Library/Logs/*"
-#     echo "✅ System logs cleaned."
-# fi
-
-# --- 4. FIND LARGE FILES IN A GIVEN DIRECTORY ---
-# This function finds all files and subdirectories over a specified size
-# in a given directory and its subdirectories.
-# Usage: find_large_files_in_dir <directory_path>
-# Example: find_large_files_in_dir "$HOME/Downloads"
-find_large_files_in_dir() {
-    # Check if a directory path was provided
-    if [ -z "$1" ]; then
-        echo "❌ Error: No directory path provided."
-        echo "Usage: find_large_files_in_dir <directory_path>"
-        return 1
+# ================================
+# 4️⃣ REMOVE PROVISIONING PROFILES THIS BUILD INSTALLED
+# ================================
+# Only the UUIDs we tracked in .ios_build_env. We never remove by display
+# name — another tenant may have a profile with a similar name.
+if [ -n "${INSTALLED_PROFILE_UUIDS:-}" ]; then
+  for uuid in $INSTALLED_PROFILE_UUIDS; do
+    profile="$PROVISION_FOLDER/$uuid.mobileprovision"
+    if [ -f "$profile" ]; then
+      rm -f "$profile"
+      echo "🗑️  Removed provisioning profile $uuid"
     fi
+  done
+fi
 
-    local target_dir="$1"
-
-    # Check if the directory exists
-    if [ ! -d "$target_dir" ]; then
-        echo "❌ Error: Directory not found at '$target_dir'."
-        return 1
-    fi
-
-    echo "🔍 Searching for files > 100MB in '$target_dir'..."
-    # The 'find' command locates files, and '-exec du -h' shows their human-readable size.
-    # The 'sort -h' command then sorts the results by size.
-    find "$target_dir" -type f -size +100M -exec du -h {} \; | sort -h
-    
-    echo "✅ Search complete."
-}
-
-# du -sh "$HOME/Library/Containers"
-
-# find_large_files_in_dir "$HOME/Library/Containers"
+# ================================
+# 5️⃣ PER-BUILD WORKSPACE CLEANUP
+# ================================
+# The client/build directory is scoped to this build, so it's safe to remove
+# in full. Everything that lives outside this path (DerivedData, Archives,
+# ~/Library/Caches, simulator state, brew/npm caches, ~/.gem) is shared with
+# every other tenant on this Mac and must NOT be wiped per-build. If those
+# caches need pruning, run a separate maintenance job on a schedule.
+BUILD_DIR="$HOME/RaidX/Clients/$CLIENT_ID/$BUILD_ID"
+if [ -d "$BUILD_DIR" ]; then
+  echo "🗑️  Removing build workspace: $BUILD_DIR"
+  rm -rf "$BUILD_DIR"
+fi
 
 echo "==========================================="
-echo "✅ Cleanup complete!"
+echo "✅ Cleanup complete (per-build scope)."
 echo "==========================================="

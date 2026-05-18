@@ -50,6 +50,11 @@ interface RepoOut {
   description: string | null;
 }
 
+interface BranchOut {
+  name: string;
+  isDefault: boolean;
+}
+
 async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[]> {
   if (provider === "github") {
     const out: RepoOut[] = [];
@@ -141,6 +146,88 @@ async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[
   return out;
 }
 
+async function listBranches(
+  provider: GitProvider,
+  token: string,
+  fullName: string,
+): Promise<BranchOut[]> {
+  if (provider === "github") {
+    const [owner, repo] = fullName.split("/", 2);
+    if (!owner || !repo) {
+      throw new UpstreamError("github", "/repos/:owner/:repo/branches", 400, "invalid repo full name");
+    }
+    const headers = { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" };
+    // Default branch isn't on the branches listing, so fetch repo metadata in parallel.
+    const [repoRes, ...pageResults] = await Promise.all([
+      fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers }),
+      ...[1, 2, 3, 4, 5].map((p) =>
+        fetch(`https://api.github.com/repos/${owner}/${repo}/branches?per_page=100&page=${p}`, { headers }),
+      ),
+    ]);
+    if (!repoRes.ok) throw new UpstreamError("github", "/repos/:owner/:repo", repoRes.status, await readBodySnippet(repoRes));
+    const repoJson = (await repoRes.json()) as { default_branch: string };
+    const defaultBranch = repoJson.default_branch;
+    const out: BranchOut[] = [];
+    for (const res of pageResults) {
+      if (!res.ok) throw new UpstreamError("github", "/repos/:owner/:repo/branches", res.status, await readBodySnippet(res));
+      const batch = (await res.json()) as { name: string }[];
+      out.push(...batch.map((b) => ({ name: b.name, isDefault: b.name === defaultBranch })));
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+  if (provider === "gitlab") {
+    const idOrPath = encodeURIComponent(fullName);
+    const headers = { authorization: `Bearer ${token}` };
+    const out: BranchOut[] = [];
+    let page = 1;
+    while (page < 6) {
+      const res = await fetch(
+        `https://gitlab.com/api/v4/projects/${idOrPath}/repository/branches?per_page=100&page=${page}`,
+        { headers },
+      );
+      if (!res.ok) {
+        throw new UpstreamError("gitlab", "/projects/:id/repository/branches", res.status, await readBodySnippet(res));
+      }
+      const batch = (await res.json()) as { name: string; default: boolean }[];
+      out.push(...batch.map((b) => ({ name: b.name, isDefault: !!b.default })));
+      if (batch.length < 100) break;
+      page++;
+    }
+    return out;
+  }
+  // bitbucket
+  const headers = { authorization: `Bearer ${token}` };
+  const repoRes = await fetch(
+    `https://api.bitbucket.org/2.0/repositories/${fullName}`,
+    { headers },
+  );
+  if (!repoRes.ok) {
+    throw new UpstreamError("bitbucket", "/2.0/repositories/:full_name", repoRes.status, await readBodySnippet(repoRes));
+  }
+  const repoJson = (await repoRes.json()) as { mainbranch?: { name?: string } };
+  const defaultBranch = repoJson.mainbranch?.name ?? null;
+  const out: BranchOut[] = [];
+  let url: string | null =
+    `https://api.bitbucket.org/2.0/repositories/${fullName}/refs/branches?pagelen=100`;
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new UpstreamError(
+        "bitbucket",
+        "/2.0/repositories/:full_name/refs/branches",
+        res.status,
+        await readBodySnippet(res),
+      );
+    }
+    const j = (await res.json()) as { values: { name: string }[]; next?: string };
+    out.push(...j.values.map((b) => ({ name: b.name, isDefault: b.name === defaultBranch })));
+    url = j.next ?? null;
+    if (out.length > 500) break;
+  }
+  return out;
+}
+
 export async function gitConnectionRoutes(server: FastifyInstance) {
   server.addHook("preHandler", requireUser);
 
@@ -206,6 +293,51 @@ export async function gitConnectionRoutes(server: FastifyInstance) {
       return reply.internalServerError("Could not list repositories");
     }
   });
+
+  server.get<{ Params: { id: string }; Querystring: { repo?: string } }>(
+    "/git-connections/:id/branches",
+    async (req, reply) => {
+      const [row] = await db.select().from(gitConnections).where(eq(gitConnections.id, req.params.id)).limit(1);
+      if (!row) return reply.notFound();
+      await requireOrgMember(req, reply, row.orgId);
+      if (reply.sent) return;
+      const repoSchema = z.string().min(3).max(200).regex(/^[^/\s]+\/[^\s]+$/, "expected owner/repo");
+      const parsed = repoSchema.safeParse(req.query.repo);
+      if (!parsed.success) return reply.badRequest("repo query param is required (owner/name)");
+      try {
+        const token = decryptString(row.accessTokenEnc);
+        return await listBranches(row.provider as GitProvider, token, parsed.data);
+      } catch (err) {
+        const upstream = err instanceof UpstreamError ? err : null;
+        const logEntry = upstream
+          ? {
+              connectionId: row.id,
+              orgId: row.orgId,
+              userId: req.auth?.userId,
+              provider: upstream.provider,
+              endpoint: upstream.endpoint,
+              status: upstream.status,
+              body: upstream.bodySnippet,
+            }
+          : {
+              connectionId: row.id,
+              orgId: row.orgId,
+              userId: req.auth?.userId,
+              provider: row.provider,
+              error: (err as Error).message,
+            };
+        server.log.error({ err, ...logEntry }, "list branches failed");
+        void oauthLog("list_branches_failed", logEntry);
+        const detail = upstream
+          ? `${upstream.provider} ${upstream.endpoint} returned ${upstream.status}: ${upstream.bodySnippet.slice(0, 300)}`
+          : (err as Error).message;
+        if (req.auth?.isSuperadmin) {
+          return reply.internalServerError(`Could not list branches — ${detail}`);
+        }
+        return reply.internalServerError("Could not list branches");
+      }
+    },
+  );
 
   server.get<{ Params: { provider: GitProvider }; Querystring: { orgId: string; returnTo?: string } }>(
     "/orgs/git-connections/:provider/start",

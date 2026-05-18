@@ -36,6 +36,11 @@ if [[ -z "$MODE" || -z "$CLIENT_ID" || -z "$BUILD_ID" || -z "$P12_PATH" || -z "$
   exit 1
 fi
 
+# Derive a per-build keychain (raidx-<BUILD_ID>.keychain-db). Concurrent builds
+# on the same Mac never read or destroy each other's certs because each build
+# gets its own keychain file + password.
+set_build_keychain "$BUILD_ID"
+
 if [[ "$MODE" == "dev" ]]; then
   echo "📢 Running ios build with:"
   echo "🔹 CLIENT_ID=$CLIENT_ID"
@@ -49,312 +54,151 @@ if [[ "$MODE" == "dev" ]]; then
   echo "🔹 KEYCHAIN_PATH=$KEYCHAIN_PATH"
 fi
 
-# ================================
-# 1️⃣ DELETE EXISTING KEYCHAIN
-# ================================
-echo "🔗 Removing $KEYCHAIN_NAME from keychain search list..."
-# This prevents the system from trying to find a non-existent keychain
-# The 'tr' command cleans up the output, and 'xargs' passes it as arguments
-security list-keychains -d user | tr -d '"' | sed "s|$KEYCHAIN_NAME||" | xargs security list-keychains -d user -s 2>/dev/null
+# Build env file is read by downstream scripts (build_ios_app.sh, dispose).
+# We write it at the end of this script in one block, but track the values
+# we want to persist in this temp file as we go.
+ENV_FILE="$HOME/RaidX/Clients/$CLIENT_ID/$BUILD_ID/.ios_build_env"
+mkdir -p "$(dirname "$ENV_FILE")"
 
+# ================================
+# 1️⃣ CREATE PER-BUILD KEYCHAIN
+# ================================
+# If a previous attempt of THIS build left a keychain around, remove it first.
+# We don't touch any other tenant's keychain — KEYCHAIN_NAME embeds BUILD_ID
+# so we can only ever match our own.
 if [ -f "$KEYCHAIN_PATH" ]; then
-  echo "📢 Deleting existing keychain: $KEYCHAIN_PATH"
- 
+  echo "📢 Removing previous attempt's keychain: $KEYCHAIN_PATH"
   security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true
-  rm -f "$KEYCHAIN_NAME"
-  sleep 1
-  if [ ! -f "$KEYCHAIN_PATH" ]; then
-    echo "✅ Successfully deleted keychain file."
-  else
-    echo "⚠️ Could not delete keychain file, manual cleanup may be needed."
-  fi
-  
-  echo "🗑️  $KEYCHAIN_PATH has been deleted."
+  rm -f "$KEYCHAIN_PATH"
 fi
 
-# dev_stop
-
-
-# ================================
-# 2️⃣ CREATE AND CONFIGURE KEYCHAIN
-# ================================
 echo "🔑 Creating keychain: $KEYCHAIN_PATH"
 security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
 
-# Add it to the keychain search list (preserve existing keychains)
-EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | xargs)
-security list-keychains -d user -s "$KEYCHAIN_NAME" $EXISTING_KEYCHAINS
+# Add ours to the search list ALONGSIDE the existing keychains. Setting the
+# list without preserving existing entries would knock other tenants' build
+# keychains (and the user's login keychain) out of view.
+# Sanitise the existing list before adding ours. Older versions of this
+# script accumulated cruft (the bare keychains dir, duplicate entries) via
+# lossy read-modify-write; this awk keeps only well-formed unique paths.
+EXISTING_KEYCHAINS=$(
+  security list-keychains -d user | awk '
+    { gsub(/"/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, ""); }
+    /\.keychain(-db)?$/ && !seen[$0]++
+  '
+)
+with_keychain_search_lock list-keychains -d user -s "$KEYCHAIN_NAME" $EXISTING_KEYCHAINS
 
-# Set as default keychain
-security default-keychain -s "$KEYCHAIN_PATH"
+# Save the user's previous default keychain so dispose can restore it. We do
+# NOT make ours the default — `xcodebuild`/`codesign` find identities via the
+# search list, so there's no need to mutate global state. (If a future
+# requirement does force this, restore on dispose using PREVIOUS_DEFAULT_KEYCHAIN
+# below.)
+PREVIOUS_DEFAULT_KEYCHAIN=$(security default-keychain -d user 2>/dev/null | tr -d ' "' || true)
+echo "📌 Saved previous default keychain: $PREVIOUS_DEFAULT_KEYCHAIN"
 
-# Unlock it
+# Unlock and set a long timeout so xcodebuild doesn't get a re-lock mid-sign.
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-
-# Configure timeout (1 hour)
 security set-keychain-settings -t 3600 -l "$KEYCHAIN_NAME"
 
+# (No cross-keychain certificate cleanup. Our keychain is fresh and empty;
+# scrubbing other keychains for matching CNs was the legacy behaviour that
+# wiped other tenants' "iPhone Distribution: Foo" certs.)
 
 # ================================
-# 3️⃣ REMOVE DUPLICATE CERTIFICATES
+# 2️⃣ IMPORT P12 CERTIFICATE
 # ================================
-echo "🧹 Checking for existing certificates in keychain..."
-# Function to remove certificates by common name pattern
-remove_certificates_by_pattern() {
-  local pattern="$1"
-  
-  echo "🔍 Looking for certificates matching pattern: $pattern in all keychains"
-  
-  # Find certificates in all keychains (login, system, etc.)
-  local cert_info=$(security find-certificate -a -c "$pattern" 2>/dev/null)
-  
-  if [ -n "$cert_info" ]; then
-    echo "📋 Found certificates matching '$pattern':"
-    
-    # Extract keychain paths and SHA-1 hashes
-    local current_keychain=""
-    local current_hash=""
-    local cert_subject=""
-    
-    while IFS= read -r line; do
-      if [[ "$line" =~ keychain:\ \"(.+)\" ]]; then
-        current_keychain="${BASH_REMATCH[1]}"
-      elif [[ "$line" =~ \"subj\".*CN=([^,]+) ]]; then
-        cert_subject="${BASH_REMATCH[1]}"
-      elif [[ "$line" =~ SHA-1\ hash:\ ([A-F0-9]+) ]]; then
-        current_hash="${BASH_REMATCH[1]}"
-        if [ -n "$current_keychain" ] && [ -n "$current_hash" ]; then
-          echo "  📋 Found: ${cert_subject:-Unknown Subject}"
-          echo "  🗑️ Removing from keychain: $(basename "$current_keychain")"
-          echo "     Hash: $current_hash"
-          security delete-certificate -Z "$current_hash" "$current_keychain" 2>/dev/null || {
-            echo "     ⚠️  Could not remove (might not have permission)"
-          }
-          current_hash=""
-          cert_subject=""
-        fi
-      fi
-    done <<< "$cert_info"
-    
-  else
-    echo "✅ No existing certificates found matching pattern: $pattern"
-  fi
-}
-
-# Also check what certificates are currently visible
-echo "📋 Current code signing identities across all keychains:"
-security find-identity -v -p codesigning 2>/dev/null || echo "No code signing identities found"
-
-# Remove common certificate types that might conflict
-remove_certificates_by_pattern "iPhone Distribution" "$KEYCHAIN_NAME"
-remove_certificates_by_pattern "iPhone Development" "$KEYCHAIN_NAME"
-remove_certificates_by_pattern "Apple Distribution" "$KEYCHAIN_NAME"
-remove_certificates_by_pattern "Apple Development" "$KEYCHAIN_NAME"
-
-echo "🧹 Certificate cleanup complete"
-
-
-# ================================
-# 4️⃣ REMOVE OLD PROVISIONING PROFILES
-# ================================
-echo "🧹 Removing old provisioning profiles matching: $PROVISION_NAME from Path: $PROVISION_FOLDER"
-echo "🧹 Path: $PROVISION_FOLDER"
-
-mkdir -p "$PROVISION_FOLDER"
-if [ -n "$PROVISION_NAME" ]; then
-  rm -f "$PROVISION_FOLDER/${PROVISION_NAME}"*.mobileprovision 2>/dev/null || true
-  echo "✅ Cleaned up old provisioning profiles"
-else
-  echo "⚠️ PROVISION_NAME not set, skipping provisioning profile cleanup"
-fi
-
-
-# ================================
-# 5️⃣ IMPORT P12 CERTIFICATE
-# ================================
-if [ -f "$P12_PATH" ]; then
-  echo "🔑 Importing P12 certificate: $P12_PATH"
-
-  # Import the P12 certificate
-  security import "$P12_PATH" \
-    -P "${P12_PASSWORD}" \
-    -k "${KEYCHAIN_NAME}" \
-    -T /usr/bin/codesign \
-    -T /usr/bin/xcodebuild \
-    -A
-
-  # Allow Xcode & Apple tools to use it
-  security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" 2>/dev/null || {
-    echo "⚠️ Warning: Could not set key partition list. This might cause issues on newer macOS versions."
-  }
-
-  # Allow Xcode & Apple tools to use it
-  # security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-  
-  # Re-unlock keychain after operations
-  security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-  
-  echo "🔍 Available code signing identities after setup:"
-  security find-identity -p codesigning -v "$KEYCHAIN_NAME"
-
-
-  # ================================
-  # 📢 EXTRACT CODE_SIGN_IDENTITY
-  # ================================
-  echo "🔍 Extracting code signing identity..."
-  
-  # First, let's see what we actually have in the keychain
-  echo "📋 All items in keychain:"
-  security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null | grep -E "(labl|subj)" || echo "Could not dump keychain contents"
-  
-  # Try multiple approaches to find the identity
-  echo "🔍 Approach 1: Looking for codesigning identities in specific keychain..."
-  CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null \
-    | awk -F '"' '/iPhone Distribution|Apple Distribution/ {print $2; exit}')
-  
-  if [ -z "$CODE_SIGN_IDENTITY" ]; then
-    echo "🔍 Approach 2: Looking for any iPhone certificate..."
-    CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null \
-      | awk -F '"' '/iPhone/ {print $2; exit}')
-  fi
-  
-  if [ -z "$CODE_SIGN_IDENTITY" ]; then
-    echo "🔍 Approach 3: Looking across all keychains..."
-    CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-      | awk -F '"' '/iPhone Distribution|Apple Distribution/ {print $2; exit}')
-  fi
-  
-  if [ -z "$CODE_SIGN_IDENTITY" ]; then
-    echo "🔍 Approach 4: Extracting from keychain dump..."
-    # Extract the label directly from keychain dump
-    CODE_SIGN_IDENTITY=$(security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null \
-      | grep -A1 '"labl"<blob>=' \
-      | grep 'iPhone Distribution\|Apple Distribution' \
-      | sed 's/.*"labl"<blob>="\([^"]*\)".*/\1/' \
-      | head -1)
-    
-    if [ -n "$CODE_SIGN_IDENTITY" ]; then
-      echo "📋 Extracted from keychain dump: $CODE_SIGN_IDENTITY"
-    fi
-  fi
-  
-  # Final verification
-  if [ -n "$CODE_SIGN_IDENTITY" ]; then
-    echo "✅ CODE_SIGN_IDENTITY found: $CODE_SIGN_IDENTITY"
-    export CODE_SIGN_IDENTITY
-    
-    # Test if we can actually use this identity for codesigning
-    echo "🧪 Testing code signing identity access..."
-    
-    # Method 1: Try to find it in codesigning identities
-    if security find-identity -v -p codesigning | grep -q "$CODE_SIGN_IDENTITY"; then
-      echo "✅ Identity is accessible via find-identity codesigning"
-    else
-      echo "⚠️  Identity not found in codesigning list, but certificate exists"
-      
-      # Method 2: Try to verify we can access the private key
-      echo "🔑 Checking private key access..."
-      if security find-key -a "$KEYCHAIN_NAME" 2>/dev/null | grep -q "Mark Mastro"; then
-        echo "✅ Private key found and accessible"
-      else
-        echo "⚠️  Private key access issue detected"
-        echo "🔄 Attempting to fix keychain access..."
-        
-        # Try to fix access issues
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" 2>/dev/null
-        
-        # Re-test
-        if security find-identity -v -p codesigning | grep -q "$CODE_SIGN_IDENTITY"; then
-          echo "✅ Fixed! Identity now accessible"
-        else
-          echo "⚠️  Manual intervention may be needed"
-        fi
-      fi
-    fi
-    
-    # Show final status
-    echo "📋 Final identity verification:"
-    echo "   Identity String: $CODE_SIGN_IDENTITY"
-    echo "   Keychain: $KEYCHAIN_NAME"
-    
-  else
-    echo "❌ CODE_SIGN_IDENTITY could not be determined"
-    echo "🔍 Debug: All available identities across all keychains:"
-    security find-identity -v -p codesigning 2>/dev/null || echo "No identities found"
-    echo "🔍 Debug: Contents of build keychain:"
-    security find-identity -v "$KEYCHAIN_NAME" 2>/dev/null || echo "No identities in build keychain"
-    echo "🔍 Debug: Certificate labels in keychain:"
-    security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null | grep '"labl"<blob>=' || echo "No labels found"
-    exit 1
-  fi
-
-else
+if [ ! -f "$P12_PATH" ]; then
   echo "❌ P12 file not found: $P12_PATH"
   exit 1
 fi
 
+echo "🔑 Importing P12 certificate: $P12_PATH"
+security import "$P12_PATH" \
+  -P "${P12_PASSWORD}" \
+  -k "${KEYCHAIN_NAME}" \
+  -T /usr/bin/codesign \
+  -T /usr/bin/xcodebuild \
+  -A
+
+# Newer macOS versions require explicit partition-list permission for Apple
+# code-signing tools to use the imported key non-interactively.
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" >/dev/null 2>&1 || {
+  echo "⚠️ Warning: set-key-partition-list failed — Apple tools may prompt on first use"
+}
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+
 # ================================
-# 6️⃣ INSTALL PROVISIONING PROFILE
+# 3️⃣ EXTRACT CODE_SIGN_IDENTITY
 # ================================
-if [ -f "$PROVISION_PATH" ]; then
-  echo "📱 Installing provisioning profile: $PROVISION_PATH"
-  
-  # Extract provisioning profile information
-  echo "🔍 Extracting provisioning profile information..."
+echo "🔍 Available code signing identities in $KEYCHAIN_NAME:"
+security find-identity -p codesigning -v "$KEYCHAIN_NAME" || true
 
-  TMP_PLIST=$(mktemp "${TMPDIR:-/tmp}/profile.XXXXXX.plist")
-  security cms -D -i "$PROVISION_PATH" > "$TMP_PLIST"
+CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null \
+  | awk -F '"' '/iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development/ {print $2; exit}')
 
-  DEVELOPMENT_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$TMP_PLIST")
-  APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$TMP_PLIST")
-  BUNDLE_ID=${APP_IDENTIFIER#*.}
-  PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$TMP_PLIST" 2>/dev/null || echo "")
+if [ -z "$CODE_SIGN_IDENTITY" ]; then
+  # find-identity -p codesigning requires a valid trust chain; if the Apple
+  # WWDR intermediate isn't visible to this keychain it returns zero matches.
+  # Fall back to scraping the certificate label directly. xcodebuild signs by
+  # the identity string, so this still produces a working build.
+  echo "⚠️  find-identity returned 0 matches under the codesigning policy."
+  echo "    Falling back to keychain dump (trust chain may be incomplete)."
+  CODE_SIGN_IDENTITY=$(security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null \
+    | grep -A1 '"labl"<blob>=' \
+    | grep -E 'iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development' \
+    | sed 's/.*"labl"<blob>="\([^"]*\)".*/\1/' \
+    | head -1)
+fi
 
-  if [ -z "$DEVELOPMENT_TEAM" ]; then
-    echo "⚠️ Could not parse DEVELOPMENT_TEAM, copied file directly"
-    exit 1
-  fi
-  if [ -z "$APP_IDENTIFIER" ]; then
-    echo "⚠️ Could not parse APP_IDENTIFIER, copied file directly"
-    exit 1
-  fi
-  if [ -z "$BUNDLE_ID" ]; then
-    echo "⚠️ Could not parse BUNDLE_ID, copied file directly"
-    exit 1
-  fi
-  if [ -z "$PROFILE_UUID" ]; then
-    echo "⚠️ Could not parse UUID, copied file directly"
-    exit 1
-  fi
-  
-  # Clean up temporary file
-  rm -f "$TMP_PLIST"
-    
-  # Copy to provisioning profiles folder using UUID
-  cp "$PROVISION_PATH" "$PROVISION_FOLDER/$PROFILE_UUID.mobileprovision"
-  echo "✅ Provisioning profile installed to: $PROVISION_FOLDER/"
+if [ -z "$CODE_SIGN_IDENTITY" ]; then
+  echo "❌ Could not determine CODE_SIGN_IDENTITY from the imported .p12."
+  echo "🔍 Debug — keychain contents:"
+  security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null | grep -E '"labl"<blob>=' || true
+  exit 1
+fi
+echo "✅ CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
 
-else
+# ================================
+# 4️⃣ INSTALL PROVISIONING PROFILE
+# ================================
+if [ ! -f "$PROVISION_PATH" ]; then
   echo "❌ Provisioning profile not found: $PROVISION_PATH"
   exit 1
 fi
 
+echo "📱 Installing provisioning profile: $PROVISION_PATH"
+echo "🔍 Extracting provisioning profile information..."
+
+TMP_PLIST=$(mktemp "${TMPDIR:-/tmp}/profile.XXXXXX.plist")
+security cms -D -i "$PROVISION_PATH" > "$TMP_PLIST"
+
+DEVELOPMENT_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$TMP_PLIST")
+APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$TMP_PLIST")
+BUNDLE_ID=${APP_IDENTIFIER#*.}
+PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$TMP_PLIST" 2>/dev/null || echo "")
+rm -f "$TMP_PLIST"
+
+if [ -z "$DEVELOPMENT_TEAM" ] || [ -z "$APP_IDENTIFIER" ] || [ -z "$BUNDLE_ID" ] || [ -z "$PROFILE_UUID" ]; then
+  echo "❌ Failed to parse provisioning profile (DEVELOPMENT_TEAM/APP_IDENTIFIER/BUNDLE_ID/UUID missing)."
+  exit 1
+fi
+
+# Profiles are installed by UUID — UUIDs are globally unique so there's no
+# cross-tenant collision risk. We deliberately DO NOT remove "matching"
+# profiles by name pattern (legacy behaviour), because another tenant may
+# have a profile whose display name happens to share a prefix.
+mkdir -p "$PROVISION_FOLDER"
+cp "$PROVISION_PATH" "$PROVISION_FOLDER/$PROFILE_UUID.mobileprovision"
+echo "✅ Provisioning profile installed: $PROVISION_FOLDER/$PROFILE_UUID.mobileprovision"
+
+# Track installed UUIDs (newline-separated) so dispose removes only what this
+# build added — never another build's profile.
+INSTALLED_PROFILE_UUIDS="$PROFILE_UUID"
 
 # ================================
-# 7️⃣ VERIFY SETUP
+# 5️⃣ SUMMARY
 # ================================
-echo "🔍 Verifying keychain setup..."
-echo "📋 Keychain list:"
-security list-keychains -d user
-
-echo "📋 Certificates in build keychain:"
-security find-certificate -a -p "$KEYCHAIN_NAME" | openssl x509 -text -noout | grep "Subject:" || echo "No certificates found"
-
-echo "📋 Code signing identities:"
-security find-identity -v -p codesigning "$KEYCHAIN_NAME"
-
-# Display extracted information
 echo "✅ Provisioning Profile Information:"
 echo "   🆔 DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM"
 echo "   📱 APP_IDENTIFIER: $APP_IDENTIFIER"
@@ -362,20 +206,26 @@ echo "   📦 BUNDLE_ID: $BUNDLE_ID"
 echo "   📋 PROFILE_UUID: $PROFILE_UUID"
 echo "   🔑 CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
 
-
-# # ================================
-# 8️⃣ EXPORT ENVIRONMENT VARIABLES
 # ================================
-
-ENV_FILE="$HOME/RaidX/Clients/$CLIENT_ID/$BUILD_ID/.ios_build_env"
-echo "export DEVELOPMENT_TEAM=\"$DEVELOPMENT_TEAM\"" > "$ENV_FILE"
-echo "export APP_IDENTIFIER=\"$APP_IDENTIFIER\"" >> "$ENV_FILE"
-echo "export BUNDLE_ID=\"$BUNDLE_ID\"" >> "$ENV_FILE"
-echo "export PROFILE_UUID=\"$PROFILE_UUID\"" >> "$ENV_FILE"
-echo "export CODE_SIGN_IDENTITY=\"$CODE_SIGN_IDENTITY\"" >> "$ENV_FILE"
+# 6️⃣ WRITE BUILD ENV FILE
+# ================================
+{
+  echo "export DEVELOPMENT_TEAM=\"$DEVELOPMENT_TEAM\""
+  echo "export APP_IDENTIFIER=\"$APP_IDENTIFIER\""
+  echo "export BUNDLE_ID=\"$BUNDLE_ID\""
+  echo "export PROFILE_UUID=\"$PROFILE_UUID\""
+  echo "export CODE_SIGN_IDENTITY=\"$CODE_SIGN_IDENTITY\""
+  # Keychain identity + secrets, so build_ios_app.sh can unlock and dispose
+  # can clean up. The .ios_build_env lives under the per-build directory
+  # which is already client-scoped — same trust boundary as the .p12 we
+  # uploaded.
+  echo "export KEYCHAIN_NAME=\"$KEYCHAIN_NAME\""
+  echo "export KEYCHAIN_PATH=\"$KEYCHAIN_PATH\""
+  echo "export KEYCHAIN_PASSWORD=\"$KEYCHAIN_PASSWORD\""
+  echo "export PREVIOUS_DEFAULT_KEYCHAIN=\"$PREVIOUS_DEFAULT_KEYCHAIN\""
+  echo "export INSTALLED_PROFILE_UUIDS=\"$INSTALLED_PROFILE_UUIDS\""
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 echo "✅ Environment variables written to $ENV_FILE"
 echo "✅ Keychain and provisioning profile setup complete!"
-
 echo "🎉 iOS Code Signing complete!"
-
-# dev_stop
