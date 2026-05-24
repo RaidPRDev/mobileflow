@@ -687,3 +687,108 @@
   }
 }
 
+
+
+// Processor logo in the Payment Processors accordion header. Sized to match
+// the existing svc-icon footprint (24px tall) so the row alignment stays
+// consistent across processors with different wordmark aspect ratios.
+.processor-logo {
+  height: 20px;
+  width: auto;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+// Tabs content rendered by Radix gets an explicit top margin so the gap from
+// the preceding webhook-endpoint line is identical between Sandbox and
+// Production. Relying on the parent's grid `gap` was flaky because the
+// inactive TabsContent (with `[hidden]`) created an empty grid track that
+// shifted the visible-row's perceived spacing.
+.tabs-content--padded[data-state="active"] {
+  margin-top: var(--space-sm);
+}
+
+// Webhook endpoint line — flex so the link sits inline with the URL pill.
+.processor-webhook {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+// Subtle text-style link with a trailing external-link icon. Used for Stripe
+// dashboard deep-links from the credentials, webhook, and prices sections.
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-accent);
+  text-decoration: none;
+  margin-left: 8px;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// CLI hint shown inside Stripe → Sandbox → Credentials. Carries the
+// `stripe listen` command with a Copy button.
+.cli-hint {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cli-hint__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0;
+}
+
+.cli-hint__body {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  margin: 0;
+  line-height: 1.5;
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 0 4px;
+    background: var(--color-bg-muted);
+    border-radius: 3px;
+  }
+}
+
+.cli-hint__cmd {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+
+  > code {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--color-bg-muted);
+    border-radius: var(--radius-sm);
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--color-fg);
+    line-height: 1.5;
+  }
+
+  > button { flex-shrink: 0; }
+}

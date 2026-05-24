@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -30,12 +30,25 @@ type PaidPlan = (typeof PAID)[number];
 export function SubscriptionsPage() {
   const { orgId } = useParams();
   const [params, setParams] = useSearchParams();
+  const qc = useQueryClient();
   const checkout = params.get("checkout");
+  const vault = params.get("vault");
+
+  // After a processor bounce-back (?checkout=success / ?vault=success) the
+  // webhooks that write the new state arrive piecemeal — subscription
+  // upsert events fire immediately, but the first PAYMENT.SALE.COMPLETED
+  // from PayPal can lag a minute or two in sandbox. Poll the relevant
+  // queries on a short interval so the page repaints as soon as the DB
+  // catches up, instead of forcing the user to refresh by hand.
+  const [pollActive, setPollActive] = useState(false);
+  const POLL_WINDOW_MS = 120_000;
+  const POLL_INTERVAL_MS = 3_000;
 
   const subQ = useQuery({
     queryKey: ["sub", orgId],
     queryFn: () => api.getSubscription(orgId!),
     enabled: !!orgId,
+    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
   const plansQ = useQuery({
     queryKey: ["billing-plans"],
@@ -50,23 +63,39 @@ export function SubscriptionsPage() {
     queryKey: ["payment-method", orgId],
     queryFn: () => api.getPaymentMethod(orgId!),
     enabled: !!orgId,
+    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
   const paymentsQ = useQuery({
     queryKey: ["payments", orgId],
     queryFn: () => api.listPayments(orgId!),
     enabled: !!orgId,
+    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
 
   useEffect(() => {
-    if (checkout) {
+    if (checkout === "success" || vault === "success") {
+      // Bust caches immediately and start the polling window.
+      qc.invalidateQueries({ queryKey: ["sub", orgId] });
+      qc.invalidateQueries({ queryKey: ["payments", orgId] });
+      qc.invalidateQueries({ queryKey: ["payment-method", orgId] });
+      qc.invalidateQueries({ queryKey: ["billing-info", orgId] });
+      setPollActive(true);
+      const stopPolling = setTimeout(() => setPollActive(false), POLL_WINDOW_MS);
+      return () => clearTimeout(stopPolling);
+    }
+  }, [checkout, vault, orgId, qc]);
+
+  useEffect(() => {
+    if (checkout || vault) {
       const t = setTimeout(() => {
         const next = new URLSearchParams(params);
         next.delete("checkout");
+        next.delete("vault");
         setParams(next, { replace: true });
       }, 5000);
       return () => clearTimeout(t);
     }
-  }, [checkout, params, setParams]);
+  }, [checkout, vault, params, setParams]);
 
   const currentPlan = subQ.data?.planId ?? "naboria";
   const currentPlanInfo = plansQ.data?.find((p) => p.id === currentPlan);
@@ -104,7 +133,11 @@ export function SubscriptionsPage() {
 
       <hr className="settings-divider" />
 
-      <PaymentsRow payments={paymentsQ.data ?? []} loading={paymentsQ.isLoading} />
+      <PaymentsRow
+        orgId={orgId}
+        payments={paymentsQ.data ?? []}
+        loading={paymentsQ.isLoading}
+      />
     </div>
   );
 }
@@ -466,6 +499,15 @@ function PaymentMethodSummary({
               </span>
             )}
           </>
+        ) : pm && pm.type ? (
+          // Non-card types: paypal balance, bank, etc. Surface a human label
+          // rather than collapsing to "no method on file".
+          <>
+            <span className="card-brand-icon"><CreditCard size={18} /></span>
+            <span className="payment-method-display__brand">
+              {nonCardPaymentMethodLabel(pm.type)}
+            </span>
+          </>
         ) : (
           <span className="payment-method-display__none">No payment method on file</span>
         )}
@@ -477,12 +519,28 @@ function PaymentMethodSummary({
   );
 }
 
+function nonCardPaymentMethodLabel(type: string): string {
+  switch (type) {
+    case "paypal":
+      return "PayPal account";
+    case "bank":
+    case "us_bank_account":
+      return "Bank account";
+    case "venmo":
+      return "Venmo";
+    default:
+      return type.replace(/_/g, " ");
+  }
+}
+
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 function PaymentsRow({
+  orgId,
   payments,
   loading,
 }: {
+  orgId: string;
   payments: PaymentRow[];
   loading: boolean;
 }) {
@@ -495,48 +553,53 @@ function PaymentsRow({
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Description</th>
                 <th>Amount</th>
                 <th>Status</th>
-                <th aria-label="Invoice" />
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="payments-table__status">Loading…</td>
+                  <td colSpan={3} className="payments-table__status">Loading…</td>
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="payments-table__status">No payments yet.</td>
+                  <td colSpan={3} className="payments-table__status">No payments yet.</td>
                 </tr>
               ) : (
-                payments.map((p) => (
-                  <tr key={p.id}>
-                    <td>{new Date(p.paidAt ?? p.createdAt).toLocaleDateString()}</td>
-                    <td>{p.description ?? p.stripeInvoiceId}</td>
-                    <td>
-                      {(p.amountCents / 100).toLocaleString(undefined, {
-                        style: "currency",
-                        currency: p.currency || "USD",
-                      })}
-                    </td>
-                    <td>
-                      <span className={`payments-status is-${p.status}`}>{p.status}</span>
-                    </td>
-                    <td>
-                      {p.invoicePdfUrl ? (
-                        <a className="link" href={p.invoicePdfUrl} target="_blank" rel="noreferrer">
-                          PDF
-                        </a>
-                      ) : p.hostedInvoiceUrl ? (
-                        <a className="link" href={p.hostedInvoiceUrl} target="_blank" rel="noreferrer">
-                          View
-                        </a>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))
+                payments.map((p) => {
+                  const dateLabel = new Date(
+                    p.paidAt ?? p.createdAt,
+                  ).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  });
+                  // Always link to the in-app invoice page — the PDFs and
+                  // processor deep-link live there. Works uniformly for
+                  // Stripe / PayPal / future processors.
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <Link
+                          className="link"
+                          to={`/org/${orgId}/settings/subscriptions/invoices/${p.id}`}
+                        >
+                          {dateLabel}
+                        </Link>
+                      </td>
+                      <td>
+                        {(p.amountCents / 100).toLocaleString(undefined, {
+                          style: "currency",
+                          currency: p.currency || "USD",
+                        })}
+                      </td>
+                      <td>
+                        <span className={`payments-status is-${p.status}`}>{p.status}</span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

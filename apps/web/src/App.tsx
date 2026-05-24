@@ -20,6 +20,7 @@ import { NewDeploymentPage } from "./routes/NewDeploymentPage";
 import { OrgSettingsLayout } from "./routes/OrgSettingsLayout";
 import { AccountPage } from "./routes/AccountPage";
 import { SubscriptionsPage } from "./routes/SubscriptionsPage";
+import { InvoicePage } from "./routes/InvoicePage";
 import { UsagePage } from "./routes/UsagePage";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { RootRedirect } from "./auth/RootRedirect";
@@ -35,6 +36,9 @@ import { AdminStacksPage } from "./admin/AdminStacksPage";
 import { AdminStackEditPage } from "./admin/AdminStackEditPage";
 import { AdminHostsPage } from "./admin/AdminHostsPage";
 import { AdminOAuthAppsPage } from "./admin/AdminOAuthAppsPage";
+import { AdminPaymentProcessorsPage } from "./admin/AdminPaymentProcessorsPage";
+import { AdminPaymentsPage } from "./admin/AdminPaymentsPage";
+import { AdminCompanyPage } from "./admin/AdminCompanyPage";
 
 export function App() {
   return (
@@ -56,6 +60,10 @@ export function App() {
           <Route index element={<AccountPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="subscriptions" element={<SubscriptionsPage />} />
+          <Route
+            path="subscriptions/invoices/:paymentId"
+            element={<InvoicePage />}
+          />
           <Route path="usage" element={<UsagePage />} />
         </Route>
         <Route path="/app/:appId/commits" element={<CommitsPage />} />
@@ -99,6 +107,9 @@ export function App() {
         <Route path="stacks/:stackId" element={<AdminStackEditPage />} />
         <Route path="hosts" element={<AdminHostsPage />} />
         <Route path="oauth-apps" element={<AdminOAuthAppsPage />} />
+        <Route path="payment-processors" element={<AdminPaymentProcessorsPage />} />
+        <Route path="payments" element={<AdminPaymentsPage />} />
+        <Route path="company" element={<AdminCompanyPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

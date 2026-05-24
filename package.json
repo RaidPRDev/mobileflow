@@ -21,6 +21,8 @@
     "deploy:build-scripts:ios": "node infra/scripts/deploy-build-scripts.mjs --ios",
     "db:push": "pnpm --filter @mobileflow/api db:push",
     "db:seed": "pnpm --filter @mobileflow/api db:seed",
+    "db:export-admin": "node infra/scripts/db-export-admin.mjs",
+    "db:import-admin": "node infra/scripts/db-import-admin.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

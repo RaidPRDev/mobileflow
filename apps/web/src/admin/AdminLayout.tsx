@@ -23,6 +23,7 @@ export function AdminLayout() {
         <div className="app-rail-section-title">Admin</div>
         <nav className="app-rail-nav">
           <Item to="/admin" end label="Overview" />
+          <Item to="/admin/company" label="Company" />
           <Item to="/admin/orgs" label="Organizations" />
           <Item to="/admin/users" label="Users" />
           <Item to="/admin/builds" label="Builds" />
@@ -30,6 +31,8 @@ export function AdminLayout() {
           <Item to="/admin/hosts" label="Build hosts" />
           <Item to="/admin/stacks" label="Build stacks" />
           <Item to="/admin/oauth-apps" label="OAuth apps" />
+          <Item to="/admin/payment-processors" label="Payment processors" />
+          <Item to="/admin/payments" label="Payments" />
         </nav>
         <div className="admin-back-row" style={{ marginTop: 16 }}>
           <NavLink to="/" className="admin-back-btn" aria-label="Back to app">

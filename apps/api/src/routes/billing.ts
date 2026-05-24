@@ -1,12 +1,13 @@
+import { randomInt } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { count, desc, eq, isNull, and, inArray } from "drizzle-orm";
 import { z } from "zod";
-import type Stripe from "stripe";
 import { db } from "../db/client.js";
 import {
   apps,
   billingInfo,
   builds,
+  companyInfo,
   organizations,
   payments,
   plans,
@@ -14,32 +15,53 @@ import {
 } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { env } from "../env.js";
-import { getStripe, planForPriceId, priceIdForPlan } from "../billing/stripe.js";
+import { getActiveAdapter } from "../billing/adapters/registry.js";
+import type { NormalizedWebhookEvent, PaymentAdapter } from "../billing/adapters/base.js";
+import {
+  renderInvoicePdf,
+  renderReceiptPdf,
+  type PaymentSnapshot,
+  type Seller,
+} from "../billing/pdf.js";
 
-async function ensureStripeCustomer(orgId: string): Promise<string | null> {
-  const stripe = getStripe();
-  if (!stripe) return null;
+// Ensure the org has a processor-side customer id, creating one if needed.
+// Returns null when no payment processor is configured at all.
+async function ensureProcessorCustomer(
+  adapter: PaymentAdapter,
+  orgId: string,
+): Promise<string | null> {
   const [sub] = await db
     .select()
     .from(subscriptions)
     .where(eq(subscriptions.orgId, orgId))
     .limit(1);
-  if (sub?.stripeCustomerId) return sub.stripeCustomerId;
+  // Only reuse the cached customer id when it was created with the same
+  // provider. Switching processors (e.g. Stripe → ConnectPay) invalidates the
+  // old id and we need to mint a fresh one.
+  if (sub?.processorCustomerId && sub.paymentProvider === adapter.id) {
+    return sub.processorCustomerId;
+  }
   const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
   if (!org) return null;
-  const customer = await stripe.customers.create({
+  const customerId = await adapter.createCustomer({
+    orgId,
     name: org.name,
-    email: org.billingEmail ?? undefined,
-    metadata: { orgId },
+    email: org.billingEmail,
   });
   await db
     .insert(subscriptions)
-    .values({ orgId, planId: "naboria", status: "active", stripeCustomerId: customer.id })
+    .values({
+      orgId,
+      planId: "naboria",
+      status: "active",
+      paymentProvider: adapter.id,
+      processorCustomerId: customerId,
+    })
     .onConflictDoUpdate({
       target: subscriptions.orgId,
-      set: { stripeCustomerId: customer.id },
+      set: { paymentProvider: adapter.id, processorCustomerId: customerId },
     });
-  return customer.id;
+  return customerId;
 }
 
 const BillingInfoBody = z
@@ -59,9 +81,14 @@ const BillingInfoBody = z
 export async function billingRoutes(server: FastifyInstance) {
   server.addHook("preHandler", requireUser);
 
-  server.get("/billing/config", async () => ({
-    publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
-  }));
+  // The web app calls this to know which processor to render and which
+  // publishable key (if any) to load. Returns `null` when no processor is
+  // active — the UI shows a "Billing not configured" message.
+  server.get("/billing/config", async () => {
+    const adapter = await getActiveAdapter();
+    if (!adapter) return null;
+    return adapter.publicBillingConfig();
+  });
 
   server.get<{ Params: { orgId: string } }>("/orgs/:orgId/billing-info", async (req, reply) => {
     await requireOrgMember(req, reply, req.params.orgId);
@@ -87,22 +114,27 @@ export async function billingRoutes(server: FastifyInstance) {
       })
       .returning();
 
-    // Mirror to Stripe customer when available.
-    const stripe = getStripe();
-    if (stripe) {
-      const customerId = await ensureStripeCustomer(req.params.orgId);
+    // Mirror to the processor's customer record when one exists. Best-effort:
+    // a processor outage shouldn't block saving billing info locally.
+    const adapter = await getActiveAdapter();
+    if (adapter) {
+      const customerId = await ensureProcessorCustomer(adapter, req.params.orgId);
       if (customerId) {
-        await stripe.customers.update(customerId, {
-          name: body.fullName ?? undefined,
-          address: {
-            country: body.country ?? undefined,
-            line1: body.addressLine1 ?? undefined,
-            line2: body.addressLine2 ?? undefined,
-            city: body.city ?? undefined,
-            state: body.state ?? undefined,
-            postal_code: body.postalCode ?? undefined,
-          },
-        });
+        try {
+          await adapter.updateCustomer(customerId, {
+            name: body.fullName ?? null,
+            address: {
+              country: body.country ?? null,
+              line1: body.addressLine1 ?? null,
+              line2: body.addressLine2 ?? null,
+              city: body.city ?? null,
+              state: body.state ?? null,
+              postalCode: body.postalCode ?? null,
+            },
+          });
+        } catch (err) {
+          server.log.warn({ err }, "processor updateCustomer failed");
+        }
       }
     }
     return row;
@@ -113,16 +145,17 @@ export async function billingRoutes(server: FastifyInstance) {
     async (req, reply) => {
       await requireOrgMember(req, reply, req.params.orgId);
       if (reply.sent) return;
-      const stripe = getStripe();
-      if (!stripe) return reply.notImplemented("Billing is not configured");
-      const customerId = await ensureStripeCustomer(req.params.orgId);
-      if (!customerId) return reply.internalServerError("Could not create Stripe customer");
-      const intent = await stripe.setupIntents.create({
-        customer: customerId,
-        payment_method_types: ["card"],
-        usage: "off_session",
-      });
-      return { clientSecret: intent.client_secret };
+      const adapter = await getActiveAdapter();
+      if (!adapter) return reply.notImplemented("Billing is not configured");
+      const customerId = await ensureProcessorCustomer(adapter, req.params.orgId);
+      if (!customerId) return reply.internalServerError("Could not create payment customer");
+      // Hosted-vault adapters (PayPal, ConnectPay) bounce back here after the
+      // user approves; Stripe ignores these. We point at the API so the
+      // exchange happens before the user lands on the web app. The return
+      // path is processor-scoped so each adapter parses its own query shape.
+      const successUrl = `${env.API_BASE_URL}/api/billing/${adapter.id}-vault/return?orgId=${encodeURIComponent(req.params.orgId)}`;
+      const cancelUrl = `${env.WEB_BASE_URL}/org/${req.params.orgId}/settings/subscriptions?vault=cancel`;
+      return adapter.createSetupIntent(customerId, { successUrl, cancelUrl });
     },
   );
 
@@ -131,30 +164,21 @@ export async function billingRoutes(server: FastifyInstance) {
     async (req, reply) => {
       await requireOrgMember(req, reply, req.params.orgId);
       if (reply.sent) return;
-      const stripe = getStripe();
-      if (!stripe) return null;
+      const adapter = await getActiveAdapter();
+      if (!adapter) return null;
       const [sub] = await db
-        .select({ customer: subscriptions.stripeCustomerId })
+        .select({
+          provider: subscriptions.paymentProvider,
+          customer: subscriptions.processorCustomerId,
+          subscriptionId: subscriptions.processorSubscriptionId,
+        })
         .from(subscriptions)
         .where(eq(subscriptions.orgId, req.params.orgId))
         .limit(1);
-      if (!sub?.customer) return null;
-      const customer = await stripe.customers.retrieve(sub.customer);
-      if (customer.deleted) return null;
-      const defaultPmId =
-        typeof customer.invoice_settings?.default_payment_method === "string"
-          ? customer.invoice_settings.default_payment_method
-          : customer.invoice_settings?.default_payment_method?.id ?? null;
-      if (!defaultPmId) return null;
-      const pm = await stripe.paymentMethods.retrieve(defaultPmId);
-      if (pm.type !== "card" || !pm.card) return { type: pm.type };
-      return {
-        type: "card" as const,
-        brand: pm.card.brand,
-        last4: pm.card.last4,
-        expMonth: pm.card.exp_month,
-        expYear: pm.card.exp_year,
-      };
+      if (!sub?.customer || sub.provider !== adapter.id) return null;
+      return adapter.getDefaultPaymentMethod(sub.customer, {
+        subscriptionId: sub.subscriptionId,
+      });
     },
   );
 
@@ -164,15 +188,12 @@ export async function billingRoutes(server: FastifyInstance) {
   }>("/orgs/:orgId/billing/payment-method", async (req, reply) => {
     await requireOrgMember(req, reply, req.params.orgId);
     if (reply.sent) return;
-    const stripe = getStripe();
-    if (!stripe) return reply.notImplemented("Billing is not configured");
+    const adapter = await getActiveAdapter();
+    if (!adapter) return reply.notImplemented("Billing is not configured");
     const body = z.object({ paymentMethodId: z.string().min(1) }).parse(req.body);
-    const customerId = await ensureStripeCustomer(req.params.orgId);
-    if (!customerId) return reply.internalServerError("Could not create Stripe customer");
-    await stripe.paymentMethods.attach(body.paymentMethodId, { customer: customerId });
-    await stripe.customers.update(customerId, {
-      invoice_settings: { default_payment_method: body.paymentMethodId },
-    });
+    const customerId = await ensureProcessorCustomer(adapter, req.params.orgId);
+    if (!customerId) return reply.internalServerError("Could not create payment customer");
+    await adapter.attachPaymentMethod(customerId, body.paymentMethodId);
     return { ok: true };
   });
 
@@ -187,6 +208,121 @@ export async function billingRoutes(server: FastifyInstance) {
     return rows;
   });
 
+  // Single payment with all snapshot fields — drives the hosted invoice page
+  // and is the source of truth for the two PDF renderers below.
+  server.get<{ Params: { orgId: string; paymentId: string } }>(
+    "/orgs/:orgId/payments/:paymentId",
+    async (req, reply) => {
+      await requireOrgMember(req, reply, req.params.orgId);
+      if (reply.sent) return;
+      const [row] = await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.id, req.params.paymentId),
+            eq(payments.orgId, req.params.orgId),
+          ),
+        )
+        .limit(1);
+      if (!row) return reply.notFound();
+      return row;
+    },
+  );
+
+  // PDF streaming endpoints. They share the same lookup + snapshot mapping;
+  // only the renderer differs. Filenames embed the processor invoice id so
+  // browsers default to a recognizable "invoice-PYK….pdf" rather than a uuid.
+  const streamPdf = async (
+    req: import("fastify").FastifyRequest<{ Params: { orgId: string; paymentId: string } }>,
+    reply: import("fastify").FastifyReply,
+    kind: "invoice" | "receipt",
+  ) => {
+    await requireOrgMember(req, reply, req.params.orgId);
+    if (reply.sent) return;
+    const [row] = await db
+      .select()
+      .from(payments)
+      .where(
+        and(
+          eq(payments.id, req.params.paymentId),
+          eq(payments.orgId, req.params.orgId),
+        ),
+      )
+      .limit(1);
+    if (!row) return reply.notFound();
+
+    const snapshot: PaymentSnapshot = {
+      id: row.id,
+      processorInvoiceId: row.processorInvoiceId,
+      receiptNumber: row.receiptNumber,
+      amountCents: row.amountCents,
+      currency: row.currency,
+      status: row.status,
+      paidAt: row.paidAt,
+      createdAt: row.createdAt,
+      customerName: row.customerName,
+      customerEmail: row.customerEmail,
+      customerAddressLine1: row.customerAddressLine1,
+      customerAddressLine2: row.customerAddressLine2,
+      customerCity: row.customerCity,
+      customerState: row.customerState,
+      customerPostalCode: row.customerPostalCode,
+      customerCountry: row.customerCountry,
+      planName: row.planName,
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      paymentMethodType: row.paymentMethodType,
+      paymentMethodBrand: row.paymentMethodBrand,
+      paymentMethodLast4: row.paymentMethodLast4,
+    };
+
+    // Brand identity (seller block + logo) is pulled at render time from the
+    // company_info singleton. PDFs always reflect the current brand —
+    // historical invoices show whoever's "MobileFlow today" is, not whoever
+    // it was when the payment first cleared. (If you ever rebrand and want
+    // frozen seller info, snapshot it onto the payment row too.)
+    const [company] = await db
+      .select()
+      .from(companyInfo)
+      .where(eq(companyInfo.id, 1))
+      .limit(1);
+    const seller: Seller | null = company
+      ? {
+          name: company.name ?? "",
+          legalName: company.legalName ?? null,
+          supportEmail: company.supportEmail ?? null,
+          logo:
+            company.logoMime && company.logoData
+              ? { mime: company.logoMime, data: company.logoData }
+              : null,
+        }
+      : null;
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="${kind}-${row.processorInvoiceId}.pdf"`,
+    );
+    // pdfkit pipes chunks as the document is built; Fastify's raw response
+    // streams them straight to the client without buffering the whole PDF.
+    if (kind === "invoice") {
+      renderInvoicePdf(snapshot, seller, reply.raw);
+    } else {
+      renderReceiptPdf(snapshot, seller, reply.raw);
+    }
+    return reply;
+  };
+
+  server.get<{ Params: { orgId: string; paymentId: string } }>(
+    "/orgs/:orgId/payments/:paymentId/invoice.pdf",
+    (req, reply) => streamPdf(req, reply, "invoice"),
+  );
+  server.get<{ Params: { orgId: string; paymentId: string } }>(
+    "/orgs/:orgId/payments/:paymentId/receipt.pdf",
+    (req, reply) => streamPdf(req, reply, "receipt"),
+  );
+
   server.get<{ Params: { orgId: string } }>("/orgs/:orgId/subscription", async (req, reply) => {
     await requireOrgMember(req, reply, req.params.orgId);
     if (reply.sent) return;
@@ -195,6 +331,7 @@ export async function billingRoutes(server: FastifyInstance) {
   });
 
   server.get("/billing/plans", async () => {
+    const adapter = await getActiveAdapter();
     const rows = await db.select().from(plans).orderBy(plans.sortOrder);
     return rows
       .filter((p) => !p.isInternal)
@@ -207,7 +344,7 @@ export async function billingRoutes(server: FastifyInstance) {
         maxSeats: p.maxSeats,
         maxConcurrentBuilds: p.maxConcurrentBuilds,
         canBuild: p.canBuild,
-        hasStripePrice: !!priceIdForPlan(p.id),
+        hasStripePrice: adapter ? !!adapter.priceIdForPlan(p.id) : false,
       }));
   });
 
@@ -230,206 +367,362 @@ export async function billingRoutes(server: FastifyInstance) {
   server.post<{ Params: { orgId: string } }>("/orgs/:orgId/billing/checkout", async (req, reply) => {
     await requireOrgMember(req, reply, req.params.orgId);
     if (reply.sent) return;
-    const stripe = getStripe();
-    if (!stripe) return reply.notImplemented("Billing is not configured");
+    const adapter = await getActiveAdapter();
+    if (!adapter) return reply.notImplemented("Billing is not configured");
     const body = z.object({ planId: z.enum(["bohio", "yucayeque", "cacique"]) }).parse(req.body);
-    const priceId = priceIdForPlan(body.planId);
-    if (!priceId) return reply.badRequest(`No Stripe price configured for plan ${body.planId}`);
-
+    if (!adapter.priceIdForPlan(body.planId)) {
+      return reply.badRequest(`No price configured for plan ${body.planId} in ${adapter.mode} mode`);
+    }
     const [org] = await db.select().from(organizations).where(eq(organizations.id, req.params.orgId)).limit(1);
     if (!org) return reply.notFound();
     const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.orgId, org.id)).limit(1);
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${env.WEB_BASE_URL}/org/${org.id}/settings/subscriptions?checkout=success`,
-      cancel_url: `${env.WEB_BASE_URL}/org/${org.id}/settings/subscriptions?checkout=cancel`,
-      customer: sub?.stripeCustomerId ?? undefined,
-      client_reference_id: org.id,
-      metadata: { orgId: org.id, planId: body.planId },
-      allow_promotion_codes: true,
+    const customerId =
+      sub?.processorCustomerId && sub.paymentProvider === adapter.id
+        ? sub.processorCustomerId
+        : null;
+    return adapter.createCheckoutSession({
+      orgId: org.id,
+      planId: body.planId,
+      customerId,
+      successUrl: `${env.WEB_BASE_URL}/org/${org.id}/settings/subscriptions?checkout=success`,
+      cancelUrl: `${env.WEB_BASE_URL}/org/${org.id}/settings/subscriptions?checkout=cancel`,
     });
-    return { url: session.url };
+  });
+
+  // Hosted-vault bounce-back URL the user lands on after approving a card on
+  // PayPal or ConnectPay's hosted page. We attach the saved payment method to
+  // the org's processor customer, then redirect to the subscriptions page
+  // with a `vault=success|failed` flag the UI can read.
+  //
+  // The token/id parameter name differs per processor:
+  //   - PayPal echoes `approval_token_id` (the v3 setup-token id).
+  //   - ConnectPay echoes `payment_method_id` (the vaulted card id).
+  const handleVaultReturn = async (
+    expectedProvider: "paypal" | "connectpay",
+    orgId: string | undefined,
+    paymentMethodId: string | undefined,
+    reply: import("fastify").FastifyReply,
+    req: import("fastify").FastifyRequest,
+  ) => {
+    const subsUrl = (status: "success" | "failed") =>
+      `${env.WEB_BASE_URL}/org/${encodeURIComponent(orgId ?? "")}/settings/subscriptions?vault=${status}`;
+    if (!orgId || !paymentMethodId) return reply.redirect(subsUrl("failed"));
+    await requireOrgMember(req, reply, orgId);
+    if (reply.sent) return;
+    const adapter = await getActiveAdapter();
+    if (!adapter || adapter.id !== expectedProvider) return reply.redirect(subsUrl("failed"));
+    const customerId = await ensureProcessorCustomer(adapter, orgId);
+    if (!customerId) return reply.redirect(subsUrl("failed"));
+    try {
+      await adapter.attachPaymentMethod(customerId, paymentMethodId);
+    } catch (err) {
+      server.log.warn({ err, orgId, provider: expectedProvider }, "vault exchange failed");
+      return reply.redirect(subsUrl("failed"));
+    }
+    return reply.redirect(subsUrl("success"));
+  };
+
+  server.get<{
+    Querystring: { orgId?: string; approval_token_id?: string; approval_session_id?: string };
+  }>("/billing/paypal-vault/return", async (req, reply) => {
+    return handleVaultReturn(
+      "paypal",
+      req.query.orgId,
+      req.query.approval_token_id,
+      reply,
+      req,
+    );
+  });
+
+  server.get<{
+    Querystring: {
+      orgId?: string;
+      payment_method_id?: string;
+      session_id?: string;
+      status?: string;
+    };
+  }>("/billing/connectpay-vault/return", async (req, reply) => {
+    const orgId = req.query.orgId;
+    const subsUrl = (status: "success" | "failed" | "cancel") =>
+      `${env.WEB_BASE_URL}/org/${encodeURIComponent(orgId ?? "")}/settings/subscriptions?vault=${status}`;
+    if (req.query.status === "cancel") return reply.redirect(subsUrl("cancel"));
+    return handleVaultReturn(
+      "connectpay",
+      orgId,
+      req.query.payment_method_id,
+      reply,
+      req,
+    );
   });
 
   server.post<{ Params: { orgId: string } }>("/orgs/:orgId/billing/portal", async (req, reply) => {
     await requireOrgMember(req, reply, req.params.orgId);
     if (reply.sent) return;
-    const stripe = getStripe();
-    if (!stripe) return reply.notImplemented("Billing is not configured");
+    const adapter = await getActiveAdapter();
+    if (!adapter) return reply.notImplemented("Billing is not configured");
     const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.orgId, req.params.orgId)).limit(1);
-    if (!sub?.stripeCustomerId) return reply.badRequest("No Stripe customer for this org yet");
-    const session = await stripe.billingPortal.sessions.create({
-      customer: sub.stripeCustomerId,
-      return_url: `${env.WEB_BASE_URL}/org/${req.params.orgId}/settings/subscriptions`,
-    });
-    return { url: session.url };
+    if (!sub?.processorCustomerId || sub.paymentProvider !== adapter.id) {
+      return reply.badRequest("No payment customer for this org yet");
+    }
+    return adapter.createBillingPortal(
+      sub.processorCustomerId,
+      `${env.WEB_BASE_URL}/org/${req.params.orgId}/settings/subscriptions`,
+    );
   });
 }
 
-/**
- * The webhook needs the raw request body to verify Stripe's signature, so it's
- * registered separately *outside* the JSON-parser scope.
- */
+// Processor webhooks. The route is /billing/webhook/:provider so each adapter
+// only sees its own events, and the public URL stays stable when we add
+// processors (admins set the URL once per processor in its dashboard).
 export async function billingWebhookRoutes(server: FastifyInstance) {
   server.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => {
     done(null, body);
   });
 
-  server.post("/billing/webhook", async (req, reply) => {
-    const stripe = getStripe();
-    if (!stripe || !env.STRIPE_WEBHOOK_SECRET) return reply.notImplemented("Billing is not configured");
-    const sig = req.headers["stripe-signature"];
-    if (!sig || Array.isArray(sig)) return reply.badRequest("Missing stripe-signature header");
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(req.body as Buffer, sig, env.STRIPE_WEBHOOK_SECRET);
-    } catch (err) {
-      server.log.warn({ err }, "stripe webhook signature verification failed");
-      return reply.badRequest("Invalid signature");
-    }
-
-    try {
-      await handleEvent(event);
-    } catch (err) {
-      server.log.error({ err, type: event.type }, "stripe webhook handler failed");
-      return reply.internalServerError("handler error");
-    }
-    return { received: true };
-  });
+  server.post<{ Params: { provider: string } }>(
+    "/billing/webhook/:provider",
+    async (req, reply) => {
+      const adapter = await getActiveAdapter();
+      if (!adapter || adapter.id !== req.params.provider) {
+        return reply.notImplemented("Webhook provider does not match the active processor");
+      }
+      const headers = req.headers as Record<string, string | string[] | undefined>;
+      const event = await adapter.verifyWebhook(req.body as Buffer, headers);
+      if (!event) return reply.badRequest("Invalid webhook signature");
+      try {
+        await handleNormalizedEvent(adapter, event);
+      } catch (err) {
+        server.log.error({ err, type: event.type }, "webhook handler failed");
+        return reply.internalServerError("handler error");
+      }
+      return { received: true };
+    },
+  );
 }
 
-async function handleEvent(event: Stripe.Event) {
+async function handleNormalizedEvent(adapter: PaymentAdapter, event: NormalizedWebhookEvent) {
   switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const orgId = session.client_reference_id ?? session.metadata?.orgId;
-      const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
-      const subscription =
-        typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+    case "checkout.completed": {
+      const orgId = (event.data.orgId as string | null) ?? null;
+      const customerId = (event.data.customerId as string | null) ?? null;
+      const subscriptionId = (event.data.subscriptionId as string | null) ?? null;
+      const planId = (event.data.planId as "bohio" | "yucayeque" | "cacique" | null) ?? null;
       if (!orgId) return;
-      const planFromMeta = session.metadata?.planId ?? null;
-      await upsertSubscription(orgId, {
-        planId: (planFromMeta as "bohio" | "yucayeque" | "cacique") ?? null,
-        stripeCustomerId: customer ?? null,
-        stripeSubscriptionId: subscription ?? null,
+      await upsertSubscription(adapter.id, orgId, {
+        planId,
+        processorCustomerId: customerId,
+        processorSubscriptionId: subscriptionId,
         status: "active",
       });
       return;
     }
-    case "customer.subscription.updated":
-    case "customer.subscription.created": {
-      const sub = event.data.object as Stripe.Subscription;
-      const orgId = sub.metadata?.orgId ?? (await orgIdByStripeCustomer(typeof sub.customer === "string" ? sub.customer : sub.customer.id));
+    case "subscription.upserted": {
+      const customerId = event.data.customerId as string | null;
+      const orgId =
+        (event.data.orgId as string | null) ??
+        (customerId ? await orgIdByProcessorCustomer(adapter.id, customerId) : null);
       if (!orgId) return;
-      const priceId = sub.items.data[0]?.price.id;
-      const planId = priceId ? planForPriceId(priceId) : null;
-      await upsertSubscription(orgId, {
-        planId: (planId as "bohio" | "yucayeque" | "cacique") ?? null,
-        stripeCustomerId: typeof sub.customer === "string" ? sub.customer : sub.customer.id,
-        stripeSubscriptionId: sub.id,
-        status: mapStatus(sub.status),
-        currentPeriodStart: new Date(sub.current_period_start * 1000),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000),
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
+      await upsertSubscription(adapter.id, orgId, {
+        planId: (event.data.planId as "bohio" | "yucayeque" | "cacique" | null) ?? null,
+        processorCustomerId: customerId,
+        processorSubscriptionId: (event.data.subscriptionId as string | null) ?? null,
+        status: event.data.status as "active" | "trialing" | "past_due" | "canceled",
+        currentPeriodStart: event.data.currentPeriodStart
+          ? new Date(event.data.currentPeriodStart as string)
+          : undefined,
+        currentPeriodEnd: event.data.currentPeriodEnd
+          ? new Date(event.data.currentPeriodEnd as string)
+          : undefined,
+        cancelAtPeriodEnd: (event.data.cancelAtPeriodEnd as boolean | undefined) ?? false,
       });
       return;
     }
-    case "invoice.paid":
-    case "invoice.payment_failed":
-    case "invoice.finalized":
-    case "invoice.voided":
-    case "invoice.marked_uncollectible": {
-      const inv = event.data.object as Stripe.Invoice;
-      const customerId = typeof inv.customer === "string" ? inv.customer : inv.customer?.id;
+    case "subscription.deleted": {
+      const customerId = event.data.customerId as string | null;
       const orgId =
-        inv.metadata?.orgId ?? (customerId ? await orgIdByStripeCustomer(customerId) : null);
-      if (!orgId || !inv.id) return;
-      const mapped: "paid" | "open" | "uncollectible" | "void" | "draft" | "failed" =
-        event.type === "invoice.payment_failed"
-          ? "failed"
-          : inv.status === "paid" ||
-              inv.status === "open" ||
-              inv.status === "uncollectible" ||
-              inv.status === "void" ||
-              inv.status === "draft"
-            ? inv.status
-            : "open";
-      await db
-        .insert(payments)
-        .values({
-          orgId,
-          stripeInvoiceId: inv.id,
-          amountCents: inv.amount_due ?? 0,
-          currency: (inv.currency ?? "usd").toUpperCase(),
-          status: mapped,
-          description: inv.description ?? inv.lines.data[0]?.description ?? null,
-          hostedInvoiceUrl: inv.hosted_invoice_url ?? null,
-          invoicePdfUrl: inv.invoice_pdf ?? null,
-          paidAt: inv.status_transitions?.paid_at
-            ? new Date(inv.status_transitions.paid_at * 1000)
-            : null,
-        })
-        .onConflictDoUpdate({
-          target: payments.stripeInvoiceId,
-          set: {
-            amountCents: inv.amount_due ?? 0,
-            currency: (inv.currency ?? "usd").toUpperCase(),
-            status: mapped,
-            description: inv.description ?? inv.lines.data[0]?.description ?? null,
-            hostedInvoiceUrl: inv.hosted_invoice_url ?? null,
-            invoicePdfUrl: inv.invoice_pdf ?? null,
-            paidAt: inv.status_transitions?.paid_at
-              ? new Date(inv.status_transitions.paid_at * 1000)
-              : null,
-          },
-        });
-      return;
-    }
-    case "customer.subscription.deleted": {
-      const sub = event.data.object as Stripe.Subscription;
-      const orgId = sub.metadata?.orgId ?? (await orgIdByStripeCustomer(typeof sub.customer === "string" ? sub.customer : sub.customer.id));
+        (event.data.orgId as string | null) ??
+        (customerId ? await orgIdByProcessorCustomer(adapter.id, customerId) : null);
       if (!orgId) return;
-      // Downgrade to the free plan.
+      // Downgrade to free.
       await db
         .insert(subscriptions)
         .values({ orgId, planId: "naboria", status: "active" })
         .onConflictDoUpdate({
           target: subscriptions.orgId,
-          set: { planId: "naboria", status: "active", stripeSubscriptionId: null, cancelAtPeriodEnd: false },
+          set: {
+            planId: "naboria",
+            status: "active",
+            processorSubscriptionId: null,
+            cancelAtPeriodEnd: false,
+          },
         });
       return;
     }
+    case "invoice.upserted": {
+      const customerId = event.data.customerId as string | null;
+      const orgId =
+        (event.data.orgId as string | null) ??
+        (customerId ? await orgIdByProcessorCustomer(adapter.id, customerId) : null);
+      const invoiceId = event.data.invoiceId as string | null;
+      if (!orgId || !invoiceId) return;
+
+      const baseValues = {
+        orgId,
+        paymentProvider: adapter.id,
+        processorInvoiceId: invoiceId,
+        amountCents: (event.data.amountCents as number | undefined) ?? 0,
+        currency: ((event.data.currency as string | undefined) ?? "USD").toUpperCase(),
+        status: event.data.status as
+          | "paid"
+          | "open"
+          | "uncollectible"
+          | "void"
+          | "draft"
+          | "failed",
+        description: (event.data.description as string | null) ?? null,
+        hostedInvoiceUrl: (event.data.hostedInvoiceUrl as string | null) ?? null,
+        invoicePdfUrl: (event.data.invoicePdfUrl as string | null) ?? null,
+        paidAt: event.data.paidAt ? new Date(event.data.paidAt as string) : null,
+      };
+
+      // Snapshot fields are populated only on first insert — invoices are
+      // historical records and must not retroactively change when the org
+      // renames itself, moves address, or upgrades plan. Re-deliveries of the
+      // same event update only mutable fields (status / amount / paidAt).
+      const snapshot = await buildInvoiceSnapshot(adapter, orgId);
+
+      await db
+        .insert(payments)
+        .values({ ...baseValues, ...snapshot })
+        .onConflictDoUpdate({
+          target: [payments.paymentProvider, payments.processorInvoiceId],
+          set: {
+            amountCents: baseValues.amountCents,
+            currency: baseValues.currency,
+            status: baseValues.status,
+            description: baseValues.description,
+            hostedInvoiceUrl: baseValues.hostedInvoiceUrl,
+            invoicePdfUrl: baseValues.invoicePdfUrl,
+            paidAt: baseValues.paidAt,
+          },
+        });
+      return;
+    }
+    case "ignored":
     default:
       return;
   }
 }
 
-function mapStatus(s: Stripe.Subscription.Status): "active" | "trialing" | "past_due" | "canceled" {
-  if (s === "active" || s === "trialing" || s === "past_due" || s === "canceled") return s;
-  if (s === "unpaid" || s === "incomplete_expired") return "past_due";
-  return "active";
-}
-
-async function orgIdByStripeCustomer(customerId: string): Promise<string | null> {
-  const [row] = await db.select({ orgId: subscriptions.orgId }).from(subscriptions).where(eq(subscriptions.stripeCustomerId, customerId)).limit(1);
+async function orgIdByProcessorCustomer(
+  provider: PaymentAdapter["id"],
+  customerId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ orgId: subscriptions.orgId })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.paymentProvider, provider),
+        eq(subscriptions.processorCustomerId, customerId),
+      ),
+    )
+    .limit(1);
   return row?.orgId ?? null;
 }
 
+// Build the snapshot of customer + plan + payment-method values to freeze
+// onto a payment row at the time the invoice is first written. Best-effort —
+// any missing piece becomes null on the row, which the renderer treats as
+// "unknown" rather than blocking the invoice.
+async function buildInvoiceSnapshot(adapter: PaymentAdapter, orgId: string) {
+  const [org] = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  const [info] = await db
+    .select()
+    .from(billingInfo)
+    .where(eq(billingInfo.orgId, orgId))
+    .limit(1);
+  const [sub] = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.orgId, orgId))
+    .limit(1);
+  const [plan] = sub?.planId
+    ? await db.select().from(plans).where(eq(plans.id, sub.planId)).limit(1)
+    : [undefined];
+
+  let pmType: string | null = null;
+  let pmBrand: string | null = null;
+  let pmLast4: string | null = null;
+  if (sub?.processorCustomerId) {
+    try {
+      const pm = await adapter.getDefaultPaymentMethod(sub.processorCustomerId, {
+        subscriptionId: sub.processorSubscriptionId,
+      });
+      if (pm) {
+        pmType = pm.type;
+        // `PaymentMethodSummary` is a discriminated union but its non-card
+        // variant types `type` as plain `string`, which kills the narrowing
+        // via `pm.type === "card"`. Branch on the presence of `brand` instead.
+        if ("brand" in pm) {
+          pmBrand = pm.brand;
+          pmLast4 = pm.last4;
+        }
+      }
+    } catch {
+      // Adapter outage shouldn't fail the webhook; leave snapshot fields null.
+    }
+  }
+
+  return {
+    customerName: info?.fullName ?? org?.name ?? null,
+    customerEmail: org?.billingEmail ?? null,
+    customerAddressLine1: info?.addressLine1 ?? null,
+    customerAddressLine2: info?.addressLine2 ?? null,
+    customerCity: info?.city ?? null,
+    customerState: info?.state ?? null,
+    customerPostalCode: info?.postalCode ?? null,
+    customerCountry: info?.country ?? null,
+    planId: sub?.planId ?? null,
+    planName: plan?.name ?? null,
+    planPriceCents: plan?.priceCents ?? null,
+    periodStart: sub?.currentPeriodStart ?? null,
+    periodEnd: sub?.currentPeriodEnd ?? null,
+    paymentMethodType: pmType,
+    paymentMethodBrand: pmBrand,
+    paymentMethodLast4: pmLast4,
+    receiptNumber: generateReceiptNumber(),
+  };
+}
+
+// Receipt numbers are purely for human reference — "1234-5678" style. Using
+// crypto.randomInt for collision safety; with two 4-digit halves the odds of
+// a clash within an org's history are vanishingly small for any realistic
+// usage. (Don't rely on these for uniqueness — payments.id is the real key.)
+function generateReceiptNumber(): string {
+  const a = String(randomInt(0, 10_000)).padStart(4, "0");
+  const b = String(randomInt(0, 10_000)).padStart(4, "0");
+  return `${a}-${b}`;
+}
+
 async function upsertSubscription(
+  provider: PaymentAdapter["id"],
   orgId: string,
   patch: {
     planId: "bohio" | "yucayeque" | "cacique" | null;
-    stripeCustomerId: string | null;
-    stripeSubscriptionId: string | null;
+    processorCustomerId: string | null;
+    processorSubscriptionId: string | null;
     status: "active" | "trialing" | "past_due" | "canceled";
     currentPeriodStart?: Date;
     currentPeriodEnd?: Date;
     cancelAtPeriodEnd?: boolean;
   },
 ) {
-  // We never touch internal `unlimited` plans from webhooks.
+  // Never overwrite internal unlimited plans via webhook.
   const [existing] = await db.select().from(subscriptions).where(eq(subscriptions.orgId, orgId)).limit(1);
   if (existing?.planId === "unlimited") return;
 
@@ -440,8 +733,9 @@ async function upsertSubscription(
       orgId,
       planId,
       status: patch.status,
-      stripeCustomerId: patch.stripeCustomerId ?? null,
-      stripeSubscriptionId: patch.stripeSubscriptionId ?? null,
+      paymentProvider: provider,
+      processorCustomerId: patch.processorCustomerId ?? null,
+      processorSubscriptionId: patch.processorSubscriptionId ?? null,
       currentPeriodStart: patch.currentPeriodStart ?? null,
       currentPeriodEnd: patch.currentPeriodEnd ?? null,
       cancelAtPeriodEnd: patch.cancelAtPeriodEnd ?? false,
@@ -451,8 +745,10 @@ async function upsertSubscription(
       set: {
         planId,
         status: patch.status,
-        stripeCustomerId: patch.stripeCustomerId ?? existing?.stripeCustomerId ?? null,
-        stripeSubscriptionId: patch.stripeSubscriptionId ?? existing?.stripeSubscriptionId ?? null,
+        paymentProvider: provider,
+        processorCustomerId: patch.processorCustomerId ?? existing?.processorCustomerId ?? null,
+        processorSubscriptionId:
+          patch.processorSubscriptionId ?? existing?.processorSubscriptionId ?? null,
         currentPeriodStart: patch.currentPeriodStart ?? existing?.currentPeriodStart ?? null,
         currentPeriodEnd: patch.currentPeriodEnd ?? existing?.currentPeriodEnd ?? null,
         cancelAtPeriodEnd: patch.cancelAtPeriodEnd ?? existing?.cancelAtPeriodEnd ?? false,

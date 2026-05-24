@@ -1,4 +1,5 @@
 - [API runs in WSL](project_api_runs_in_wsl.md) — MobileFlow API runs in WSL (wslrelay on :4000/:5173); .env paths must be /mnt/d/..., not D:\...
+- [Re-import admin tables after dev:nuke](REIMPORT.md) — `pnpm db:export-admin` / `db:import-admin` round-trip payment_processors and oauth_apps so nuke doesn't wipe configured creds
 - [Follow-up: provisionId at upload](project_provision_id_upload_followup.md) — make certificates upload route extract & persist metadata.provisionId so macRunner doesn't need the regex fallback
 - [Follow-ups: store destinations](project_store_destinations_followups.md) — destination edit UI gone; Google Play artifactKind not honored by runner (item #3 resolved)
 - [Inline-publish design](project_inline_publish_design.md) — auto-deploy runs INLINE in build's publishing phase; same deployments row shows in BuildPage + DeploymentsPage; deployWorker only handles manual deploys

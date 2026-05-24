@@ -7,9 +7,12 @@ import {
   buildHosts,
   buildStacks,
   builds,
+  companyInfo,
   oauthApps,
   orgMembers,
   organizations,
+  paymentProcessors,
+  payments,
   plans,
   sessions,
   subscriptions,
@@ -18,6 +21,19 @@ import {
 import { requireSuperadmin } from "../auth/middleware.js";
 import { SESSION_COOKIE, getSession } from "../auth/session.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
+import {
+  ALL_ADAPTERS,
+  adapterDescriptor,
+  clearActiveAdapterCache,
+  sanitizeConfig,
+  sanitizeCredentials,
+  type ProviderId,
+} from "../billing/adapters/registry.js";
+import {
+  PayPalAdapter,
+  type PayPalConfigBlob,
+  type PayPalCredentialsBlob,
+} from "../billing/adapters/paypal.js";
 import { Client as SshClient } from "ssh2";
 import { exec, linuxSshTarget, macSshTarget, uploadBase64, withSsh, type SshTarget } from "../worker/ssh.js";
 import { resolveLinuxHost } from "../worker/ssh.js";
@@ -861,6 +877,377 @@ export async function adminRoutes(server: FastifyInstance) {
     return reply.code(204).send();
   });
 
+  // ---------- Payment processors ----------
+  //
+  // One row per supported processor; at most one has `enabled = true`. The
+  // page is driven by adapter metadata (credentialsSchema / configSchema)
+  // so adding a processor doesn't require admin-UI changes.
+
+  const PaymentProviderEnum = z.enum(["stripe", "paypal", "connectpay"] as const);
+  const PaymentModeEnum = z.enum(["sandbox", "production"] as const);
+
+  // Body shape: arbitrary nested JSON inside `credentials` / `config`. Each
+  // adapter validates its own shape on construction; we only enforce JSON
+  // here. Secrets are only persisted when the caller sends a non-empty
+  // string; missing keys leave the stored value untouched (so the admin can
+  // edit non-secret fields without re-pasting secrets every time).
+  const PaymentProcessorBody = z
+    .object({
+      enabled: z.boolean().optional(),
+      mode: PaymentModeEnum.optional(),
+      credentials: z.record(z.unknown()).optional(),
+      config: z.record(z.unknown()).optional(),
+    })
+    .strict();
+
+  server.get("/admin/payment-processors", async () => {
+    const rows = await db.select().from(paymentProcessors);
+    const processors = ALL_ADAPTERS.map((descriptor) => {
+      const row = rows.find((r) => r.provider === descriptor.id);
+      const creds = row?.credentialsEnc
+        ? (JSON.parse(decryptString(row.credentialsEnc)) as Record<string, unknown>)
+        : {};
+      const config = row?.configEnc
+        ? (JSON.parse(decryptString(row.configEnc)) as Record<string, unknown>)
+        : {};
+      return {
+        provider: descriptor.id,
+        displayName: descriptor.displayName,
+        credentialsSchema: descriptor.credentialsSchema,
+        configSchema: descriptor.configSchema,
+        enabled: row?.enabled ?? false,
+        mode: row?.mode ?? "sandbox",
+        credentials: sanitizeCredentials(descriptor.credentialsSchema, creds),
+        config: sanitizeConfig(descriptor.configSchema, config),
+        updatedAt: row?.updatedAt ?? null,
+      };
+    });
+    // Surface API_BASE_URL so the admin UI can render webhook endpoints that
+    // match what processors actually need to POST to (ngrok / prod), rather
+    // than guessing from the browser's window.location.origin.
+    return { apiBaseUrl: env.API_BASE_URL, processors };
+  });
+
+  server.patch<{ Params: { provider: string } }>(
+    "/admin/payment-processors/:provider",
+    async (req, reply) => {
+      const providerParse = PaymentProviderEnum.safeParse(req.params.provider);
+      if (!providerParse.success) return reply.badRequest("Unknown processor");
+      const provider = providerParse.data as ProviderId;
+      if (!adapterDescriptor(provider)) return reply.notFound();
+      const body = PaymentProcessorBody.parse(req.body);
+
+      // Load existing blob (if any) so we can merge — secrets the admin
+      // didn't re-paste must persist.
+      const [existing] = await db
+        .select()
+        .from(paymentProcessors)
+        .where(eq(paymentProcessors.provider, provider))
+        .limit(1);
+      const existingCreds = existing?.credentialsEnc
+        ? (JSON.parse(decryptString(existing.credentialsEnc)) as Record<string, unknown>)
+        : {};
+      const existingConfig = existing?.configEnc
+        ? (JSON.parse(decryptString(existing.configEnc)) as Record<string, unknown>)
+        : {};
+      const mergedCreds = body.credentials
+        ? deepMerge(existingCreds, body.credentials, { dropEmpty: true })
+        : existingCreds;
+      const mergedConfig = body.config
+        ? deepMerge(existingConfig, body.config, { dropEmpty: false })
+        : existingConfig;
+
+      // Activating this row toggles every other row off — enforces the
+      // "exactly one active processor" rule at the SQL layer rather than
+      // depending on a partial unique index.
+      if (body.enabled === true) {
+        await db.update(paymentProcessors).set({ enabled: false });
+      }
+
+      const credentialsEnc = encryptString(JSON.stringify(mergedCreds));
+      const configEnc = encryptString(JSON.stringify(mergedConfig));
+      const mode = body.mode ?? existing?.mode ?? "sandbox";
+      const enabled = body.enabled ?? existing?.enabled ?? false;
+
+      const [row] = await db
+        .insert(paymentProcessors)
+        .values({
+          provider,
+          enabled,
+          mode,
+          credentialsEnc,
+          configEnc,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: paymentProcessors.provider,
+          set: { enabled, mode, credentialsEnc, configEnc, updatedAt: new Date() },
+        })
+        .returning();
+      clearActiveAdapterCache();
+      if (!row) return reply.internalServerError();
+      return { ok: true };
+    },
+  );
+
+  // Provision a Product + Plan in PayPal's catalog using the saved sandbox
+  // or production credentials. PayPal removed the manual plan-creation UI
+  // from sandbox.paypal.com a while back, so without this endpoint admins
+  // would have to run curl against /v1/catalogs/products and /v1/billing/plans
+  // by hand for every tier. The response returns the new plan id; the admin
+  // UI inserts it into the form's Plan ID field but does not auto-save —
+  // the admin clicks Save as usual to persist.
+  server.post("/admin/payment-processors/paypal/create-plan", async (req, reply) => {
+    const body = z
+      .object({
+        planId: PlanIdEnum,
+        mode: PaymentModeEnum,
+      })
+      .parse(req.body);
+    if (body.planId === "naboria" || body.planId === "unlimited") {
+      return reply.badRequest("PayPal plans are only meaningful for paid tiers");
+    }
+
+    const [row] = await db
+      .select()
+      .from(paymentProcessors)
+      .where(eq(paymentProcessors.provider, "paypal"))
+      .limit(1);
+    if (!row) {
+      return reply.badRequest(
+        "Save PayPal credentials first, then create plans.",
+      );
+    }
+    const creds = row.credentialsEnc
+      ? (JSON.parse(decryptString(row.credentialsEnc)) as PayPalCredentialsBlob)
+      : {};
+    const config = row.configEnc
+      ? (JSON.parse(decryptString(row.configEnc)) as PayPalConfigBlob)
+      : {};
+
+    let adapter: PayPalAdapter;
+    try {
+      adapter = new PayPalAdapter(body.mode, creds, config);
+    } catch (err) {
+      return reply.badRequest(
+        `PayPal credentials incomplete for ${body.mode} mode: ${(err as Error).message}`,
+      );
+    }
+
+    const [plan] = await db
+      .select()
+      .from(plans)
+      .where(eq(plans.id, body.planId))
+      .limit(1);
+    if (!plan) return reply.notFound("Local plan not found");
+    if (plan.priceCents <= 0) {
+      return reply.badRequest("Local plan has no price configured");
+    }
+
+    try {
+      const result = await adapter.createProductAndPlan({
+        productName: `MobileFlow ${plan.name}`,
+        planName: `${plan.name} Monthly`,
+        priceCents: plan.priceCents,
+        currency: plan.currency,
+      });
+      return result;
+    } catch (err) {
+      server.log.warn({ err, planId: body.planId, mode: body.mode }, "paypal plan provisioning failed");
+      return reply.internalServerError(
+        `Could not create PayPal plan: ${(err as Error).message}`,
+      );
+    }
+  });
+
+  server.delete<{ Params: { provider: string } }>(
+    "/admin/payment-processors/:provider",
+    async (req, reply) => {
+      const providerParse = PaymentProviderEnum.safeParse(req.params.provider);
+      if (!providerParse.success) return reply.badRequest("Unknown processor");
+      await db
+        .delete(paymentProcessors)
+        .where(eq(paymentProcessors.provider, providerParse.data));
+      clearActiveAdapterCache();
+      return reply.code(204).send();
+    },
+  );
+
+  // ---------- Payments (cross-org) ----------
+  //
+  // Read-only ledger view for superadmins. Joins to organizations so the UI
+  // can show org name + slug without a second round-trip. PDFs are served by
+  // the existing /orgs/:orgId/payments/:paymentId/{invoice,receipt}.pdf
+  // endpoints — those already let superadmins through `requireOrgMember`.
+
+  server.get("/admin/payments", async () => {
+    const rows = await db
+      .select({
+        id: payments.id,
+        orgId: payments.orgId,
+        orgName: organizations.name,
+        orgSlug: organizations.slug,
+        paymentProvider: payments.paymentProvider,
+        processorInvoiceId: payments.processorInvoiceId,
+        receiptNumber: payments.receiptNumber,
+        amountCents: payments.amountCents,
+        currency: payments.currency,
+        status: payments.status,
+        planId: payments.planId,
+        planName: payments.planName,
+        paymentMethodType: payments.paymentMethodType,
+        paymentMethodBrand: payments.paymentMethodBrand,
+        paymentMethodLast4: payments.paymentMethodLast4,
+        customerName: payments.customerName,
+        paidAt: payments.paidAt,
+        createdAt: payments.createdAt,
+      })
+      .from(payments)
+      .innerJoin(organizations, eq(organizations.id, payments.orgId))
+      .orderBy(desc(payments.createdAt))
+      .limit(500);
+    return rows;
+  });
+
+  // ---------- Company info ----------
+  //
+  // Singleton (id=1) holding the brand identity stamped on outgoing PDFs and
+  // (later) transactional email templates. GET returns the row or `null` if
+  // it hasn't been initialized yet — the page renders an empty form in that
+  // case and the first save creates the row.
+
+  server.get("/admin/company-info", async () => {
+    const [row] = await db
+      .select({
+        id: companyInfo.id,
+        name: companyInfo.name,
+        legalName: companyInfo.legalName,
+        supportEmail: companyInfo.supportEmail,
+        salesEmail: companyInfo.salesEmail,
+        logoMime: companyInfo.logoMime,
+        updatedAt: companyInfo.updatedAt,
+      })
+      .from(companyInfo)
+      .where(eq(companyInfo.id, 1))
+      .limit(1);
+    return row ?? null;
+  });
+
+  // Logo binary. Same auth gate as the rest of the admin endpoints — the
+  // image is brand identity, not secret per se, but exposing a public URL
+  // would let any visitor probe whether a deployment exists. Easier to keep
+  // it behind the session cookie and have the admin page fetch it the same
+  // way it fetches every other admin payload.
+  server.get("/admin/company-info/logo", async (_req, reply) => {
+    const [row] = await db
+      .select({ logoMime: companyInfo.logoMime, logoData: companyInfo.logoData })
+      .from(companyInfo)
+      .where(eq(companyInfo.id, 1))
+      .limit(1);
+    if (!row?.logoData || !row.logoMime) return reply.notFound();
+    reply.header("Content-Type", row.logoMime);
+    reply.header("Cache-Control", "no-store");
+    return reply.send(row.logoData);
+  });
+
+  const LOGO_MIMES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+  const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
+  const LogoBody = z
+    .object({
+      mime: z.string(),
+      // Data-URL prefix is optional; the page can send `iVBOR...` raw or
+      // `data:image/png;base64,iVBOR...` and we strip the prefix here.
+      base64: z.string().min(1).max(8 * 1024 * 1024),
+    })
+    .strict();
+
+  server.put("/admin/company-info/logo", async (req, reply) => {
+    const body = LogoBody.parse(req.body);
+    if (!LOGO_MIMES.has(body.mime)) {
+      return reply.badRequest(
+        "Unsupported image type. Use PNG, JPG, or SVG.",
+      );
+    }
+    const stripped = body.base64.replace(/^data:[^;]+;base64,/, "");
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(stripped, "base64");
+    } catch {
+      return reply.badRequest("Could not decode base64 payload");
+    }
+    if (buf.length === 0) return reply.badRequest("Empty image payload");
+    if (buf.length > MAX_LOGO_BYTES) {
+      return reply.badRequest(
+        `Logo is too large (${Math.round(buf.length / 1024)} KB). Limit is ${MAX_LOGO_BYTES / 1024 / 1024} MB.`,
+      );
+    }
+    // Cheap content-sniffing: PNG / JPG / SVG signatures. Catches mismatch
+    // between claimed mime and actual bytes (e.g. someone renamed a .docx
+    // to .png and uploaded it).
+    if (!matchesMime(buf, body.mime)) {
+      return reply.badRequest(
+        "File contents do not match the declared image type",
+      );
+    }
+    await db
+      .insert(companyInfo)
+      .values({
+        id: 1,
+        logoMime: body.mime,
+        logoData: buf,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: companyInfo.id,
+        set: { logoMime: body.mime, logoData: buf, updatedAt: new Date() },
+      });
+    return { ok: true, bytes: buf.length };
+  });
+
+  server.delete("/admin/company-info/logo", async () => {
+    await db
+      .update(companyInfo)
+      .set({ logoMime: null, logoData: null, updatedAt: new Date() })
+      .where(eq(companyInfo.id, 1));
+    return { ok: true };
+  });
+
+  const CompanyInfoBody = z
+    .object({
+      name: z.string().max(120).nullable().optional(),
+      legalName: z.string().max(160).nullable().optional(),
+      supportEmail: z.string().email().max(160).nullable().optional(),
+      salesEmail: z.string().email().max(160).nullable().optional(),
+    })
+    .strict();
+
+  server.put("/admin/company-info", async (req) => {
+    const body = CompanyInfoBody.parse(req.body);
+    const [row] = await db
+      .insert(companyInfo)
+      .values({
+        id: 1,
+        name: body.name ?? null,
+        legalName: body.legalName ?? null,
+        supportEmail: body.supportEmail ?? null,
+        salesEmail: body.salesEmail ?? null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: companyInfo.id,
+        set: {
+          name: body.name ?? null,
+          legalName: body.legalName ?? null,
+          supportEmail: body.supportEmail ?? null,
+          salesEmail: body.salesEmail ?? null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  });
+
   // ---------- Stats ----------
 
   server.get("/admin/stats", async () => {
@@ -880,4 +1267,56 @@ export async function adminRoutes(server: FastifyInstance) {
       runningOrQueued: running?.n ?? 0,
     };
   });
+}
+
+// Deep-merge `patch` into `base`. When `dropEmpty` is true, empty-string
+// leaves in `patch` are ignored (used for credentials, so blanking a secret
+// field on the form doesn't wipe the stored secret). When false, empty
+// strings DO overwrite — used for config (price IDs), where clearing a price
+// is a meaningful action.
+function deepMerge(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  opts: { dropEmpty: boolean },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const baseV = (out[k] as Record<string, unknown> | undefined) ?? {};
+      out[k] = deepMerge(baseV, v as Record<string, unknown>, opts);
+    } else if (typeof v === "string") {
+      if (opts.dropEmpty && v.length === 0) continue;
+      out[k] = v;
+    } else if (v === null) {
+      out[k] = null;
+    } else if (v !== undefined) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+// Lightweight magic-byte check so the server doesn't trust the client-declared
+// mime alone. Doesn't validate that the image is well-formed beyond the first
+// few bytes — pdfkit will reject a corrupt image at render time, which is the
+// right place for the heavier check.
+function matchesMime(buf: Buffer, mime: string): boolean {
+  if (buf.length < 4) return false;
+  if (mime === "image/png") {
+    return (
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47
+    );
+  }
+  if (mime === "image/jpeg") {
+    return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  }
+  if (mime === "image/svg+xml") {
+    // Tolerate a UTF-8 BOM and leading whitespace before <svg or <?xml.
+    const head = buf.slice(0, 512).toString("utf8").trimStart();
+    return head.startsWith("<svg") || head.startsWith("<?xml");
+  }
+  return false;
 }

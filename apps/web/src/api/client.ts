@@ -144,7 +144,8 @@ export interface PaymentMethodRow {
 export interface PaymentRow {
   id: string;
   orgId: string;
-  stripeInvoiceId: string;
+  paymentProvider: PaymentProvider;
+  processorInvoiceId: string;
   amountCents: number;
   currency: string;
   status: "paid" | "open" | "uncollectible" | "void" | "draft" | "failed";
@@ -153,6 +154,28 @@ export interface PaymentRow {
   invoicePdfUrl: string | null;
   paidAt: string | null;
   createdAt: string;
+}
+
+// Detail view returned by GET /orgs/:orgId/payments/:paymentId — the row plus
+// all snapshot fields the hosted invoice page renders.
+export interface PaymentDetail extends PaymentRow {
+  customerName: string | null;
+  customerEmail: string | null;
+  customerAddressLine1: string | null;
+  customerAddressLine2: string | null;
+  customerCity: string | null;
+  customerState: string | null;
+  customerPostalCode: string | null;
+  customerCountry: string | null;
+  planId: string | null;
+  planName: string | null;
+  planPriceCents: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  paymentMethodType: string | null;
+  paymentMethodBrand: string | null;
+  paymentMethodLast4: string | null;
+  receiptNumber: string | null;
 }
 
 export interface AppRow {
@@ -501,8 +524,9 @@ export const api = {
     request<{
       planId: string;
       status: string;
-      stripeCustomerId: string | null;
-      stripeSubscriptionId: string | null;
+      paymentProvider: PaymentProvider | null;
+      processorCustomerId: string | null;
+      processorSubscriptionId: string | null;
       currentPeriodStart: string | null;
       currentPeriodEnd: string | null;
       cancelAtPeriodEnd: boolean;
@@ -528,7 +552,8 @@ export const api = {
   openBillingPortal: (orgId: string) =>
     request<{ url: string }>(`/orgs/${orgId}/billing/portal`, { method: "POST" }),
 
-  getBillingConfig: () => request<{ publishableKey: string | null }>("/billing/config"),
+  getBillingConfig: () =>
+    request<BillingConfig | null>("/billing/config"),
   getBillingInfo: (orgId: string) =>
     request<BillingInfoRow | null>(`/orgs/${orgId}/billing-info`),
   putBillingInfo: (orgId: string, body: Partial<Omit<BillingInfoRow, "orgId" | "updatedAt">>) =>
@@ -537,7 +562,10 @@ export const api = {
       body: JSON.stringify(body),
     }),
   createSetupIntent: (orgId: string) =>
-    request<{ clientSecret: string }>(`/orgs/${orgId}/billing/setup-intent`, { method: "POST" }),
+    request<{ clientSecret?: string; redirectUrl?: string }>(
+      `/orgs/${orgId}/billing/setup-intent`,
+      { method: "POST" },
+    ),
   getPaymentMethod: (orgId: string) =>
     request<PaymentMethodRow | null>(`/orgs/${orgId}/billing/payment-method`),
   attachPaymentMethod: (orgId: string, paymentMethodId: string) =>
@@ -546,6 +574,12 @@ export const api = {
       body: JSON.stringify({ paymentMethodId }),
     }),
   listPayments: (orgId: string) => request<PaymentRow[]>(`/orgs/${orgId}/payments`),
+  getPayment: (orgId: string, paymentId: string) =>
+    request<PaymentDetail>(`/orgs/${orgId}/payments/${paymentId}`),
+  invoicePdfUrl: (orgId: string, paymentId: string) =>
+    `/api/orgs/${orgId}/payments/${paymentId}/invoice.pdf`,
+  receiptPdfUrl: (orgId: string, paymentId: string) =>
+    `/api/orgs/${orgId}/payments/${paymentId}/receipt.pdf`,
 
   // Admin (superadmin only)
   admin: {
@@ -719,5 +753,124 @@ export const api = {
       enabled?: boolean;
     }) => request<unknown>("/admin/oauth-apps", { method: "POST", body: JSON.stringify(body) }),
     deleteOAuthApp: (id: string) => request<void>(`/admin/oauth-apps/${id}`, { method: "DELETE" }),
+
+    paymentProcessors: () =>
+      request<{ apiBaseUrl: string; processors: PaymentProcessorRow[] }>(
+        "/admin/payment-processors",
+      ),
+    updatePaymentProcessor: (
+      provider: string,
+      body: {
+        enabled?: boolean;
+        mode?: "sandbox" | "production";
+        credentials?: Record<string, unknown>;
+        config?: Record<string, unknown>;
+      },
+    ) =>
+      request<{ ok: true }>(`/admin/payment-processors/${provider}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    deletePaymentProcessor: (provider: string) =>
+      request<void>(`/admin/payment-processors/${provider}`, { method: "DELETE" }),
+
+    payments: () =>
+      request<AdminPaymentRow[]>("/admin/payments"),
+
+    getCompanyInfo: () =>
+      request<CompanyInfo | null>("/admin/company-info"),
+    putCompanyInfo: (body: {
+      name?: string | null;
+      legalName?: string | null;
+      supportEmail?: string | null;
+      salesEmail?: string | null;
+    }) =>
+      request<CompanyInfo>("/admin/company-info", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    putCompanyLogo: (body: { mime: string; base64: string }) =>
+      request<{ ok: true; bytes: number }>("/admin/company-info/logo", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    deleteCompanyLogo: () =>
+      request<{ ok: true }>("/admin/company-info/logo", { method: "DELETE" }),
+    companyLogoUrl: () => "/api/admin/company-info/logo",
+
+    createPayPalPlan: (
+      planId: "bohio" | "yucayeque" | "cacique",
+      mode: "sandbox" | "production",
+    ) =>
+      request<{ productId: string; planId: string }>(
+        "/admin/payment-processors/paypal/create-plan",
+        { method: "POST", body: JSON.stringify({ planId, mode }) },
+      ),
   },
 };
+
+// ----- Billing / payment-processor shared types -----
+
+export type PaymentProvider = "stripe" | "paypal" | "connectpay";
+
+export interface BillingConfig {
+  provider: PaymentProvider;
+  mode: "sandbox" | "production";
+  publicConfig: Record<string, string | null>;
+}
+
+export interface AdapterField {
+  key: string;
+  label: string;
+  type: "string" | "secret" | "url";
+  placeholder?: string;
+  helpText?: string;
+  mode: "per-mode" | "shared";
+  required?: boolean;
+}
+
+export interface CompanyInfo {
+  id: number;
+  name: string | null;
+  legalName: string | null;
+  supportEmail: string | null;
+  salesEmail: string | null;
+  logoMime: string | null;
+  updatedAt: string;
+}
+
+// Admin-only flat row joining payment + org for the cross-org payments list.
+export interface AdminPaymentRow {
+  id: string;
+  orgId: string;
+  orgName: string;
+  orgSlug: string;
+  paymentProvider: PaymentProvider;
+  processorInvoiceId: string;
+  receiptNumber: string | null;
+  amountCents: number;
+  currency: string;
+  status: "paid" | "open" | "uncollectible" | "void" | "draft" | "failed";
+  planId: string | null;
+  planName: string | null;
+  paymentMethodType: string | null;
+  paymentMethodBrand: string | null;
+  paymentMethodLast4: string | null;
+  customerName: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface PaymentProcessorRow {
+  provider: PaymentProvider;
+  displayName: string;
+  credentialsSchema: { fields: AdapterField[] };
+  configSchema: { fields: AdapterField[] };
+  enabled: boolean;
+  mode: "sandbox" | "production";
+  // Per-mode fields shape as { sandbox: ..., production: ... }. Secrets show
+  // up as booleans (true = "set") so we never leak cleartext.
+  credentials: Record<string, string | boolean | { sandbox?: string | boolean; production?: string | boolean }>;
+  config: Record<string, string | null | { sandbox?: string | null; production?: string | null }>;
+  updatedAt: string | null;
+}

@@ -69,6 +69,7 @@
   flex-direction: column;
   gap: var(--space-xs);
   max-width: 480px;
+  padding: 8px 0;
 }
 
 .settings-field__label {
@@ -745,6 +746,106 @@
   background: var(--color-card);
 }
 
+// ─── Custom collapsing card row (split Stripe Elements) ──────────────────────
+//
+// One bordered row that progressively reveals expiry + CVC as the card number
+// is filled in. Visual states (driven by JS class toggles):
+//   - default        → number takes full width; expiry/cvc collapsed to 0.
+//   - .is-expanded   → number shrinks; expiry/cvc slide in.
+//   - .is-complete   → "Save with Link" pill appears on the right.
+//
+// We control the wrapper. The three iframes inside each `.card-row__*` are
+// Stripe's; we cannot style their internals. The Stripe Element style options
+// (color, placeholder, font) come from `buildElementStyle` in the React file.
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+
+  &:focus-within {
+    border-color: var(--color-accent, #2563eb);
+    box-shadow: 0 0 0 1px var(--color-accent, #2563eb);
+  }
+}
+
+.card-row__brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+// Each iframe-hosting div needs an explicit min-width: 0 + flex sizing so
+// the iframes don't push the row's intrinsic width beyond its container.
+// Stripe's iframe sets its own height; we just provide width via flex.
+.card-row__number,
+.card-row__expiry,
+.card-row__cvc {
+  min-width: 0;
+  overflow: hidden;
+  transition: flex-basis 280ms ease, opacity 220ms ease, margin 220ms ease;
+
+  // The iframe Stripe injects should fill its slot vertically.
+  > .StripeElement,
+  > .__PrivateStripeElement {
+    width: 100%;
+  }
+}
+
+// ── State: card number not yet complete ──
+// Number takes all available space; expiry and CVC are hidden.
+.card-row__number   { flex: 1 1 auto; }
+.card-row__expiry,
+.card-row__cvc {
+  flex: 0 0 0;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+// ── State: card number complete → reveal expiry + CVC ──
+.card-row.is-expanded {
+  .card-row__number {
+    flex: 0 0 90px; // enough to show ~4 trailing digits; iframe scrolls to caret
+  }
+  .card-row__expiry {
+    flex: 0 0 72px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .card-row__cvc {
+    flex: 0 0 56px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+// ── State: all three complete → show Save-with-Link pill ──
+.card-row__save-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #0b0d10;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  strong {
+    color: #00d66f; // Stripe Link green
+    font-weight: 600;
+  }
+}
+
+
 .billing-address-group {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -833,3 +934,160 @@
   flex: 1;
   min-width: 0;
 }
+
+
+// ─── Invoice page ──────────────────────────────────────────────────────────
+.invoice-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.invoice-back {
+  margin-bottom: var(--space-md);
+
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+}
+
+.invoice-card {
+  background: var(--color-bg-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 8px);
+  padding: var(--space-2xl, 28px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.invoice-card__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding-bottom: var(--space-xl, 20px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.invoice-card__status-icon {
+  display: inline-flex;
+  margin-bottom: 4px;
+}
+
+.invoice-card__title {
+  font-size: 14px;
+  color: var(--color-fg-muted);
+  text-transform: capitalize;
+}
+
+.invoice-card__amount {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--color-fg);
+}
+
+.invoice-card__rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-xl, 24px);
+  row-gap: var(--space-sm, 8px);
+  margin: var(--space-xl, 24px) 0;
+  font-size: 13px;
+}
+
+.invoice-card__row {
+  display: contents;
+
+  dt {
+    color: var(--color-fg-muted);
+    font-weight: 400;
+  }
+
+  dd {
+    color: var(--color-fg);
+    margin: 0;
+  }
+}
+
+.invoice-card__actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-md, 12px);
+  padding-top: var(--space-md, 12px);
+}
+
+.invoice-card__external {
+  text-align: center;
+  margin-top: var(--space-md, 12px);
+  font-size: 12px;
+
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+
+.settings-select {
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-fg);
+  font-size: 13px;
+  height: 32px;
+  min-width: 130px;
+  outline: none;
+}
+.settings-select:focus {
+  border-color: var(--color-accent);
+}
+
+
+// ─── Admin Company / Logo dropzone ────────────────────────────────────────
+.logo-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: var(--space-md, 12px);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--color-bg-muted, #f7f7f8);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  text-align: center;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--color-bg-surface, #fff);
+    outline: none;
+  }
+
+  &.is-dragging {
+    background: var(--color-bg-surface, #fff);
+    border-color: var(--color-accent, #1d4ed8);
+  }
+}
+
+.logo-dropzone__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.logo-dropzone__preview {
+  max-height: 100px;
+  max-width: 100%;
+  object-fit: contain;
+  background: var(--color-bg-surface, #fff);
+  padding: 8px;
+  border-radius: var(--radius-md, 6px);
+}
+

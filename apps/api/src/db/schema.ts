@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  customType,
   integer,
   jsonb,
   pgEnum,
@@ -70,6 +71,16 @@ export const subscriptionStatus = pgEnum("subscription_status", [
   "trialing",
   "past_due",
   "canceled",
+]);
+
+export const paymentProcessorProvider = pgEnum("payment_processor_provider", [
+  "stripe",
+  "paypal",
+  "connectpay",
+]);
+export const paymentProcessorMode = pgEnum("payment_processor_mode", [
+  "sandbox",
+  "production",
 ]);
 
 export const users = pgTable("users", {
@@ -182,8 +193,9 @@ export const subscriptions = pgTable("subscriptions", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   planId: planId("plan_id").notNull(),
   status: subscriptionStatus("status").notNull().default("active"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
+  paymentProvider: paymentProcessorProvider("payment_provider"),
+  processorCustomerId: text("processor_customer_id"),
+  processorSubscriptionId: text("processor_subscription_id"),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
@@ -215,20 +227,98 @@ export const paymentStatus = pgEnum("payment_status", [
   "failed",
 ]);
 
-export const payments = pgTable("payments", {
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    paymentProvider: paymentProcessorProvider("payment_provider").notNull().default("stripe"),
+    processorInvoiceId: text("processor_invoice_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("USD"),
+    status: paymentStatus("status").notNull(),
+    description: text("description"),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    invoicePdfUrl: text("invoice_pdf_url"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Snapshot fields — populated by the webhook handler when the payment is
+    // first written, then never touched again. Invoices/receipts are
+    // historical artifacts; if the org renames itself or upgrades plan next
+    // month, the old invoice should still show the values that were true at
+    // payment time. Live data lives in `organizations`, `billing_info`,
+    // `subscriptions`, `plans`; these columns are the frozen copy.
+    customerName: text("customer_name"),
+    customerEmail: text("customer_email"),
+    customerAddressLine1: text("customer_address_line1"),
+    customerAddressLine2: text("customer_address_line2"),
+    customerCity: text("customer_city"),
+    customerState: text("customer_state"),
+    customerPostalCode: text("customer_postal_code"),
+    customerCountry: text("customer_country"),
+    planId: text("plan_id"),
+    planName: text("plan_name"),
+    planPriceCents: integer("plan_price_cents"),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    paymentMethodType: text("payment_method_type"),
+    paymentMethodBrand: text("payment_method_brand"),
+    paymentMethodLast4: text("payment_method_last4"),
+    receiptNumber: text("receipt_number"),
+  },
+  (t) => ({
+    uniqProviderInvoice: unique("payments_provider_invoice_unique").on(
+      t.paymentProvider,
+      t.processorInvoiceId,
+    ),
+  }),
+);
+
+// One row per supported payment processor. At most one row may have
+// `enabled = true` at a time — enforced at the app layer (the admin UI flips
+// the previous active row off when a new one is selected).
+//
+// `credentialsEnc` and `configEnc` hold AES-GCM-encrypted JSON blobs whose
+// shape is processor-specific; see the adapter's credentialsSchema/configSchema.
+// Mode (`sandbox` vs `production`) selects which set of credentials inside the
+// blob is actually used at runtime, so admins can keep both pasted and flip
+// between them without re-entering keys.
+export const paymentProcessors = pgTable("payment_processors", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orgId: uuid("org_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  stripeInvoiceId: text("stripe_invoice_id").notNull().unique(),
-  amountCents: integer("amount_cents").notNull(),
-  currency: text("currency").notNull().default("USD"),
-  status: paymentStatus("status").notNull(),
-  description: text("description"),
-  hostedInvoiceUrl: text("hosted_invoice_url"),
-  invoicePdfUrl: text("invoice_pdf_url"),
-  paidAt: timestamp("paid_at", { withTimezone: true }),
+  provider: paymentProcessorProvider("provider").notNull().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  mode: paymentProcessorMode("mode").notNull().default("sandbox"),
+  credentialsEnc: text("credentials_enc"),
+  configEnc: text("config_enc"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Singleton row (`id = 1`) holding the brand identity that's stamped onto
+// outgoing artifacts — PDF invoices/receipts today, transactional emails
+// later. Editable by superadmins. We don't enforce singleton via a CHECK at
+// the DB layer; the admin API always upserts id=1 and the page is the only
+// writer.
+export const companyInfo = pgTable("company_info", {
+  id: integer("id").primaryKey().default(1),
+  name: text("name"),
+  legalName: text("legal_name"),
+  supportEmail: text("support_email"),
+  salesEmail: text("sales_email"),
+  // Logo is kept inline as a bytea so the brand identity is self-contained
+  // (no separate object-store dependency for a sub-MB image). `logoMime` is
+  // the canonical mime, `logoData` is the raw bytes. Both are null until
+  // the admin uploads a logo.
+  logoMime: text("logo_mime"),
+  logoData: customType<{ data: Buffer; driverData: Buffer }>({
+    dataType() {
+      return "bytea";
+    },
+  })("logo_data"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const apps = pgTable("apps", {

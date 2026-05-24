@@ -72,12 +72,9 @@ const Schema = z.object({
   LINUX_BUILD_WEB_IMAGE: z.string().default("node:20-alpine"),
   LINUX_BUILD_WEB_COMMAND: z.string().default("npm ci && npm run build"),
   LINUX_BUILD_WEB_DIST_DIR: z.string().default("dist"),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PRICE_BOHIO: z.string().optional(),
-  STRIPE_PRICE_YUCAYEQUE: z.string().optional(),
-  STRIPE_PRICE_CACIQUE: z.string().optional(),
+  // Stripe / payment-processor credentials live in the `payment_processors`
+  // DB table now, configured through the Admin → Payment Processors page.
+  // No payment-related env vars are read at runtime.
 });
 
 const parsed = Schema.safeParse(process.env);
