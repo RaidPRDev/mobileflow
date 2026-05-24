@@ -168,11 +168,15 @@ export class StripeAdapter implements PaymentAdapter {
     return { clientSecret: intent.client_secret };
   }
 
-  async attachPaymentMethod(customerId: string, paymentMethodId: string): Promise<void> {
+  async attachPaymentMethod(
+    customerId: string,
+    paymentMethodId: string,
+  ): Promise<{ customerId: string | null; vaultTokenId: string | null }> {
     await this.client.paymentMethods.attach(paymentMethodId, { customer: customerId });
     await this.client.customers.update(customerId, {
       invoice_settings: { default_payment_method: paymentMethodId },
     });
+    return { customerId: null, vaultTokenId: null };
   }
 
   async getDefaultPaymentMethod(customerId: string): Promise<PaymentMethodSummary | null> {

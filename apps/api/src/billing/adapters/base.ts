@@ -145,14 +145,24 @@ export interface PaymentAdapter {
     customerId: string,
     urls?: { successUrl: string; cancelUrl: string },
   ): Promise<SetupIntentResult>;
-  attachPaymentMethod(customerId: string, paymentMethodId: string): Promise<void>;
+  // Returns `{ customerId }` when the attach produced (or revealed) a fresh
+  // processor-side customer ID that the caller should persist — e.g., PayPal
+  // returns the real customer.id on first vault attach for orgs that only had
+  // a synthetic placeholder. Returns `{ vaultTokenId }` for hosted-vault
+  // processors (PayPal) so the caller can stash it and retrieve the saved
+  // payment method later without going through a subscription. Either field
+  // is null when no update is needed.
+  attachPaymentMethod(
+    customerId: string,
+    paymentMethodId: string,
+  ): Promise<{ customerId: string | null; vaultTokenId: string | null }>;
   // `opts.subscriptionId` lets adapters that don't expose a per-customer
   // default-payment-method endpoint (PayPal) read the saved card off the
   // subscription instead. Stripe ignores it and uses its customer-level
   // invoice_settings.default_payment_method.
   getDefaultPaymentMethod(
     customerId: string,
-    opts?: { subscriptionId?: string | null },
+    opts?: { subscriptionId?: string | null; vaultTokenId?: string | null },
   ): Promise<PaymentMethodSummary | null>;
 
   // Hosted flows.

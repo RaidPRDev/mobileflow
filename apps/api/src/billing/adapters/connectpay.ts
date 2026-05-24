@@ -198,7 +198,10 @@ export class ConnectPayAdapter implements PaymentAdapter {
     return { redirectUrl: res.redirect_url };
   }
 
-  async attachPaymentMethod(customerId: string, paymentMethodId: string): Promise<void> {
+  async attachPaymentMethod(
+    customerId: string,
+    paymentMethodId: string,
+  ): Promise<{ customerId: string | null; vaultTokenId: string | null }> {
     await this.signedFetch(
       "POST",
       `/customers/${encodeURIComponent(customerId)}/payment-methods/${encodeURIComponent(
@@ -206,6 +209,7 @@ export class ConnectPayAdapter implements PaymentAdapter {
       )}/default`,
       {},
     );
+    return { customerId: null, vaultTokenId: null };
   }
 
   async getDefaultPaymentMethod(customerId: string): Promise<PaymentMethodSummary | null> {

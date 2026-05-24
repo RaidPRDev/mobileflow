@@ -9,13 +9,16 @@ import {
   builds,
   companyInfo,
   organizations,
+  orgMembers,
   payments,
   plans,
   subscriptions,
+  users,
 } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { env } from "../env.js";
 import { getActiveAdapter } from "../billing/adapters/registry.js";
+import { signVaultReturnState, verifyVaultReturnState } from "../billing/vaultReturnState.js";
 import type { NormalizedWebhookEvent, PaymentAdapter } from "../billing/adapters/base.js";
 import {
   renderInvoicePdf,
@@ -79,7 +82,20 @@ const BillingInfoBody = z
   .strict();
 
 export async function billingRoutes(server: FastifyInstance) {
-  server.addHook("preHandler", requireUser);
+  // Hosted-vault return routes authenticate via a signed state token in the
+  // query string, since the user arrives via a top-level redirect from the
+  // processor (PayPal/ConnectPay) and won't carry the session cookie scoped
+  // to the SPA origin. All other billing routes require a user session.
+  server.addHook("preHandler", async (req, reply) => {
+    const path = req.url.split("?")[0] ?? "";
+    if (
+      path === "/api/billing/paypal-vault/return" ||
+      path === "/api/billing/connectpay-vault/return"
+    ) {
+      return;
+    }
+    return requireUser(req, reply);
+  });
 
   // The web app calls this to know which processor to render and which
   // publishable key (if any) to load. Returns `null` when no processor is
@@ -153,7 +169,8 @@ export async function billingRoutes(server: FastifyInstance) {
       // user approves; Stripe ignores these. We point at the API so the
       // exchange happens before the user lands on the web app. The return
       // path is processor-scoped so each adapter parses its own query shape.
-      const successUrl = `${env.API_BASE_URL}/api/billing/${adapter.id}-vault/return?orgId=${encodeURIComponent(req.params.orgId)}`;
+      const state = signVaultReturnState(req.params.orgId, req.auth!.userId);
+      const successUrl = `${env.API_BASE_URL}/api/billing/${adapter.id}-vault/return?orgId=${encodeURIComponent(req.params.orgId)}&state=${encodeURIComponent(state)}`;
       const cancelUrl = `${env.WEB_BASE_URL}/org/${req.params.orgId}/settings/subscriptions?vault=cancel`;
       return adapter.createSetupIntent(customerId, { successUrl, cancelUrl });
     },
@@ -171,13 +188,17 @@ export async function billingRoutes(server: FastifyInstance) {
           provider: subscriptions.paymentProvider,
           customer: subscriptions.processorCustomerId,
           subscriptionId: subscriptions.processorSubscriptionId,
+          metadata: subscriptions.metadata,
         })
         .from(subscriptions)
         .where(eq(subscriptions.orgId, req.params.orgId))
         .limit(1);
       if (!sub?.customer || sub.provider !== adapter.id) return null;
+      const vaultTokenId =
+        (sub.metadata as Record<string, unknown> | null)?.[`${adapter.id}VaultTokenId`];
       return adapter.getDefaultPaymentMethod(sub.customer, {
         subscriptionId: sub.subscriptionId,
+        vaultTokenId: typeof vaultTokenId === "string" ? vaultTokenId : null,
       });
     },
   );
@@ -401,34 +422,84 @@ export async function billingRoutes(server: FastifyInstance) {
     expectedProvider: "paypal" | "connectpay",
     orgId: string | undefined,
     paymentMethodId: string | undefined,
+    state: string | undefined,
     reply: import("fastify").FastifyReply,
-    req: import("fastify").FastifyRequest,
+    _req: import("fastify").FastifyRequest,
   ) => {
     const subsUrl = (status: "success" | "failed") =>
       `${env.WEB_BASE_URL}/org/${encodeURIComponent(orgId ?? "")}/settings/subscriptions?vault=${status}`;
     if (!orgId || !paymentMethodId) return reply.redirect(subsUrl("failed"));
-    await requireOrgMember(req, reply, orgId);
-    if (reply.sent) return;
+    // Verify the signed state token threaded through the processor redirect.
+    // The user has no session cookie at this origin, so the token is what
+    // proves they initiated the flow and which org/user it's for.
+    const verified = verifyVaultReturnState(state);
+    if (!verified || verified.orgId !== orgId) return reply.redirect(subsUrl("failed"));
+    const [u] = await db
+      .select({ id: users.id, isSuperadmin: users.isSuperadmin })
+      .from(users)
+      .where(eq(users.id, verified.userId))
+      .limit(1);
+    if (!u) return reply.redirect(subsUrl("failed"));
+    if (!u.isSuperadmin) {
+      const [m] = await db
+        .select({ role: orgMembers.role })
+        .from(orgMembers)
+        .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, u.id)))
+        .limit(1);
+      if (!m) return reply.redirect(subsUrl("failed"));
+    }
     const adapter = await getActiveAdapter();
     if (!adapter || adapter.id !== expectedProvider) return reply.redirect(subsUrl("failed"));
     const customerId = await ensureProcessorCustomer(adapter, orgId);
     if (!customerId) return reply.redirect(subsUrl("failed"));
+    let attachResult: { customerId: string | null; vaultTokenId: string | null };
     try {
-      await adapter.attachPaymentMethod(customerId, paymentMethodId);
+      attachResult = await adapter.attachPaymentMethod(customerId, paymentMethodId);
     } catch (err) {
       server.log.warn({ err, orgId, provider: expectedProvider }, "vault exchange failed");
       return reply.redirect(subsUrl("failed"));
+    }
+    // Persist any updates the adapter surfaced:
+    //   - `customerId`: a fresh processor-side customer ID — PayPal returns
+    //     the real customer.id after the first vault attach on an org that
+    //     only had a synthetic placeholder.
+    //   - `vaultTokenId`: the hosted-vault payment-token id. Stored on
+    //     subscriptions.metadata so free-tier orgs (no subscription yet) can
+    //     still surface their saved payment method in the UI.
+    const updates: { processorCustomerId?: string; metadata?: Record<string, unknown> } = {};
+    if (attachResult.customerId && attachResult.customerId !== customerId) {
+      updates.processorCustomerId = attachResult.customerId;
+    }
+    if (attachResult.vaultTokenId) {
+      const [existing] = await db
+        .select({ metadata: subscriptions.metadata })
+        .from(subscriptions)
+        .where(eq(subscriptions.orgId, orgId))
+        .limit(1);
+      updates.metadata = {
+        ...(existing?.metadata ?? {}),
+        [`${expectedProvider}VaultTokenId`]: attachResult.vaultTokenId,
+      };
+    }
+    if (Object.keys(updates).length > 0) {
+      await db.update(subscriptions).set(updates).where(eq(subscriptions.orgId, orgId));
     }
     return reply.redirect(subsUrl("success"));
   };
 
   server.get<{
-    Querystring: { orgId?: string; approval_token_id?: string; approval_session_id?: string };
+    Querystring: {
+      orgId?: string;
+      approval_token_id?: string;
+      approval_session_id?: string;
+      state?: string;
+    };
   }>("/billing/paypal-vault/return", async (req, reply) => {
     return handleVaultReturn(
       "paypal",
       req.query.orgId,
       req.query.approval_token_id,
+      req.query.state,
       reply,
       req,
     );
@@ -440,6 +511,7 @@ export async function billingRoutes(server: FastifyInstance) {
       payment_method_id?: string;
       session_id?: string;
       status?: string;
+      state?: string;
     };
   }>("/billing/connectpay-vault/return", async (req, reply) => {
     const orgId = req.query.orgId;
@@ -450,6 +522,7 @@ export async function billingRoutes(server: FastifyInstance) {
       "connectpay",
       orgId,
       req.query.payment_method_id,
+      req.query.state,
       reply,
       req,
     );
@@ -660,8 +733,11 @@ async function buildInvoiceSnapshot(adapter: PaymentAdapter, orgId: string) {
   let pmLast4: string | null = null;
   if (sub?.processorCustomerId) {
     try {
+      const vaultTokenId =
+        (sub.metadata as Record<string, unknown> | null)?.[`${adapter.id}VaultTokenId`];
       const pm = await adapter.getDefaultPaymentMethod(sub.processorCustomerId, {
         subscriptionId: sub.processorSubscriptionId,
+        vaultTokenId: typeof vaultTokenId === "string" ? vaultTokenId : null,
       });
       if (pm) {
         pmType = pm.type;

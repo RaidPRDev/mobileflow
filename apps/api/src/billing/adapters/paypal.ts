@@ -213,35 +213,87 @@ export class PayPalAdapter implements PaymentAdapter {
   // After approval, the client should call our API which calls this. For
   // now `paymentMethodId` is treated as the v3 setup-token id; we exchange
   // it for a payment-token (vault).
-  async attachPaymentMethod(customerId: string, paymentMethodId: string): Promise<void> {
-    const orgId = orgIdFromCustomer(customerId);
-    await this.fetchJson("POST", "/v3/vault/payment-tokens", {
+  //
+  // `customer.id` on `/v3/vault/payment-tokens` must be a PayPal-generated
+  // customer ID (~13 chars). Free-tier orgs only have the synthetic
+  // `mf_<uuid>` placeholder from `createCustomer`, which PayPal rejects as
+  // INVALID_STRING_LENGTH. For those we omit the `customer` field — PayPal
+  // attaches against the buyer who approved the setup-token — and capture
+  // the real customer.id PayPal returns so we can persist it.
+  async attachPaymentMethod(
+    customerId: string,
+    paymentMethodId: string,
+  ): Promise<{ customerId: string | null; vaultTokenId: string | null }> {
+    const isSynthetic = customerId.startsWith("mf_");
+    const body: Record<string, unknown> = {
       payment_source: { token: { id: paymentMethodId, type: "SETUP_TOKEN" } },
-      customer: { id: `mf_${orgId}` },
-    });
+    };
+    if (!isSynthetic) body.customer = { id: customerId };
+    const res = await this.fetchJson<{ id: string; customer?: { id?: string } }>(
+      "POST",
+      "/v3/vault/payment-tokens",
+      body,
+    );
+    const returnedCustomerId = res.customer?.id ?? null;
+    return {
+      customerId: isSynthetic ? returnedCustomerId : null,
+      vaultTokenId: res.id ?? null,
+    };
   }
 
   // PayPal stashes the chosen payment instrument on the subscription itself
   // (`subscriber.payment_source.card` for cards; for PayPal-balance / bank
   // payers there's no `.card` and we surface a generic `paypal` type that
-  // the UI renders as "PayPal account"). Falls back to null when no
-  // subscription id is known yet (org hasn't subscribed).
+  // the UI renders as "PayPal account"). When the org hasn't subscribed yet
+  // but did vault a payment method, fall back to reading the vault token
+  // directly so free-tier orgs can still see their saved payment method.
   async getDefaultPaymentMethod(
     _customerId: string,
-    opts?: { subscriptionId?: string | null },
+    opts?: { subscriptionId?: string | null; vaultTokenId?: string | null },
   ): Promise<PaymentMethodSummary | null> {
     const subId = opts?.subscriptionId;
-    if (!subId) return null;
-    let sub: PayPalSubscriptionResource;
+    if (subId) {
+      let sub: PayPalSubscriptionResource;
+      try {
+        sub = await this.fetchJson<PayPalSubscriptionResource>(
+          "GET",
+          `/v1/billing/subscriptions/${encodeURIComponent(subId)}`,
+        );
+      } catch {
+        return null;
+      }
+      const card = sub.subscriber?.payment_source?.card;
+      if (card) {
+        const expiry = card.expiry ?? "";
+        const [yearStr, monthStr] = expiry.split("-");
+        return {
+          type: "card",
+          brand: (card.brand ?? "card").toLowerCase(),
+          last4: card.last_digits ?? "????",
+          expMonth: Number(monthStr) || 0,
+          expYear: Number(yearStr) || 0,
+        };
+      }
+      // No card on file — buyer paid via PayPal balance, bank, etc.
+      return { type: "paypal" };
+    }
+    const tokenId = opts?.vaultTokenId;
+    if (!tokenId) return null;
+    let tok: {
+      payment_source?: {
+        card?: { brand?: string; last_digits?: string; expiry?: string };
+        paypal?: unknown;
+      };
+    };
     try {
-      sub = await this.fetchJson<PayPalSubscriptionResource>(
+      tok = await this.fetchJson(
         "GET",
-        `/v1/billing/subscriptions/${encodeURIComponent(subId)}`,
+        `/v3/vault/payment-tokens/${encodeURIComponent(tokenId)}`,
       );
     } catch {
       return null;
     }
-    const card = sub.subscriber?.payment_source?.card;
+    const card = tok.payment_source?.card;
     if (card) {
       const expiry = card.expiry ?? "";
       const [yearStr, monthStr] = expiry.split("-");
@@ -253,8 +305,8 @@ export class PayPalAdapter implements PaymentAdapter {
         expYear: Number(yearStr) || 0,
       };
     }
-    // No card on file — buyer paid via PayPal balance, bank, etc.
-    return { type: "paypal" };
+    if (tok.payment_source?.paypal) return { type: "paypal" };
+    return null;
   }
 
   async createCheckoutSession(input: CheckoutInput): Promise<{ url: string }> {
