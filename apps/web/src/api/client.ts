@@ -104,7 +104,15 @@ export interface EnvironmentWithVars extends EnvironmentRow {
 }
 
 export interface MeResponse {
-  user: { id: string; email: string; name: string | null; isSuperadmin: boolean };
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+    isSuperadmin: boolean;
+    hasPassword: boolean;
+  };
   organizations: { orgId: string; slug: string; name: string; role: "owner" | "admin" | "member" }[];
 }
 
@@ -338,8 +346,17 @@ export interface DeploymentDetail {
 }
 
 export const api = {
-  signup: (input: { email: string; password: string; name?: string; organizationName?: string }) =>
-    request<{ user: { id: string; email: string; name: string | null }; org: { id: string; slug: string; name: string } }>(
+  signup: (input: {
+    email: string;
+    password: string;
+    name?: string;
+    username?: string;
+    organizationName?: string;
+  }) =>
+    // /auth/signup returns only {ok: true} — same body whether the email was
+    // new or already registered, no session cookie. Callers must follow up
+    // with api.login() to authenticate.
+    request<{ ok: true }>(
       "/auth/signup",
       { method: "POST", body: JSON.stringify(input) },
     ),
@@ -350,6 +367,20 @@ export const api = {
     }),
   logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
   me: () => request<MeResponse>("/auth/me"),
+  patchMe: (input: {
+    name?: string | null;
+    email?: string;
+    username?: string | null;
+    avatarUrl?: string | null;
+    currentPassword?: string;
+  }) => request<{ ok: true }>("/me", { method: "PATCH", body: JSON.stringify(input) }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    request<{ ok: true }>("/me/change-password", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  deleteMe: (input: { password?: string; email?: string }) =>
+    request<{ ok: true }>("/me/delete", { method: "POST", body: JSON.stringify(input) }),
 
   listStacks: () =>
     request<{

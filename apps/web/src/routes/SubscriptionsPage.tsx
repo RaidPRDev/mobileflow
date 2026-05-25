@@ -31,24 +31,19 @@ export function SubscriptionsPage() {
   const { orgId } = useParams();
   const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
-  const checkout = params.get("checkout");
-  const vault = params.get("vault");
-
-  // After a processor bounce-back (?checkout=success / ?vault=success) the
-  // webhooks that write the new state arrive piecemeal — subscription
-  // upsert events fire immediately, but the first PAYMENT.SALE.COMPLETED
-  // from PayPal can lag a minute or two in sandbox. Poll the relevant
-  // queries on a short interval so the page repaints as soon as the DB
-  // catches up, instead of forcing the user to refresh by hand.
-  const [pollActive, setPollActive] = useState(false);
-  const POLL_WINDOW_MS = 120_000;
-  const POLL_INTERVAL_MS = 3_000;
+  // On the processor bounce-back (?checkout=success / ?vault=success) we
+  // capture the result into local state and immediately strip the URL
+  // params, so the banner persists for this page view but a refresh
+  // doesn't resurrect it. The relevant webhooks (BILLING.SUBSCRIPTION.*,
+  // PAYMENT.SALE.COMPLETED) update the DB on PayPal's side; we just bust
+  // caches once and trust the next refetch.
+  const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
+  const [showCheckoutCancel, setShowCheckoutCancel] = useState(false);
 
   const subQ = useQuery({
     queryKey: ["sub", orgId],
     queryFn: () => api.getSubscription(orgId!),
     enabled: !!orgId,
-    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
   const plansQ = useQuery({
     queryKey: ["billing-plans"],
@@ -63,39 +58,34 @@ export function SubscriptionsPage() {
     queryKey: ["payment-method", orgId],
     queryFn: () => api.getPaymentMethod(orgId!),
     enabled: !!orgId,
-    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
   const paymentsQ = useQuery({
     queryKey: ["payments", orgId],
     queryFn: () => api.listPayments(orgId!),
     enabled: !!orgId,
-    refetchInterval: pollActive ? POLL_INTERVAL_MS : false,
   });
 
   useEffect(() => {
+    const checkout = params.get("checkout");
+    const vault = params.get("vault");
     if (checkout === "success" || vault === "success") {
-      // Bust caches immediately and start the polling window.
+      setShowCheckoutSuccess(true);
       qc.invalidateQueries({ queryKey: ["sub", orgId] });
       qc.invalidateQueries({ queryKey: ["payments", orgId] });
       qc.invalidateQueries({ queryKey: ["payment-method", orgId] });
       qc.invalidateQueries({ queryKey: ["billing-info", orgId] });
-      setPollActive(true);
-      const stopPolling = setTimeout(() => setPollActive(false), POLL_WINDOW_MS);
-      return () => clearTimeout(stopPolling);
     }
-  }, [checkout, vault, orgId, qc]);
-
-  useEffect(() => {
+    if (checkout === "cancel") setShowCheckoutCancel(true);
     if (checkout || vault) {
-      const t = setTimeout(() => {
-        const next = new URLSearchParams(params);
-        next.delete("checkout");
-        next.delete("vault");
-        setParams(next, { replace: true });
-      }, 5000);
-      return () => clearTimeout(t);
+      const next = new URLSearchParams(params);
+      next.delete("checkout");
+      next.delete("vault");
+      setParams(next, { replace: true });
     }
-  }, [checkout, vault, params, setParams]);
+    // Run once on mount — we want the initial URL params to drive banner
+    // state, not subsequent navigations within the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const currentPlan = subQ.data?.planId ?? "naboria";
   const currentPlanInfo = plansQ.data?.find((p) => p.id === currentPlan);
@@ -109,12 +99,12 @@ export function SubscriptionsPage() {
     <div className="settings-page">
       <h1 className="page-title">Subscriptions</h1>
 
-      {checkout === "success" && (
+      {showCheckoutSuccess && (
         <p className="settings-banner is-success">
           Subscription updated. It may take a few seconds to reflect here.
         </p>
       )}
-      {checkout === "cancel" && (
+      {showCheckoutCancel && (
         <p className="settings-banner">Checkout was cancelled.</p>
       )}
 

@@ -19,6 +19,8 @@ import { DeploymentsPage } from "./routes/DeploymentsPage";
 import { NewDeploymentPage } from "./routes/NewDeploymentPage";
 import { OrgSettingsLayout } from "./routes/OrgSettingsLayout";
 import { AccountPage } from "./routes/AccountPage";
+import { PersonalSettingsLayout } from "./routes/PersonalSettingsLayout";
+import { PersonalAccountPage } from "./routes/PersonalAccountPage";
 import { SubscriptionsPage } from "./routes/SubscriptionsPage";
 import { InvoicePage } from "./routes/InvoicePage";
 import { UsagePage } from "./routes/UsagePage";
@@ -56,6 +58,12 @@ export function App() {
         <Route path="/" element={<RootRedirect />} />
         <Route path="/org/:orgId/apps" element={<AppsPage />} />
         <Route path="/org/:orgId/apps/import" element={<ImportAppPage />} />
+        <Route path="/settings" element={<PersonalSettingsLayout />}>
+          <Route index element={<Navigate to="account" replace />} />
+          <Route path="account" element={<PersonalAccountPage />} />
+        </Route>
+        {/* Legacy redirect — old in-app links / bookmarks pointed at /me/settings/* */}
+        <Route path="/me/settings/*" element={<Navigate to="/settings/account" replace />} />
         <Route path="/org/:orgId/settings" element={<OrgSettingsLayout />}>
           <Route index element={<AccountPage />} />
           <Route path="account" element={<AccountPage />} />

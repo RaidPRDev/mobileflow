@@ -1,16 +1,27 @@
-import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
-import { ChevronDown, LayoutGrid, Settings, ShieldCheck } from "lucide-react";
-import { Button, cn } from "@mobileflow/ui";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ChevronDown, LayoutGrid, Settings, ShieldCheck, UserCircle2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  cn,
+} from "@mobileflow/ui";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 
 export function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { orgId, appId } = useParams();
   const { me, signOut } = useAuth();
 
   const inAppScope = location.pathname.startsWith("/app/");
   const fallbackOrgId = me?.organizations[0]?.orgId ?? orgId ?? "";
+
+  const displayName = me?.user.name?.trim() || me?.user.username || me?.user.email?.split("@")[0] || "Account";
+  const initial = (displayName[0] ?? "?").toUpperCase();
 
   return (
     <div className="app-shell">
@@ -19,10 +30,34 @@ export function AppShell() {
       <main className="app-main">
         <header className="app-header">
           <ThemeToggle />
-          <span className="app-header-user">{me?.user.email}</span>
-          <Button variant="ghost" size="sm" onClick={signOut}>
-            Sign out
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="app-header-user-btn" aria-label="Account menu">
+                {me?.user.avatarUrl ? (
+                  <img src={me.user.avatarUrl} alt="" className="app-header-user-avatar" />
+                ) : (
+                  <UserCircle2 size={22} aria-hidden />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="user-menu">
+              <div className="user-menu-identity">
+                <span className="user-menu-avatar" aria-hidden>
+                  {me?.user.avatarUrl ? <img src={me.user.avatarUrl} alt="" /> : initial}
+                </span>
+                <div className="user-menu-identity-text">
+                  <div className="user-menu-name">{displayName}</div>
+                  {me?.user.email && <div className="user-menu-email">{me.user.email}</div>}
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => navigate("/settings/account")}>
+                Personal Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => void signOut()}>Sign Out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </header>
         <div className="app-content app-scroll">
           <Outlet />

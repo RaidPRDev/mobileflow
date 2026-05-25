@@ -1,12 +1,22 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Input,
 } from "@mobileflow/ui";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
@@ -72,10 +82,29 @@ function UserRow({ user }: { user: AdminUser }) {
   const forceLogout = useMutation({
     mutationFn: () => api.admin.forceLogout(user.id),
   });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const deleteUser = useMutation({
     mutationFn: () => api.admin.deleteUser(user.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+    onSuccess: () => {
+      setDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+    onError: (err) =>
+      setDeleteError(err instanceof ApiError ? err.message : "Delete failed"),
   });
+
+  function submitDelete(e: React.FormEvent) {
+    e.preventDefault();
+    setDeleteError(null);
+    if (deleteEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+      setDeleteError("Email does not match this user");
+      return;
+    }
+    deleteUser.mutate();
+  }
 
   const displayName = user.name?.trim() || user.email;
   const fullDate = formatFullDate(user.createdAt);
@@ -133,7 +162,9 @@ function UserRow({ user }: { user: AdminUser }) {
               destructive
               disabled={self}
               onSelect={() => {
-                if (confirm(`Delete ${user.email}? This cascades to their owned orgs.`)) deleteUser.mutate();
+                setDeleteEmail("");
+                setDeleteError(null);
+                setDeleteOpen(true);
               }}
             >
               Delete
@@ -141,6 +172,53 @@ function UserRow({ user }: { user: AdminUser }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Delete user</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <DialogDescription asChild>
+              <div>
+                <p className="dialog-emphasis">
+                  Permanently delete <strong>{user.email}</strong>?
+                </p>
+                <p>
+                  This cascades to every organization they own (and the apps, builds and
+                  subscriptions inside). Type their email to confirm:
+                </p>
+              </div>
+            </DialogDescription>
+            <form onSubmit={submitDelete} className="settings-field" style={{ marginTop: "var(--space-md)" }}>
+              <Input
+                type="email"
+                placeholder={user.email}
+                value={deleteEmail}
+                onChange={(e) => setDeleteEmail(e.target.value)}
+                autoComplete="off"
+              />
+              {deleteError && <p className="settings-page__error">{deleteError}</p>}
+            </form>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={(e) => submitDelete(e as unknown as React.FormEvent)}
+              disabled={
+                deleteUser.isPending ||
+                deleteEmail.trim().toLowerCase() !== user.email.toLowerCase()
+              }
+              loading={deleteUser.isPending}
+            >
+              Delete user
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

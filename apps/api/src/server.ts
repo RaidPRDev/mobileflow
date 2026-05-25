@@ -21,13 +21,23 @@ import { startWorker } from "./worker/worker.js";
 import { startDeployWorker } from "./worker/deployWorker.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { csrfGuard } from "./auth/csrf.js";
+import { securityHeaders } from "./lib/securityHeaders.js";
 
 export async function buildServer() {
   const app = Fastify({
     logger: { level: env.isProd ? "info" : "debug" },
-    trustProxy: true,
+    // trustProxy is parsed from the TRUST_PROXY env var (default "loopback").
+    // A blanket `true` is unsafe — it lets any client forge their own IP via
+    // X-Forwarded-For, which would poison rate-limit keys and audit logs.
+    // env.ts refuses to start in production with TRUST_PROXY=true.
+    trustProxy: env.TRUST_PROXY_PARSED,
     bodyLimit: 10 * 1024 * 1024, // accommodate keystore/.p12 base64 uploads
   });
+
+  // Apply security headers to every response, including 404s and errors.
+  // onRequest hook runs before routing so it can't be skipped by a thrown
+  // error or a route-level configuration.
+  app.addHook("onRequest", securityHeaders);
 
   await app.register(sensible);
   await app.register(websocket);

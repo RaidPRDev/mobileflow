@@ -61,6 +61,12 @@ async function seedSuperadmin() {
     console.log("SUPERADMIN_EMAIL not set — skipping superadmin seed");
     return;
   }
+  if (!env.SUPERADMIN_PASSWORD) {
+    // env.ts already refuses to start in prod without this; in dev we just
+    // skip the seed rather than invent a credential the operator doesn't know.
+    console.log("SUPERADMIN_PASSWORD not set — skipping superadmin seed");
+    return;
+  }
   const email = env.SUPERADMIN_EMAIL;
 
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -73,11 +79,21 @@ async function seedSuperadmin() {
     } else {
       console.log(`Superadmin ${email} already exists`);
     }
+    if (!existing.username) {
+      await db.update(users).set({ username: "superadmin" }).where(eq(users.id, userId));
+      console.log(`Backfilled username "superadmin" for ${email}`);
+    }
   } else {
     const passwordHash = await hashPassword(env.SUPERADMIN_PASSWORD);
     const [created] = await db
       .insert(users)
-      .values({ email, name: "Super Admin", passwordHash, isSuperadmin: true })
+      .values({
+        email,
+        name: "Super Admin",
+        username: "superadmin",
+        passwordHash,
+        isSuperadmin: true,
+      })
       .returning();
     if (!created) throw new Error("Failed to create superadmin user");
     userId = created.id;
@@ -118,6 +134,10 @@ async function seedTesterClient() {
     console.log("TESTERCLIENT_EMAIL not set — skipping tester client seed");
     return;
   }
+  if (!env.TESTERCLIENT_PASSWORD) {
+    console.log("TESTERCLIENT_PASSWORD not set — skipping tester client seed");
+    return;
+  }
   const email = env.TESTERCLIENT_EMAIL;
 
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -125,11 +145,21 @@ async function seedTesterClient() {
   if (existing) {
     userId = existing.id;
     console.log(`Tester client ${email} already exists`);
+    if (!existing.username) {
+      await db.update(users).set({ username: "localclient" }).where(eq(users.id, userId));
+      console.log(`Backfilled username "localclient" for ${email}`);
+    }
   } else {
     const passwordHash = await hashPassword(env.TESTERCLIENT_PASSWORD);
     const [created] = await db
       .insert(users)
-      .values({ email, name: "Tester Client", passwordHash, isSuperadmin: false })
+      .values({
+        email,
+        name: "Tester Client",
+        username: "localclient",
+        passwordHash,
+        isSuperadmin: false,
+      })
       .returning();
     if (!created) throw new Error("Failed to create tester client user");
     userId = created.id;

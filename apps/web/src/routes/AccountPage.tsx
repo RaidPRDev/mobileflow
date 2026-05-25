@@ -258,6 +258,8 @@ export function AccountPage() {
         </div>
       </section>
 
+      <hr className="settings-divider" />
+
       {error && <p className="settings-page__error">{error}</p>}
 
       <Dialog

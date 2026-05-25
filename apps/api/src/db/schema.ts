@@ -86,6 +86,10 @@ export const paymentProcessorMode = pgEnum("payment_processor_mode", [
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
+  // Nullable so OAuth users (and the pre-username install base) don't need a
+  // synthetic value. Enforced unique when set; case-insensitivity is handled
+  // in the route layer by lowercasing before insert/compare.
+  username: text("username").unique(),
   name: text("name"),
   passwordHash: text("password_hash"),
   avatarUrl: text("avatar_url"),
@@ -166,9 +170,39 @@ export const deviceTokens = pgTable("device_tokens", {
   tokenPrefix: text("token_prefix").notNull(),
   name: text("name").notNull(), // user-supplied label, e.g. "My MacBook"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Absolute expiry — 90 days after issuance. Combined with the idle check
+  // (lastUsedAt + IDLE window) enforced in `resolveDeviceToken`, a token
+  // becomes invalid via whichever fires first. Column is nullable so the
+  // schema change is non-breaking for pre-existing rows; `resolveDeviceToken`
+  // treats `null` as expired, forcing those legacy tokens to be re-issued.
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   lastUsedIp: text("last_used_ip"),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+// Failed-login ledger used to gate the captcha challenge. Rows are written
+// on every unsuccessful auth attempt and pruned per-email on success. We
+// keep ip too so future work can add per-IP blanket blocks for distributed
+// attacks; today only the email count is consulted.
+export const loginAttempts = pgTable("login_attempts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull(),
+  ip: text("ip"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Single-use captcha challenges. Issued by GET /auth/captcha, consumed by
+// /auth/login when the captcha gate is active for the target email. We
+// store the cleartext code (not a hash) because the entire row is short-
+// lived (5min TTL) and consumed-once; the threat model here is "stop a
+// scripted attacker", not "protect a long-lived secret".
+export const captchas = pgTable("captchas", {
+  id: uuid("id").primaryKey(),
+  code: text("code").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumed: boolean("consumed").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const plans = pgTable("plans", {

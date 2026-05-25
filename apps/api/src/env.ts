@@ -33,11 +33,23 @@ const Schema = z.object({
   HOST: z.string().default("127.0.0.1"),
   WEB_ORIGIN: z.string().default("http://127.0.0.1:5173,http://localhost:5173"),
   DATABASE_URL: z.string().url(),
-  COOKIE_SECRET: z.string().min(16),
+  // 32 chars is the floor for an HMAC key; the cookie plugin uses this to
+  // sign anything we choose to mark `signed: true`. In production we also
+  // refuse the well-known dev default below in the post-parse step.
+  COOKIE_SECRET: z.string().min(32),
   SUPERADMIN_EMAIL: z.string().email().optional(),
-  SUPERADMIN_PASSWORD: z.string().min(1).default("mobileflow"),
+  // Length is not enforced at the schema level so dev .env files with weak
+  // bootstrap credentials still work. Production enforces min length and
+  // presence in the post-parse block below; dev/test can use whatever.
+  SUPERADMIN_PASSWORD: z.string().optional(),
   TESTERCLIENT_EMAIL: z.string().email().optional(),
-  TESTERCLIENT_PASSWORD: z.string().min(1).default("mobileflow"),
+  TESTERCLIENT_PASSWORD: z.string().optional(),
+  // Comma-separated list of CIDRs / IPs the API will trust X-Forwarded-* from.
+  // Default is loopback only, which is correct for "API listens on 127.0.0.1
+  // behind nginx on the same box". For multi-host deploys, set this to the
+  // proxy IP(s). `false` disables proxy trust entirely. NEVER set to "true"
+  // in production — that lets a client spoof their own IP via header.
+  TRUST_PROXY: z.string().default("loopback"),
   API_BASE_URL: z.string().url().default("http://127.0.0.1:4000"),
   WEB_BASE_URL: z.string().url().default("http://127.0.0.1:5173"),
   GOOGLE_CLIENT_ID: z.string().optional(),
@@ -83,8 +95,73 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+const isProd = parsed.data.NODE_ENV === "production";
+
+// Hard-fail at boot if production is missing the credentials that previously
+// had weak defaults. We refuse to start rather than silently fall back, so a
+// misconfigured deploy is loud, not quietly insecure.
+if (isProd) {
+  const missing: string[] = [];
+  // When SUPERADMIN_EMAIL is configured, the seed step needs a strong
+  // bootstrap password. >= 12 chars matches the OWASP "human-memorable
+  // passphrase" floor. We don't require it when SUPERADMIN_EMAIL is unset
+  // (the seed just skips). Same shape for TESTERCLIENT_*.
+  if (parsed.data.SUPERADMIN_EMAIL) {
+    const p = parsed.data.SUPERADMIN_PASSWORD;
+    if (!p || p.length < 12) missing.push("SUPERADMIN_PASSWORD (>= 12 chars)");
+  }
+  if (parsed.data.TESTERCLIENT_EMAIL) {
+    const p = parsed.data.TESTERCLIENT_PASSWORD;
+    if (!p || p.length < 12) missing.push("TESTERCLIENT_PASSWORD (>= 12 chars)");
+  }
+  // Refuse known placeholder shapes for COOKIE_SECRET in production. The
+  // schema already enforces min(32), so we don't need to catch literal short
+  // placeholders — we need to catch the long ones an operator might leave
+  // unrotated, like the value shipped in `.env.example`
+  // (`change-me-please-32-bytes-of-random-hex`) or anyone padding "mobileflow"
+  // to length by repetition.
+  const cs = parsed.data.COOKIE_SECRET;
+  const placeholderPatterns: RegExp[] = [
+    /^change[-_ ]?me/i,
+    /placeholder/i,
+    /example/i,
+    /^(mobileflow)+x*$/i,
+    /^(?:secret|password|changeme)+x*$/i,
+  ];
+  if (placeholderPatterns.some((re) => re.test(cs))) {
+    missing.push("COOKIE_SECRET (looks like a placeholder)");
+  }
+  if (missing.length > 0) {
+    console.error(
+      "Refusing to start in production with insecure defaults:",
+      missing.join(", "),
+    );
+    process.exit(1);
+  }
+}
+
+// Parse TRUST_PROXY: accept "false" / "loopback" / IP list. Fastify accepts
+// any of these natively except we normalize "false" → boolean false.
+function parseTrustProxy(raw: string): boolean | string | string[] {
+  const v = raw.trim();
+  if (v === "false" || v === "0" || v === "") return false;
+  if (v === "true" || v === "1") {
+    // Refuse a blanket `true` in production. In dev, allow it for ngrok etc.
+    if (isProd) {
+      console.error(
+        "TRUST_PROXY=true is unsafe in production — set it to your proxy's IP(s) instead.",
+      );
+      process.exit(1);
+    }
+    return true;
+  }
+  if (v.includes(",")) return v.split(",").map((s) => s.trim()).filter(Boolean);
+  return v; // "loopback" or single CIDR/IP — Fastify accepts strings directly
+}
+
 export const env = {
   ...parsed.data,
   WEB_ORIGINS: parsed.data.WEB_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean),
-  isProd: parsed.data.NODE_ENV === "production",
+  TRUST_PROXY_PARSED: parseTrustProxy(parsed.data.TRUST_PROXY),
+  isProd,
 };

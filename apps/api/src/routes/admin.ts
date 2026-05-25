@@ -241,6 +241,16 @@ export async function adminRoutes(server: FastifyInstance) {
     if (req.params.userId === req.auth!.userId) return reply.badRequest("Cannot delete yourself");
     const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, req.params.userId)).limit(1);
     if (!u) return reply.notFound();
+    // organizations.ownerUserId is ON DELETE RESTRICT, so deleting the user
+    // directly fails for anyone who owns an org. Drop the owned orgs first;
+    // cascades wipe apps/builds/subs/etc. then we can safely delete the user.
+    const owned = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.ownerUserId, u.id));
+    for (const o of owned) {
+      await db.delete(organizations).where(eq(organizations.id, o.id));
+    }
     await db.delete(users).where(eq(users.id, u.id));
     return reply.code(204).send();
   });

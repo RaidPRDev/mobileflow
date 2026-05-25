@@ -48,6 +48,13 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // would require a CSRF token, which would have to come from a prior visit,
 // breaking the cold-start flow. These endpoints set the CSRF cookie on
 // success so subsequent writes are protected.
+//
+// Defense-in-depth note: this exempt set bypasses CSRF, NOT auth or rate
+// limiting. /auth/login and /auth/signup are per-IP and per-email rate
+// limited in routes/auth.ts; /auth/login additionally requires a captcha
+// after N failures via the loginAttempts gate. So even if a CSRF forge is
+// possible against these endpoints, the attacker is still pinned by the
+// rate limiter and the captcha challenge.
 const EXEMPT_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/signup",
