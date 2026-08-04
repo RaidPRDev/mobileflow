@@ -1,11 +1,12 @@
 import { Navigate, NavLink, Outlet } from "react-router-dom";
-import { Button, cn } from "@mobileflow/ui";
+import { cn } from "@mobileflow/ui";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
+import { UserMenu } from "../shell/UserMenu";
 
 export function AdminLayout() {
-  const { status, me, signOut } = useAuth();
+  const { status, me } = useAuth();
   if (status === "loading") {
     return (
       <div className="app-shell">
@@ -33,6 +34,9 @@ export function AdminLayout() {
           <Item to="/admin/oauth-apps" label="OAuth apps" />
           <Item to="/admin/payment-processors" label="Payment processors" />
           <Item to="/admin/payments" label="Payments" />
+          <Item to="/admin/database" label="Database" />
+          <Item to="/admin/deploy" label="Deploy" />
+          <Item to="/admin/logs" label="Logs" />
         </nav>
         <div className="admin-back-row" style={{ marginTop: 16 }}>
           <NavLink to="/" className="admin-back-btn" aria-label="Back to app">
@@ -44,10 +48,7 @@ export function AdminLayout() {
       <main className="app-main">
         <header className="app-header">
           <ThemeToggle />
-          <span className="app-header-user">{me.user.email}</span>
-          <Button variant="ghost" size="sm" onClick={signOut}>
-            Sign out
-          </Button>
+          <UserMenu />
         </header>
         <div className="app-content app-scroll">
           <Outlet />

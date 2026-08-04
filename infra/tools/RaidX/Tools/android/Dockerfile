@@ -6,11 +6,16 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
 
 # System dependencies
+#
+# JDK 21, not 17: Capacitor 7's android library compiles at source release 21
+# (`capacitor-android:compileReleaseJavaWithJavac` → "invalid source release:
+# 21" under a 17 toolchain). javac 21 still builds older projects that ask for
+# source 17, so this is safe for apps that haven't moved to Capacitor 7 yet.
 RUN apt-get update && apt-get install -y \
     curl \
     unzip \
     git \
-    openjdk-17-jdk \
+    openjdk-21-jdk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS

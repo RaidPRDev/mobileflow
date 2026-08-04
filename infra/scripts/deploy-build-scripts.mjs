@@ -8,6 +8,14 @@
 //   node infra/scripts/deploy-build-scripts.mjs --ios        # only iOS
 //   node infra/scripts/deploy-build-scripts.mjs --dry-run    # show, don't push
 //
+// Each platform runs an idempotent bootstrap after its tree is pushed — a
+// no-op when the host is already in shape. Pass --no-requirements to skip.
+//   iOS     : Support/Scripts/ensure_requirements.sh installs missing build
+//             tooling (CocoaPods, xcbeautify) via Homebrew.
+//   Android : ensure_image.sh rebuilds the Docker builder image, but only when
+//             the deployed Dockerfile no longer matches the one the current
+//             image was built from.
+//
 // Credentials come from apps/api/.env (same source as the worker).
 
 import { spawnSync } from "node:child_process";
@@ -55,6 +63,7 @@ function parseArgs(argv) {
     android: both || flags.has("--android"),
     ios: both || flags.has("--ios"),
     dryRun: flags.has("--dry-run"),
+    requirements: !flags.has("--no-requirements"),
   };
 }
 
@@ -143,6 +152,44 @@ function deployTree({ label, localDir, host, port, user, keyPath, remoteDir, dry
   log(label, "✅ done");
 }
 
+// Runs the just-deployed bootstrap on the Mac: checks the build toolchain and
+// brew-installs whatever is missing. Uses `bash -lc` so the remote environment
+// matches what the build worker itself gets (see macRunner.ts).
+function ensureMacRequirements({ label, host, port, user, keyPath, remoteDir, dryRun }) {
+  const remoteScript = `${remoteDir}/Support/Scripts/ensure_requirements.sh`;
+  log(label, `requirements: ${user}@${host}:${remoteScript}`);
+  runSync(
+    label,
+    "ssh",
+    [
+      ...commonSshOptsForSsh(keyPath, port),
+      `${user}@${host}`,
+      `bash -lc 'bash "${remoteScript}"'`,
+    ],
+    { dryRun }
+  );
+  log(label, "✅ requirements ok");
+}
+
+// Rebuilds the Android builder image on the Linux host when the Dockerfile we
+// just deployed differs from the one the current image was built from. Without
+// this a Dockerfile change deploys but never takes effect.
+function ensureAndroidImage({ label, host, port, user, keyPath, remoteDir, image, dryRun }) {
+  const remoteScript = `${remoteDir}/ensure_image.sh`;
+  log(label, `builder image: ${image || "(default)"}`);
+  runSync(
+    label,
+    "ssh",
+    [
+      ...commonSshOptsForSsh(keyPath, port),
+      `${user}@${host}`,
+      `bash "${remoteScript}"${image ? ` "${image}"` : ""}`,
+    ],
+    { dryRun }
+  );
+  log(label, "✅ builder image ok");
+}
+
 function main() {
   const opts = parseArgs(process.argv);
   const env = loadEnv(ENV_PATH);
@@ -150,29 +197,42 @@ function main() {
   if (opts.dryRun) log("init", "DRY RUN — no remote writes will occur");
 
   if (opts.android) {
-    deployTree({
+    const linuxTarget = {
       label: "android",
-      localDir: ANDROID_LOCAL,
       host: env.LINUX_BUILD_HOST,
       port: env.LINUX_BUILD_PORT || "22",
       user: env.LINUX_BUILD_USER,
       keyPath: translateKeyPath(env.LINUX_BUILD_SSH_KEY_PATH || ""),
       remoteDir: env.LINUX_BUILD_ANDROID_TOOLS,
       dryRun: opts.dryRun,
-    });
+    };
+    deployTree({ ...linuxTarget, localDir: ANDROID_LOCAL });
+    // After the push, so the Dockerfile it hashes is the one we just sent.
+    if (opts.requirements) {
+      ensureAndroidImage({ ...linuxTarget, image: env.LINUX_BUILD_ANDROID_IMAGE });
+    } else {
+      log("android", "skipping builder image check (--no-requirements)");
+    }
   }
 
   if (opts.ios) {
-    deployTree({
+    const macTarget = {
       label: "ios",
-      localDir: IOS_LOCAL,
       host: env.MAC_BUILD_HOST,
       port: env.MAC_BUILD_PORT || "22",
       user: env.MAC_BUILD_USER,
       keyPath: translateKeyPath(env.MAC_BUILD_SSH_KEY_PATH || ""),
       remoteDir: env.MAC_BUILD_TOOLS,
       dryRun: opts.dryRun,
-    });
+    };
+    deployTree({ ...macTarget, localDir: IOS_LOCAL });
+    // Deliberately after the push, so the bootstrap that runs is the one we
+    // just deployed rather than whatever version the Mac had.
+    if (opts.requirements) {
+      ensureMacRequirements(macTarget);
+    } else {
+      log("ios", "skipping requirements check (--no-requirements)");
+    }
   }
 
   log("done", "all targets complete");

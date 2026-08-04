@@ -5,6 +5,7 @@ import { apps, gitConnections } from "../db/schema.js";
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { resolveProvider, type OAuthProviderId } from "../auth/oauth.js";
 import { decryptString } from "../lib/crypto.js";
+import { listBranches } from "./gitConnections.js";
 
 interface CommitOut {
   sha: string;
@@ -14,6 +15,7 @@ interface CommitOut {
   avatarUrl: string | null;
   date: string;
   url: string;
+  branch: string | null;
 }
 
 interface CommitsPage {
@@ -25,6 +27,10 @@ interface CommitsPage {
   accountLogin: string | null;
   accountAvatarUrl: string | null;
 }
+
+// Commits as the provider returns them — the branch label is attached later,
+// once we know which ref the batch came from.
+type RawCommit = Omit<CommitOut, "branch">;
 
 // Parse a Link header and extract `page` numbers keyed by rel.
 // e.g. Link: <https://api.github.com/...?page=2>; rel="next", <...?page=20>; rel="last"
@@ -102,7 +108,8 @@ async function fetchCommits(
   }
   // bitbucket
   const params = new URLSearchParams({ pagelen: String(Math.min(perPage, 100)), page: String(page) });
-  const url = `https://api.bitbucket.org/2.0/repositories/${repoFullName}/commits${branch ? `/${branch}` : ""}?${params}`;
+  // Branch goes in the path here, so names like `feature/x` need escaping.
+  const url = `https://api.bitbucket.org/2.0/repositories/${repoFullName}/commits${branch ? `/${encodeURIComponent(branch)}` : ""}?${params}`;
   const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`bitbucket commits ${res.status}`);
   const j = (await res.json()) as {
@@ -122,14 +129,131 @@ async function fetchCommits(
   return { items, page, perPage, hasNext: !!j.next, totalCount: typeof j.size === "number" ? j.size : null };
 }
 
-type CommitsBatch = Pick<CommitsPage, "items" | "page" | "perPage" | "hasNext" | "totalCount">;
+interface CommitsBatch {
+  items: RawCommit[];
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+  totalCount: number | null;
+}
+
+// ─── All-branch commit listing ───────────────────────────────────────────────
+//
+// None of the three providers can list commits across every branch in one
+// request, so we fan out per branch and merge. Each branch returns its newest
+// `need` commits, which makes the merged head of the list exact for any page
+// inside that window (standard k-way merge). Beyond MAX_POOL_DEPTH we stop
+// digging and report the list as finished.
+
+const MAX_BRANCHES = 25;
+const UPSTREAM_PAGE_SIZE = 100;
+const MAX_PAGES_PER_BRANCH = 5;
+const MAX_POOL_DEPTH = UPSTREAM_PAGE_SIZE * MAX_PAGES_PER_BRANCH;
+const BRANCH_CONCURRENCY = 6;
+const POOL_TTL_MS = 30_000;
+const POOL_CACHE_MAX = 200;
+
+interface CommitPool {
+  at: number;
+  /** How deep into each branch this pool was filled. */
+  need: number;
+  items: CommitOut[];
+  /** At least one branch still had commits past `need`. */
+  hasMore: boolean;
+  /** The repo has more branches than MAX_BRANCHES, so the pool may miss commits. */
+  branchesTruncated: boolean;
+}
+
+const poolCache = new Map<string, CommitPool>();
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (let i = cursor++; i < items.length; i = cursor++) {
+      out[i] = await fn(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function fetchBranchCommits(
+  provider: "github" | "gitlab" | "bitbucket",
+  repoFullName: string,
+  token: string,
+  branch: string,
+  need: number,
+): Promise<{ items: CommitOut[]; hasMore: boolean }> {
+  // Page size stays fixed across requests — varying it would shift the offsets
+  // the provider paginates on and hand back overlapping commits.
+  const perPage = Math.min(UPSTREAM_PAGE_SIZE, Math.max(1, need));
+  const items: CommitOut[] = [];
+  let hasMore = false;
+  for (let page = 1; page <= MAX_PAGES_PER_BRANCH; page++) {
+    const batch = await fetchCommits(provider, repoFullName, token, branch, page, perPage);
+    items.push(...batch.items.map((c) => ({ ...c, branch })));
+    hasMore = batch.hasNext;
+    if (!batch.hasNext || items.length >= need) break;
+  }
+  return { items, hasMore };
+}
+
+async function loadCommitPool(
+  cacheKey: string,
+  provider: "github" | "gitlab" | "bitbucket",
+  repoFullName: string,
+  token: string,
+  need: number,
+  onBranchError: (branch: string, err: unknown) => void,
+): Promise<CommitPool> {
+  const now = Date.now();
+  const cached = poolCache.get(cacheKey);
+  if (cached && now - cached.at < POOL_TTL_MS && cached.need >= need) return cached;
+
+  const branches = await listBranches(provider, token, repoFullName);
+  // Default branch first: a commit reachable from several branches gets labelled
+  // with the most meaningful one.
+  const ordered = [...branches]
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+    .slice(0, MAX_BRANCHES);
+
+  const results = await mapLimit(ordered, BRANCH_CONCURRENCY, async (b) => {
+    try {
+      return await fetchBranchCommits(provider, repoFullName, token, b.name, need);
+    } catch (err) {
+      // One unreadable ref shouldn't blank the whole list.
+      onBranchError(b.name, err);
+      return { items: [] as CommitOut[], hasMore: false };
+    }
+  });
+
+  const bySha = new Map<string, CommitOut>();
+  for (const r of results) {
+    for (const c of r.items) if (!bySha.has(c.sha)) bySha.set(c.sha, c);
+  }
+  const pool: CommitPool = {
+    at: now,
+    need,
+    items: [...bySha.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+    hasMore: results.some((r) => r.hasMore),
+    branchesTruncated: branches.length > ordered.length,
+  };
+
+  if (poolCache.size >= POOL_CACHE_MAX) {
+    for (const [k, v] of poolCache) if (now - v.at >= POOL_TTL_MS) poolCache.delete(k);
+    if (poolCache.size >= POOL_CACHE_MAX) poolCache.clear();
+  }
+  poolCache.set(cacheKey, pool);
+  return pool;
+}
 
 async function fetchCommit(
   provider: "github" | "gitlab" | "bitbucket",
   repoFullName: string,
   token: string,
   sha: string,
-): Promise<CommitOut | null> {
+): Promise<RawCommit | null> {
   if (provider === "github") {
     const res = await fetch(`https://api.github.com/repos/${repoFullName}/commits/${sha}`, {
       headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
@@ -228,11 +352,37 @@ export async function commitsRoutes(server: FastifyInstance) {
             server.log.warn({ err, provider }, "fetch git profile for avatar failed");
           }
         }
-        const batch = await fetchCommits(provider, row.gitRepoFullName, token, req.query.branch, page, perPage);
+        const account = { accountLogin: conn.accountLogin ?? null, accountAvatarUrl };
+        const branch = req.query.branch?.trim();
+        if (branch) {
+          // Explicit branch: single-ref listing, straight provider pagination.
+          const batch = await fetchCommits(provider, row.gitRepoFullName, token, branch, page, perPage);
+          const out: CommitsPage = {
+            ...batch,
+            items: batch.items.map((c) => ({ ...c, branch })),
+            ...account,
+          };
+          return out;
+        }
+        const end = page * perPage;
+        const need = Math.min(MAX_POOL_DEPTH, end + 1);
+        const pool = await loadCommitPool(
+          `${conn.id}:${row.gitRepoFullName}`,
+          provider,
+          row.gitRepoFullName,
+          token,
+          need,
+          (b, err) => server.log.warn({ err, provider, branch: b }, "fetch branch commits failed"),
+        );
+        const complete = !pool.hasMore && !pool.branchesTruncated;
         const out: CommitsPage = {
-          ...batch,
-          accountLogin: conn.accountLogin ?? null,
-          accountAvatarUrl,
+          items: pool.items.slice((page - 1) * perPage, end),
+          page,
+          perPage,
+          hasNext: end < pool.items.length || (pool.hasMore && need < MAX_POOL_DEPTH),
+          // Only exact once every branch has been read to its root.
+          totalCount: complete ? pool.items.length : null,
+          ...account,
         };
         return out;
       } catch (err) {
@@ -259,6 +409,9 @@ export async function commitsRoutes(server: FastifyInstance) {
         if (!commit) return reply.notFound();
         return {
           ...commit,
+          // No provider exposes "which branches contain this sha" cheaply; the
+          // caller carries the branch over from the list it picked the commit in.
+          branch: null,
           accountLogin: conn.accountLogin ?? null,
           accountAvatarUrl: conn.accountAvatarUrl ?? null,
         };

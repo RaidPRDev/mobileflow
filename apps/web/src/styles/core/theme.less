@@ -57,8 +57,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -4px rgba(0, 0, 0, 0.06);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
 
-  --transition-fast: 120ms ease;
-  --transition-base: 180ms ease;
+  // Bare durations are split out so they can also be used as transition-delay,
+  // where the easing keyword in the shorthand tokens below would be invalid.
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+
+  --transition-fast: var(--duration-fast) ease;
+  --transition-base: var(--duration-base) ease;
 
   --space-2xs: 2px;
   --space-xs: 4px;

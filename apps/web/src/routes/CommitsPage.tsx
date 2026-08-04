@@ -31,11 +31,10 @@ export function CommitsPage() {
     max: 30,
   });
 
-  const branchName = appQ.data?.gitDefaultBranch ?? "main";
-
+  // No branch filter: the API merges every branch and labels each commit.
   const commitsQ = useQuery({
-    queryKey: ["commits", appId, branchName, page, perPage],
-    queryFn: () => api.listCommits(appId!, { branch: branchName, page, perPage }),
+    queryKey: ["commits", appId, page, perPage],
+    queryFn: () => api.listCommits(appId!, { page, perPage }),
     enabled: !!appQ.data?.gitRepoFullName,
     placeholderData: keepPreviousData,
   });
@@ -50,9 +49,9 @@ export function CommitsPage() {
       (c) =>
         c.sha.toLowerCase().includes(q) ||
         c.message.toLowerCase().includes(q) ||
-        branchName.toLowerCase().includes(q),
+        (c.branch ?? "").toLowerCase().includes(q),
     );
-  }, [commitsQ.data?.items, filter, branchName]);
+  }, [commitsQ.data?.items, filter]);
 
   if (appQ.isLoading) {
     return <div className="commits-page__status">Loading…</div>;
@@ -76,8 +75,11 @@ export function CommitsPage() {
 
   const totalCount = commitsQ.data?.totalCount;
   const hasNext = commitsQ.data?.hasNext ?? false;
-  const startBuild = (c: CommitRow) =>
-    navigate(`/app/${appId}/build/builds/new?commitId=${c.sha}`);
+  const startBuild = (c: CommitRow) => {
+    const qs = new URLSearchParams({ commitId: c.sha });
+    if (c.branch) qs.set("branch", c.branch);
+    navigate(`/app/${appId}/build/builds/new?${qs}`);
+  };
 
   return (
     <div className="commits-page">
@@ -110,7 +112,6 @@ export function CommitsPage() {
           <CommitRowItem
             key={c.sha}
             commit={c}
-            branchName={branchName}
             accountAvatarUrl={accountAvatarUrl}
             accountLogin={accountLogin}
             onStartBuild={() => startBuild(c)}
@@ -141,13 +142,12 @@ export function CommitsPage() {
 
 interface CommitRowItemProps {
   commit: CommitRow;
-  branchName: string;
   accountAvatarUrl: string | null;
   accountLogin: string | null;
   onStartBuild: () => void;
 }
 
-function CommitRowItem({ commit, branchName, accountAvatarUrl, accountLogin, onStartBuild }: CommitRowItemProps) {
+function CommitRowItem({ commit, accountAvatarUrl, accountLogin, onStartBuild }: CommitRowItemProps) {
   const title = commit.message.split("\n")[0] ?? "";
   const shortSha = commit.sha.slice(0, 6);
   const avatarSrc = accountAvatarUrl ?? commit.avatarUrl;
@@ -193,11 +193,15 @@ function CommitRowItem({ commit, branchName, accountAvatarUrl, accountLogin, onS
               {fullDate}
             </span>
           </span>
-          <span className="commit-row__from">from</span>
-          <span className="commit-row__branch">
-            <GitBranch size={12} aria-hidden />
-            <span>{branchName}</span>
-          </span>
+          {commit.branch && (
+            <>
+              <span className="commit-row__from">from</span>
+              <span className="commit-row__branch">
+                <GitBranch size={12} aria-hidden />
+                <span>{commit.branch}</span>
+              </span>
+            </>
+          )}
         </div>
       </div>
       <div className="commit-row__action">

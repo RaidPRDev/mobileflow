@@ -25,7 +25,10 @@ echo "🔧 Installing build environment requirements..."
 if ! command -v brew >/dev/null 2>&1; then
   echo "🍺 Homebrew not found. Installing..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  # ~/.zprofile covers the user's own terminal; ~/.bash_profile covers the
+  # `bash -lc` the build worker runs, which never reads a zsh profile.
   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+  echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.bash_profile
   eval "$(/opt/homebrew/bin/brew shellenv)"
 else
   echo "✅ Homebrew found: $(brew --version | head -n1)"
@@ -108,7 +111,20 @@ fi
 
 
 # ================================
-# 6️⃣ UTF-8 environment fix
+# 6️⃣ xcbeautify
+# ================================
+# Not cosmetic: build_ios_app.sh and build_deploy.sh pipe every xcodebuild
+# invocation through xcbeautify, so a missing binary breaks the pipe itself.
+if ! command -v xcbeautify >/dev/null 2>&1; then
+  echo "❌ xcbeautify not found. Installing..."
+  brew install xcbeautify
+else
+  echo "✅ xcbeautify version: $(xcbeautify --version)"
+fi
+
+
+# ================================
+# 7️⃣ UTF-8 environment fix
 # ================================
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8

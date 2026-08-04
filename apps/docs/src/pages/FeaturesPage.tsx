@@ -37,7 +37,7 @@ export function FeaturesPage() {
             </svg>
           }
           title="Git Integrations"
-          description="Connect GitHub, GitLab, or Bitbucket via OAuth. List repos, pick branches, and clone with short-lived tokens directly on the build host. No zip uploads required."
+          description="Connect GitHub, GitLab, or Bitbucket via OAuth. Pick a repo, browse commits across every branch, and clone with short-lived tokens directly on the build host. No zip uploads required."
         />
         <FeatureCard
           icon={

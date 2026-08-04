@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, Label, cn } from "@mobileflow/ui";
 import { Upload, Trash2 } from "lucide-react";
-import { ApiError, api, type CompanyInfo } from "../api/client";
+import { ApiError, api } from "../api/client";
 
-const ACCEPTED_MIMES = ["image/png", "image/jpeg", "image/svg+xml"] as const;
-const ACCEPTED_ATTR = ACCEPTED_MIMES.join(",");
+const ACCEPTED_ATTR = "image/png,image/jpeg";
 const MAX_BYTES = 2 * 1024 * 1024;
+const LOGO_UPLOAD_MIMES = new Set(["image/png", "image/jpeg"]);
 
 export function AdminCompanyPage() {
   const qc = useQueryClient();
@@ -156,26 +156,25 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
   });
 
   const handleFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       setError(null);
-      if (!ACCEPTED_MIMES.includes(file.type as (typeof ACCEPTED_MIMES)[number])) {
-        setError("Unsupported file type. Use PNG, JPG, or SVG.");
+      if (!LOGO_UPLOAD_MIMES.has(file.type)) {
+        setError("Unsupported file type. Choose a PNG or JPG image.");
         return;
       }
-      if (file.size > MAX_BYTES) {
-        setError(`File too large (${Math.round(file.size / 1024)} KB). Limit 2 MB.`);
-        return;
+      try {
+        const pngDataUrl = await rasterizeImageToPngDataUrl(file);
+        const base64 = pngDataUrl.replace(/^data:[^;]+;base64,/, "");
+        const bytes = Math.floor((base64.length * 3) / 4);
+        if (bytes > MAX_BYTES) {
+          setError(`File too large (${Math.round(bytes / 1024)} KB). Limit 2 MB.`);
+          return;
+        }
+        setPreviewSrc(pngDataUrl);
+        upload.mutate({ mime: "image/png", base64 });
+      } catch {
+        setError("Could not read image");
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        if (typeof result !== "string") return;
-        // result is a `data:<mime>;base64,<payload>` URL.
-        setPreviewSrc(result);
-        const base64 = result.replace(/^data:[^;]+;base64,/, "");
-        upload.mutate({ mime: file.type, base64 });
-      };
-      reader.readAsDataURL(file);
     },
     [upload],
   );
@@ -184,7 +183,7 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) handleFile(file);
+    if (file) void handleFile(file);
   };
 
   const hasLogo = !!existingMime;
@@ -223,7 +222,7 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
             <span>
               Drag & drop a logo here or click to browse
               <br />
-              <span className="text-help">PNG, JPG, or SVG · up to 2 MB</span>
+              <span className="text-help">PNG or JPG only · converted to PNG · up to 2 MB</span>
             </span>
           </div>
         )}
@@ -234,7 +233,7 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
           accept={ACCEPTED_ATTR}
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) handleFile(file);
+            if (file) void handleFile(file);
             // Reset so picking the same file again re-fires onChange.
             e.target.value = "";
           }}
@@ -258,4 +257,28 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
       {error && <p className="text-error">{error}</p>}
     </fieldset>
   );
+}
+
+async function rasterizeImageToPngDataUrl(file: File): Promise<string> {
+  const reader = new FileReader();
+  const source = await new Promise<string>((resolve, reject) => {
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("image decode failed"));
+    img.src = source;
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas unavailable");
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL("image/png");
 }

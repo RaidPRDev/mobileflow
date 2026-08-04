@@ -20,6 +20,7 @@ import {
 } from "@mobileflow/ui";
 import { ApiError, api, type CertificateGroup, type CertificateRow } from "../api/client";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
+import { SecretInput } from "../components/SecretInput";
 import deleteIcon from "../../../../assets/icons/delete-icon.svg";
 
 type Platform = "ios" | "android";
@@ -361,6 +362,18 @@ function AddCertDialog({
                 )}
               </div>
 
+              {/* Sits directly under the certificate it unlocks. */}
+              <div className="field-group">
+                <Label htmlFor="cert-pass" className="is-small">
+                  {isIos ? "Certificate password" : "Keystore password"}
+                </Label>
+                <SecretInput
+                  id="cert-pass"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+
               {isIos && (
                 <div className="field-group">
                   <Label className="is-small">Provisioning profiles</Label>
@@ -390,18 +403,6 @@ function AddCertDialog({
                   />
                 </div>
               )}
-
-              <div className="field-group">
-                <Label htmlFor="cert-pass" className="is-small">
-                  {isIos ? "Certificate password" : "Keystore password"}
-                </Label>
-                <Input
-                  id="cert-pass"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
 
               {!isIos && (
                 <div className="field-group">
@@ -588,9 +589,8 @@ function EditCertDialog({ cert, appId, onClose }: { cert: CertificateGroup; appI
                 <Label htmlFor="edit-cert-pass" className="is-small">
                   {isIos ? "Certificate password" : "Keystore password"}
                 </Label>
-                <Input
+                <SecretInput
                   id="edit-cert-pass"
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Leave blank to keep current password"

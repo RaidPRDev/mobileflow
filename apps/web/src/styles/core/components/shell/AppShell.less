@@ -128,8 +128,13 @@
   padding-left: calc(var(--space-md) + 12px);
 }
 
+// Not `display: contents` — the section needs to be a real box so the collapsed
+// children can be clipped. Gap is 0 here and re-added as padding *inside* the
+// animated wrapper, so a closed section takes up exactly the height of its
+// toggle with no leftover gap.
 .app-rail-nav-section {
-  display: contents;
+  display: grid;
+  gap: 0;
 }
 
 .app-rail-nav-section-toggle {
@@ -161,9 +166,46 @@
   transform: rotate(-90deg);
 }
 
+// Height animation via grid-template-rows 0fr -> 1fr: the row resolves to the
+// inner element's natural height, so nothing has to be measured in JS.
 .app-rail-nav-section-children {
   display: grid;
+  grid-template-rows: 0fr;
+}
+
+.app-rail-nav-section.is-open .app-rail-nav-section-children {
+  grid-template-rows: 1fr;
+}
+
+.app-rail-nav-section.is-animated .app-rail-nav-section-children {
+  transition: grid-template-rows var(--transition-base);
+}
+
+.app-rail-nav-section-children__inner {
+  display: grid;
   gap: 2px;
+  padding-top: 2px;
+  min-height: 0;
+  overflow: hidden;
+  // Keeps collapsed links out of the tab order. Delayed on the way out so the
+  // rows stay painted for the length of the collapse.
+  visibility: hidden;
+  transition: visibility 0s linear var(--duration-base);
+}
+
+.app-rail-nav-section.is-open .app-rail-nav-section-children__inner {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-rail-nav-section.is-animated .app-rail-nav-section-children {
+    transition: none;
+  }
+
+  .app-rail-nav-section-children__inner {
+    transition: none;
+  }
 }
 
 .app-main {
@@ -219,14 +261,21 @@
 
 .user-menu {
   min-width: 240px;
-  padding: var(--space-xs) 0;
+  padding: var(--space-xs);
 }
 
+// Identity row and the action items both get a roomier horizontal gutter
+// than the default dropdown so the menu reads like an account card, not a
+// dense menu list.
 .user-menu-identity {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--space-lg);
+}
+
+.user-menu .menu-item {
+  padding: 8px var(--space-lg);
 }
 
 .user-menu-avatar {

@@ -15,6 +15,8 @@ import { buildsRoutes } from "./routes/builds.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { certificateRoutes } from "./routes/certificates.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminDbRoutes } from "./routes/adminDb.js";
+import { localDeployRoutes } from "./routes/localDeploy.js";
 import { stackRoutes } from "./routes/stacks.js";
 import { billingRoutes, billingWebhookRoutes } from "./routes/billing.js";
 import { startWorker } from "./worker/worker.js";
@@ -22,6 +24,7 @@ import { startDeployWorker } from "./worker/deployWorker.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { csrfGuard } from "./auth/csrf.js";
 import { securityHeaders } from "./lib/securityHeaders.js";
+import { installRequestLogHook } from "./lib/adminLogs.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -68,6 +71,7 @@ export async function buildServer() {
     // is registered in a separate scope below so it bypasses this hook (Stripe
     // verifies its own signature header instead).
     api.addHook("onRequest", csrfGuard);
+    installRequestLogHook(api);
     await api.register(authRoutes);
     await api.register(oauthRoutes);
     await api.register(orgsRoutes);
@@ -79,6 +83,8 @@ export async function buildServer() {
     await api.register(environmentRoutes);
     await api.register(certificateRoutes);
     await api.register(adminRoutes);
+    await api.register(adminDbRoutes);
+    await api.register(localDeployRoutes);
     await api.register(billingRoutes);
     await api.register(deploymentRoutes);
   }, { prefix: "/api" });

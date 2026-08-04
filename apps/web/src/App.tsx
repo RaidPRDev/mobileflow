@@ -41,6 +41,9 @@ import { AdminOAuthAppsPage } from "./admin/AdminOAuthAppsPage";
 import { AdminPaymentProcessorsPage } from "./admin/AdminPaymentProcessorsPage";
 import { AdminPaymentsPage } from "./admin/AdminPaymentsPage";
 import { AdminCompanyPage } from "./admin/AdminCompanyPage";
+import { AdminLogsPage } from "./admin/AdminLogsPage";
+import { AdminDatabasePage } from "./admin/AdminDatabasePage";
+import { AdminDeployPage } from "./admin/AdminDeployPage";
 
 export function App() {
   return (
@@ -118,6 +121,9 @@ export function App() {
         <Route path="payment-processors" element={<AdminPaymentProcessorsPage />} />
         <Route path="payments" element={<AdminPaymentsPage />} />
         <Route path="company" element={<AdminCompanyPage />} />
+        <Route path="database" element={<AdminDatabasePage />} />
+        <Route path="deploy" element={<AdminDeployPage />} />
+        <Route path="logs" element={<AdminLogsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

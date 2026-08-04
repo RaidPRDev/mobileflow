@@ -43,6 +43,12 @@
   box-shadow: 0 0 0 2px var(--color-danger-soft);
 }
 
+/* Non-credential secrets (see components/SecretInput.tsx): masked as plain
+   text so browser password managers leave the field alone. */
+.input.is-secret {
+  -webkit-text-security: disc;
+}
+
 .textarea {
   display: block;
   width: 100%;

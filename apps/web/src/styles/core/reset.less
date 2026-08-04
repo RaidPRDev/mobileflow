@@ -106,3 +106,34 @@ samp {
 *::after {
   box-sizing: border-box;
 }
+
+// Native-app text selection.
+// -------------------------------------------------
+// Chrome text (labels, headings, table cells, buttons, nav) is not selectable,
+// so a stray drag never leaves a highlight behind. Anything the user genuinely
+// needs to copy out opts back in below; add `is-selectable` to extend the list.
+html {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+// `[role="log"]` is LogView's scroll container (build + deploy logs); `.xterm`
+// is the SSH terminal panel; `.admin-logviewer__content` is the log file viewer.
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable="true"] *,
+pre,
+[role="log"],
+[role="log"] *,
+.xterm,
+.xterm *,
+.admin-logviewer__content,
+.admin-logviewer__content *,
+.is-selectable,
+.is-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}

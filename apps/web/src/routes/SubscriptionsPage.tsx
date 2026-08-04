@@ -166,9 +166,13 @@ function PlanRow({
         </div>
         {upgradeTarget && (
           <p className="plan-upgrade-hint">
-            <span className="link" role="button" onClick={() => setShowDialog(true)}>
+            <Button
+              variant="link"
+              className="plan-upgrade-hint__btn"
+              onClick={() => setShowDialog(true)}
+            >
               Upgrade to {upgradeTarget} plan
-            </span>
+            </Button>
           </p>
         )}
       </div>

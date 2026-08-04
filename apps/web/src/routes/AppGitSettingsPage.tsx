@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Combobox, Input, type ComboboxOption } from "@mobileflow/ui";
+import { Button } from "@mobileflow/ui";
 import { Check, ChevronDown, Lock, Search, X } from "lucide-react";
-import { ApiError, api, type BranchRow, type GitProvider } from "../api/client";
+import { ApiError, api, type GitProvider, type RepoRow } from "../api/client";
 
 type HostDef = {
   id: GitProvider;
@@ -67,10 +67,13 @@ export function AppGitSettingsPage() {
   );
 
   const linkRepo = useMutation({
-    mutationFn: (fullName: string) =>
+    // The repo's own default branch is stored as a fallback for anything that
+    // needs a ref without a commit in hand — the user never picks a branch.
+    mutationFn: (repo: RepoRow) =>
       api.patchApp(appId!, {
         gitConnectionId: conn!.id,
-        gitRepoFullName: fullName,
+        gitRepoFullName: repo.fullName,
+        gitDefaultBranch: repo.defaultBranch || null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["app", appId] });
@@ -89,21 +92,6 @@ export function AppGitSettingsPage() {
       qc.invalidateQueries({ queryKey: ["app", appId] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Could not disconnect"),
-  });
-
-  const branchesQ = useQuery({
-    queryKey: ["branches", app?.gitConnectionId, app?.gitRepoFullName],
-    queryFn: () => api.listBranches(app!.gitConnectionId!, app!.gitRepoFullName!),
-    enabled: !!app?.gitConnectionId && !!app?.gitRepoFullName,
-  });
-
-  const setBranch = useMutation({
-    mutationFn: (branchName: string) =>
-      api.patchApp(appId!, { gitDefaultBranch: branchName }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app", appId] });
-    },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Could not change branch"),
   });
 
   if (appQ.isLoading) return <p className="settings-page__status">Loading…</p>;
@@ -154,56 +142,31 @@ export function AppGitSettingsPage() {
 
       {/* Connected to a repo for this provider */}
       {isLinked && linkedConn && (
-        <>
-          <div className="git-connected-row">
-            <span className="git-connected-row__check" aria-hidden>
-              <Check size={14} />
-            </span>
-            <div className="git-connected-row__text">
-              Connected to{" "}
-              <a
-                className="git-connected-row__link"
-                href={repoUrl(linkedConn.provider, app.gitRepoFullName!)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {app.gitRepoFullName}
-              </a>{" "}
-              on {hostDef.label}
-            </div>
-            <Button
-              variant="outline"
-              className="btn-danger-outline"
-              onClick={() => disconnect.mutate()}
-              loading={disconnect.isPending}
+        <div className="git-connected-row">
+          <span className="git-connected-row__check" aria-hidden>
+            <Check size={14} />
+          </span>
+          <div className="git-connected-row__text">
+            Connected to{" "}
+            <a
+              className="git-connected-row__link"
+              href={repoUrl(linkedConn.provider, app.gitRepoFullName!)}
+              target="_blank"
+              rel="noreferrer"
             >
-              Disconnect
-            </Button>
+              {app.gitRepoFullName}
+            </a>{" "}
+            on {hostDef.label}
           </div>
-
-          <div className="settings-section">
-            <span className="settings-section__label" id="git-branch-label">
-              Branch
-            </span>
-            {branchesQ.isLoading && <p className="settings-page__status">Loading branches…</p>}
-            {branchesQ.error && (
-              <p className="settings-page__error">
-                {(branchesQ.error as ApiError).message}
-              </p>
-            )}
-            {!branchesQ.isLoading && !branchesQ.error && (
-              <Combobox
-                id="git-branch-select"
-                ariaLabel="Branch"
-                placeholder="Select a branch…"
-                value={app.gitDefaultBranch ?? defaultBranchFromList(branchesQ.data) ?? undefined}
-                disabled={setBranch.isPending}
-                onChange={(v) => setBranch.mutate(v)}
-                options={branchOptions(branchesQ.data)}
-              />
-            )}
-          </div>
-        </>
+          <Button
+            variant="outline"
+            className="btn-danger-outline"
+            onClick={() => disconnect.mutate()}
+            loading={disconnect.isPending}
+          >
+            Disconnect
+          </Button>
+        </div>
       )}
 
       {/* Not connected at the org level for this provider */}
@@ -281,7 +244,7 @@ export function AppGitSettingsPage() {
                 key={String(r.id)}
                 type="button"
                 className="git-repo"
-                onClick={() => linkRepo.mutate(r.fullName)}
+                onClick={() => linkRepo.mutate(r)}
                 disabled={linkRepo.isPending}
               >
                 <span className="git-repo__icon">{hostDef.icon}</span>
@@ -321,18 +284,6 @@ export function AppGitSettingsPage() {
       {error && <p className="settings-page__error">{error}</p>}
     </div>
   );
-}
-
-function defaultBranchFromList(list: BranchRow[] | undefined): string | null {
-  if (!list) return null;
-  return list.find((b) => b.isDefault)?.name ?? list[0]?.name ?? null;
-}
-
-function branchOptions(list: BranchRow[] | undefined): ComboboxOption[] {
-  return (list ?? []).map((b) => ({
-    value: b.name,
-    label: b.isDefault ? `${b.name} (default)` : b.name,
-  }));
 }
 
 function repoUrl(provider: GitProvider, fullName: string): string {

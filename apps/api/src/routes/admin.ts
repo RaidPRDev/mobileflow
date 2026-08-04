@@ -38,6 +38,14 @@ import { Client as SshClient } from "ssh2";
 import { exec, linuxSshTarget, macSshTarget, uploadBase64, withSsh, type SshTarget } from "../worker/ssh.js";
 import { resolveLinuxHost } from "../worker/ssh.js";
 import { env } from "../env.js";
+import {
+  deleteLogFile,
+  listLogFiles,
+  listLogMonths,
+  listLogScopes,
+  listLogYears,
+  readLogFile,
+} from "../lib/adminLogs.js";
 
 // Synthesize read-only host entries from the `.env` file. The build runners
 // fall back to these when no DB host matches a given kind, so admins should be
@@ -1143,6 +1151,9 @@ export async function adminRoutes(server: FastifyInstance) {
     return row ?? null;
   });
 
+  const LOGO_MIMES = new Set(["image/png", "image/jpeg"]);
+  const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
   // Logo binary. Same auth gate as the rest of the admin endpoints — the
   // image is brand identity, not secret per se, but exposing a public URL
   // would let any visitor probe whether a deployment exists. Easier to keep
@@ -1154,18 +1165,19 @@ export async function adminRoutes(server: FastifyInstance) {
       .from(companyInfo)
       .where(eq(companyInfo.id, 1))
       .limit(1);
-    if (!row?.logoData || !row.logoMime) return reply.notFound();
+    if (!row?.logoData || !row.logoMime || !LOGO_MIMES.has(row.logoMime)) {
+      return reply.notFound();
+    }
     reply.header("Content-Type", row.logoMime);
+    reply.header("Content-Disposition", "attachment; filename=\"company-logo\"");
+    reply.header("Content-Security-Policy", "default-src 'none'");
     reply.header("Cache-Control", "no-store");
     return reply.send(row.logoData);
   });
 
-  const LOGO_MIMES = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
-  const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
-
   const LogoBody = z
     .object({
-      mime: z.string(),
+      mime: z.string().min(1).max(120),
       // Data-URL prefix is optional; the page can send `iVBOR...` raw or
       // `data:image/png;base64,iVBOR...` and we strip the prefix here.
       base64: z.string().min(1).max(8 * 1024 * 1024),
@@ -1176,7 +1188,7 @@ export async function adminRoutes(server: FastifyInstance) {
     const body = LogoBody.parse(req.body);
     if (!LOGO_MIMES.has(body.mime)) {
       return reply.badRequest(
-        "Unsupported image type. Use PNG, JPG, or SVG.",
+        "Unsupported image type. Use PNG or JPG.",
       );
     }
     const stripped = body.base64.replace(/^data:[^;]+;base64,/, "");
@@ -1192,7 +1204,7 @@ export async function adminRoutes(server: FastifyInstance) {
         `Logo is too large (${Math.round(buf.length / 1024)} KB). Limit is ${MAX_LOGO_BYTES / 1024 / 1024} MB.`,
       );
     }
-    // Cheap content-sniffing: PNG / JPG / SVG signatures. Catches mismatch
+    // Cheap content-sniffing: PNG / JPG signatures. Catches mismatch
     // between claimed mime and actual bytes (e.g. someone renamed a .docx
     // to .png and uploaded it).
     if (!matchesMime(buf, body.mime)) {
@@ -1256,6 +1268,70 @@ export async function adminRoutes(server: FastifyInstance) {
       })
       .returning();
     return row;
+  });
+
+  // ---------- Logs ----------
+  //
+  // Admin log browsing is intentionally file-backed, not DB-backed. Dev and
+  // production both use LOG_DIR; production should point it at a private,
+  // non-web-served server directory. The routes below never accept raw paths
+  // from the browser, only validated scope/year/month/file segments.
+
+  server.get("/admin/logs/scopes", async () => listLogScopes());
+
+  server.get<{ Params: { scope: string } }>("/admin/logs/:scope/years", async (req, reply) => {
+    try {
+      return await listLogYears(req.params.scope);
+    } catch (err) {
+      return reply.badRequest((err as Error).message);
+    }
+  });
+
+  server.get<{ Params: { scope: string; year: string } }>(
+    "/admin/logs/:scope/:year/months",
+    async (req, reply) => {
+      try {
+        return await listLogMonths(req.params.scope, req.params.year);
+      } catch (err) {
+        return reply.badRequest((err as Error).message);
+      }
+    },
+  );
+
+  server.get<{ Params: { scope: string; year: string; month: string } }>(
+    "/admin/logs/:scope/:year/:month/files",
+    async (req, reply) => {
+      try {
+        return await listLogFiles(req.params.scope, req.params.year, req.params.month);
+      } catch (err) {
+        return reply.badRequest((err as Error).message);
+      }
+    },
+  );
+
+  server.get<{
+    Querystring: { scope?: string; year?: string; month?: string; file?: string };
+  }>("/admin/logs/file", async (req, reply) => {
+    const { scope, year, month, file } = req.query;
+    if (!scope || !year || !month || !file) return reply.badRequest("Missing log file selector");
+    try {
+      return await readLogFile(scope, year, month, file);
+    } catch (err) {
+      return reply.badRequest((err as Error).message);
+    }
+  });
+
+  server.delete<{
+    Querystring: { scope?: string; year?: string; month?: string; file?: string };
+  }>("/admin/logs/file", async (req, reply) => {
+    const { scope, year, month, file } = req.query;
+    if (!scope || !year || !month || !file) return reply.badRequest("Missing log file selector");
+    try {
+      await deleteLogFile(scope, year, month, file);
+      return reply.code(204).send();
+    } catch (err) {
+      return reply.badRequest((err as Error).message);
+    }
   });
 
   // ---------- Stats ----------
@@ -1322,11 +1398,6 @@ function matchesMime(buf: Buffer, mime: string): boolean {
   }
   if (mime === "image/jpeg") {
     return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
-  }
-  if (mime === "image/svg+xml") {
-    // Tolerate a UTF-8 BOM and leading whitespace before <svg or <?xml.
-    const head = buf.slice(0, 512).toString("utf8").trimStart();
-    return head.startsWith("<svg") || head.startsWith("<?xml");
   }
   return false;
 }

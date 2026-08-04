@@ -488,10 +488,6 @@
   margin-bottom: var(--space-md);
 }
 
-#git-branch-select {
-  max-width: 320px;
-}
-
 .git-repo-controls {
   display: grid;
   grid-template-columns: minmax(180px, 240px) 1fr;
@@ -719,6 +715,15 @@
   font-size: 13px;
   margin: 0;
   color: var(--color-fg-muted);
+}
+
+// Keep the visual of a text link (always-underlined accent text) while the
+// underlying element is a real <button> — so the cursor stays the
+// codebase-default rather than the text I-beam an inline <span> shows.
+.plan-upgrade-hint__btn {
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .plan-tile {

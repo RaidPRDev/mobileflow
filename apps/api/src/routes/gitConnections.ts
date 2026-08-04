@@ -50,7 +50,7 @@ interface RepoOut {
   description: string | null;
 }
 
-interface BranchOut {
+export interface BranchOut {
   name: string;
   isDefault: boolean;
 }
@@ -146,7 +146,7 @@ async function listRepos(provider: GitProvider, token: string): Promise<RepoOut[
   return out;
 }
 
-async function listBranches(
+export async function listBranches(
   provider: GitProvider,
   token: string,
   fullName: string,

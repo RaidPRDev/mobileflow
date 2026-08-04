@@ -48,9 +48,12 @@ export function NewBuildPage() {
   const { appId } = useParams();
   const [params] = useSearchParams();
   const commitId = params.get("commitId") ?? "";
+  // The branch travels with the commit through the URL — a sha can live on
+  // several branches and only the list the user picked from knows which one.
+  const branch = params.get("branch");
 
   return commitId ? (
-    <ConfigureBuild appId={appId!} sha={commitId} />
+    <ConfigureBuild appId={appId!} sha={commitId} branch={branch} />
   ) : (
     <SelectCommit appId={appId!} />
   );
@@ -69,11 +72,10 @@ function SelectCommit({ appId }: { appId: string }) {
     enabled: !!appId,
   });
 
-  const branchName = appQ.data?.gitDefaultBranch ?? "main";
-
+  // No branch filter: the API merges every branch and labels each commit.
   const commitsQ = useQuery({
-    queryKey: ["commits", appId, branchName, page],
-    queryFn: () => api.listCommits(appId, { branch: branchName, page, perPage: PER_PAGE }),
+    queryKey: ["commits", appId, page, PER_PAGE],
+    queryFn: () => api.listCommits(appId, { page, perPage: PER_PAGE }),
     enabled: !!appQ.data?.gitRepoFullName,
     placeholderData: keepPreviousData,
   });
@@ -88,9 +90,15 @@ function SelectCommit({ appId }: { appId: string }) {
       (c) =>
         c.sha.toLowerCase().includes(q) ||
         c.message.toLowerCase().includes(q) ||
-        branchName.toLowerCase().includes(q),
+        (c.branch ?? "").toLowerCase().includes(q),
     );
-  }, [commitsQ.data?.items, filter, branchName]);
+  }, [commitsQ.data?.items, filter]);
+
+  const pickCommit = (c: CommitRow) => {
+    const qs = new URLSearchParams({ commitId: c.sha });
+    if (c.branch) qs.set("branch", c.branch);
+    navigate(`/app/${appId}/build/builds/new?${qs}`);
+  };
 
   return (
     <div className="new-build-page">
@@ -140,10 +148,9 @@ function SelectCommit({ appId }: { appId: string }) {
             <SelectableCommitRow
               key={c.sha}
               commit={c}
-              branchName={branchName}
               accountAvatarUrl={accountAvatarUrl}
               accountLogin={accountLogin}
-              onPick={() => navigate(`/app/${appId}/build/builds/new?commitId=${c.sha}`)}
+              onPick={() => pickCommit(c)}
             />
           ))}
         </div>
@@ -182,13 +189,12 @@ function SelectCommit({ appId }: { appId: string }) {
 
 interface SelectableCommitRowProps {
   commit: CommitRow;
-  branchName: string;
   accountAvatarUrl: string | null;
   accountLogin: string | null;
   onPick: () => void;
 }
 
-function SelectableCommitRow({ commit, branchName, accountAvatarUrl, accountLogin, onPick }: SelectableCommitRowProps) {
+function SelectableCommitRow({ commit, accountAvatarUrl, accountLogin, onPick }: SelectableCommitRowProps) {
   const title = commit.message.split("\n")[0] ?? "";
   const shortSha = commit.sha.slice(0, 6);
   const avatarSrc = accountAvatarUrl ?? commit.avatarUrl;
@@ -215,11 +221,15 @@ function SelectableCommitRow({ commit, branchName, accountAvatarUrl, accountLogi
             {relativeTime(commit.date)}
             <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
           </span>
-          <span className="commit-row__from">to</span>
-          <span className="commit-row__branch">
-            <GitBranch size={12} aria-hidden />
-            <span>{branchName}</span>
-          </span>
+          {commit.branch && (
+            <>
+              <span className="commit-row__from">to</span>
+              <span className="commit-row__branch">
+                <GitBranch size={12} aria-hidden />
+                <span>{commit.branch}</span>
+              </span>
+            </>
+          )}
         </div>
       </div>
       <span className="select-commit-row__sha">{shortSha}</span>
@@ -229,7 +239,7 @@ function SelectableCommitRow({ commit, branchName, accountAvatarUrl, accountLogi
 
 // ─── Step 2: Configure build ─────────────────────────────────────────────────
 
-function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
+function ConfigureBuild({ appId, sha, branch }: { appId: string; sha: string; branch: string | null }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const stacksQ = useStacks();
@@ -312,7 +322,7 @@ function ConfigureBuild({ appId, sha }: { appId: string; sha: string }) {
     if (!destinationsVisible && destinationOn) setDestinationOn(false);
   }, [destinationsVisible, destinationOn]);
 
-  const branchName = appQ.data?.gitDefaultBranch ?? "main";
+  const branchName = branch ?? appQ.data?.gitDefaultBranch ?? "main";
 
   const platformCerts = useMemo(() => {
     if (target === "web") return [];

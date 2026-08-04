@@ -86,6 +86,12 @@ const DEVICE_ISSUE_LIMIT = { windowMs: 60 * 60_000, max: 30 };
 // dominates; the rest of the path (5 INSERTs + cookie writes) adds maybe
 // 20-50ms. 500ms gives generous headroom for slower hardware / DB.
 const SIGNUP_MIN_DURATION_MS = 500;
+const LOGIN_DUMMY_PASSWORD = "mobileflow-login-dummy-password";
+const loginDummyHashPromise = hashPassword(LOGIN_DUMMY_PASSWORD);
+
+function getLoginDummyHash(): Promise<string> {
+  return loginDummyHashPromise;
+}
 
 function slugify(input: string): string {
   return (
@@ -274,12 +280,9 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const [user] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
-    if (!user || !user.passwordHash) {
-      await recordFailedAttempt(body.email, req.ip);
-      return reply.unauthorized("Invalid credentials");
-    }
-    const ok = await verifyPassword(user.passwordHash, body.password);
-    if (!ok) {
+    const hashToVerify = user?.passwordHash ?? (await getLoginDummyHash());
+    const ok = await verifyPassword(hashToVerify, body.password);
+    if (!user || !user.passwordHash || !ok) {
       await recordFailedAttempt(body.email, req.ip);
       return reply.unauthorized("Invalid credentials");
     }

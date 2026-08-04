@@ -227,6 +227,8 @@ export interface CommitRow {
   avatarUrl: string | null;
   date: string;
   url: string;
+  /** Branch the commit was listed under; null when the API couldn't attribute one. */
+  branch: string | null;
 }
 
 export interface CommitsPageResponse {
@@ -343,6 +345,108 @@ export interface DeploymentDetail {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+export interface AdminLogScope {
+  id: string;
+  label: string;
+  kind: "global" | "user";
+  path: string;
+  modified: number;
+}
+
+export interface AdminLogFolder {
+  name: string;
+  path: string;
+}
+
+export interface AdminLogFile {
+  name: string;
+  path: string;
+  size: number;
+  modified: number;
+}
+
+export interface AdminLogSnapshot {
+  content: string;
+  size: number;
+  modified: number;
+  truncated: boolean;
+}
+
+// ─── Admin: database browser ─────────────────────────────────────────────────
+
+export interface AdminDbTable {
+  name: string;
+  /** null when the table is in the schema but not in this database yet. */
+  rowCount: number | null;
+  columnCount: number;
+  hiddenColumnCount: number;
+  primaryKey: string[];
+}
+
+export interface AdminDbColumn {
+  name: string;
+  dataType: string;
+  notNull: boolean;
+  hasDefault: boolean;
+  isPrimaryKey: boolean;
+  /** Credential-ish column: never read from the DB, never editable here. */
+  sensitive: boolean;
+}
+
+export interface AdminDbRows {
+  table: string;
+  columns: AdminDbColumn[];
+  primaryKey: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+  limit: number;
+  offset: number;
+  orderBy: string;
+  dir: "asc" | "desc";
+}
+
+// ─── Admin: local deploy ─────────────────────────────────────────────────────
+
+export type DeployJobState = "running" | "succeeded" | "failed" | "canceled";
+
+export interface DeployTargetRow {
+  id: string;
+  label: string;
+  description: string;
+  command: string;
+  /** False when the script isn't present in this checkout. */
+  available: boolean;
+}
+
+export interface DeployTargetsResponse {
+  enabled: boolean;
+  repoRoot: string;
+  targets: DeployTargetRow[];
+}
+
+export interface DeployLogLine {
+  seq: number;
+  ts: string;
+  stream: "stdout" | "stderr" | "system";
+  text: string;
+}
+
+export interface DeployJobRow {
+  id: string;
+  targetId: string;
+  targetLabel: string;
+  state: DeployJobState;
+  command: string;
+  cwd: string;
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+  startedByUserId: string | null;
+  lineCount: number;
+  truncated: boolean;
+  lines?: DeployLogLine[];
 }
 
 export const api = {
@@ -808,6 +912,26 @@ export const api = {
     payments: () =>
       request<AdminPaymentRow[]>("/admin/payments"),
 
+    logScopes: () => request<AdminLogScope[]>("/admin/logs/scopes"),
+    logYears: (scope: string) =>
+      request<AdminLogFolder[]>(`/admin/logs/${encodeURIComponent(scope)}/years`),
+    logMonths: (scope: string, year: string) =>
+      request<AdminLogFolder[]>(
+        `/admin/logs/${encodeURIComponent(scope)}/${encodeURIComponent(year)}/months`,
+      ),
+    logFiles: (scope: string, year: string, month: string) =>
+      request<AdminLogFile[]>(
+        `/admin/logs/${encodeURIComponent(scope)}/${encodeURIComponent(year)}/${encodeURIComponent(month)}/files`,
+      ),
+    readLog: (input: { scope: string; year: string; month: string; file: string }) => {
+      const qs = new URLSearchParams(input);
+      return request<AdminLogSnapshot>(`/admin/logs/file?${qs}`);
+    },
+    deleteLog: (input: { scope: string; year: string; month: string; file: string }) => {
+      const qs = new URLSearchParams(input);
+      return request<void>(`/admin/logs/file?${qs}`, { method: "DELETE" });
+    },
+
     getCompanyInfo: () =>
       request<CompanyInfo | null>("/admin/company-info"),
     putCompanyInfo: (body: {
@@ -837,6 +961,51 @@ export const api = {
         "/admin/payment-processors/paypal/create-plan",
         { method: "POST", body: JSON.stringify({ planId, mode }) },
       ),
+
+    // ─── Database browser ───────────────────────────────────────────────────
+    dbTables: () => request<AdminDbTable[]>("/admin/db/tables"),
+    dbRows: (
+      table: string,
+      opts: { limit?: number; offset?: number; orderBy?: string; dir?: "asc" | "desc"; q?: string } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (opts.limit) params.set("limit", String(opts.limit));
+      if (opts.offset) params.set("offset", String(opts.offset));
+      if (opts.orderBy) params.set("orderBy", opts.orderBy);
+      if (opts.dir) params.set("dir", opts.dir);
+      if (opts.q) params.set("q", opts.q);
+      const qs = params.toString();
+      return request<AdminDbRows>(
+        `/admin/db/tables/${encodeURIComponent(table)}/rows${qs ? `?${qs}` : ""}`,
+      );
+    },
+    dbUpdateRow: (table: string, pk: Record<string, unknown>, values: Record<string, unknown>) =>
+      request<{ row: Record<string, unknown> }>(`/admin/db/tables/${encodeURIComponent(table)}/rows`, {
+        method: "PATCH",
+        body: JSON.stringify({ pk, values }),
+      }),
+    dbDeleteRow: (table: string, pk: Record<string, unknown>) =>
+      request<{ deleted: number }>(`/admin/db/tables/${encodeURIComponent(table)}/rows`, {
+        method: "DELETE",
+        body: JSON.stringify({ pk }),
+      }),
+
+    // ─── Local deploy ───────────────────────────────────────────────────────
+    deployTargets: () => request<DeployTargetsResponse>("/admin/deploy/targets"),
+    deployJobs: () =>
+      request<{ jobs: DeployJobRow[]; runningId: string | null }>("/admin/deploy/jobs"),
+    deployJob: (id: string, since?: number) =>
+      request<DeployJobRow>(
+        `/admin/deploy/jobs/${encodeURIComponent(id)}${since ? `?since=${since}` : ""}`,
+      ),
+    runDeploy: (targetId: string) =>
+      request<DeployJobRow>(`/admin/deploy/targets/${encodeURIComponent(targetId)}/run`, {
+        method: "POST",
+      }),
+    cancelDeploy: (jobId: string) =>
+      request<DeployJobRow>(`/admin/deploy/jobs/${encodeURIComponent(jobId)}/cancel`, {
+        method: "POST",
+      }),
   },
 };
 

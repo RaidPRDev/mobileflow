@@ -792,3 +792,946 @@
 
   > button { flex-shrink: 0; }
 }
+
+// ─── Admin logs ──────────────────────────────────────────────────────────────
+
+.admin-logs-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-logs-error {
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+  background: var(--color-danger-soft, var(--color-bg-subtle));
+  font-size: 13px;
+}
+
+.admin-logviewer {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 520px;
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  overflow: hidden;
+}
+
+.admin-logviewer__sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.admin-logviewer__sidebar-header,
+.admin-logviewer__main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-logviewer__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.admin-logviewer__back,
+.admin-logviewer__refresh-btn,
+.admin-logviewer__row-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: default;
+}
+
+.admin-logviewer__back {
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.admin-logviewer__refresh-btn,
+.admin-logviewer__row-menu {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+.admin-logviewer__back:hover,
+.admin-logviewer__refresh-btn:hover,
+.admin-logviewer__row-menu:hover {
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+}
+
+.admin-logviewer__crumbs {
+  padding: 6px var(--space-md) 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-logviewer__panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.admin-logviewer__panel--slide {
+  animation: admin-logviewer-slide-in 180ms ease-out;
+}
+
+@keyframes admin-logviewer-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.admin-logviewer__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-md);
+  color: var(--color-fg-muted);
+}
+
+.admin-logviewer__row:hover,
+.admin-logviewer__row.is-active {
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+}
+
+.admin-logviewer__row-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px 7px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: default;
+}
+
+.admin-logviewer__row-icon {
+  display: inline-flex;
+  color: var(--color-fg-subtle);
+  flex-shrink: 0;
+}
+
+.admin-logviewer__row-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-logviewer__row-label-main {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-logviewer__row-label-sub {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-logviewer__empty {
+  padding: var(--space-md) var(--space-sm);
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.admin-logviewer__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-logviewer__main-header {
+  background: var(--color-bg-subtle);
+}
+
+.admin-logviewer__main-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.admin-logviewer__refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  flex-shrink: 0;
+}
+
+.admin-logviewer__truncated {
+  padding: 7px var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.admin-logviewer__content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.admin-logviewer__content--empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--color-fg-subtle);
+  font-style: italic;
+}
+
+.admin-logline {
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-logline:hover {
+  background: rgba(127, 127, 127, 0.06);
+}
+
+.admin-logline__inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-logline__ts {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.admin-logline__event {
+  color: #2563eb;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.admin-logline__fields {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-logline__field {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.admin-logline__field-key {
+  color: #7c3aed;
+}
+
+.admin-logline__field-eq {
+  color: var(--color-fg-subtle);
+  margin: 0 1px;
+}
+
+.admin-logline__field-value {
+  color: #a16207;
+}
+
+.admin-logline__rest {
+  color: var(--color-fg);
+}
+
+.admin-logline--debug {
+  opacity: 0.78;
+}
+
+.admin-logline--debug .admin-logline__event {
+  color: var(--color-fg-muted);
+}
+
+.admin-logline--warn {
+  background: rgba(230, 162, 60, 0.07);
+}
+
+.admin-logline--warn .admin-logline__event {
+  color: #b7791f;
+}
+
+.admin-logline--error {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.admin-logline--error .admin-logline__event {
+  color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+  .admin-logviewer {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-logviewer__sidebar {
+    min-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+
+// ─── Admin → Database ────────────────────────────────────────────────────────
+
+// The browser is pinned to the shell's content height instead of growing with
+// its content: the page is a column flex box filling `.app-content`, and the
+// browser card takes whatever is left under the header. Every scroll happens
+// inside the card (table list, row grid), so the page itself never scrolls and
+// the card is the same height on every table and every viewport.
+.admin-db-page {
+  height: 100%;
+  min-height: 0;
+}
+
+.admin-db-browser {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  overflow: hidden;
+}
+
+// ── Table list ───────────────────────────────────────────────────────────────
+
+.admin-db-browser__sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+// Fixed head — only the list under it scrolls, so the filter box stays put.
+.admin-db-browser__sidebar-head {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.admin-db-browser__tables {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.admin-db-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-db-search__icon {
+  position: absolute;
+  left: 8px;
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+
+.admin-db-search__input {
+  width: 100%;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-input-border);
+  background: var(--color-input-bg);
+  color: var(--color-input-fg);
+  padding: 0 26px 0 28px;
+  font-size: 13px;
+}
+
+.admin-db-search__input:focus,
+.admin-db-search__input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
+.admin-db-search__clear {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.admin-db-table-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-db-table-item > svg {
+  flex-shrink: 0;
+  color: var(--color-fg-subtle);
+}
+
+.admin-db-table-item:hover {
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
+}
+
+.admin-db-table-item.is-active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.admin-db-table-item.is-active > svg {
+  color: var(--color-accent);
+}
+
+.admin-db-table-item__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.admin-db-table-item__count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  background: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+// ── Rows pane ────────────────────────────────────────────────────────────────
+
+.admin-db-browser__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-db-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 48px;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  flex-shrink: 0;
+}
+
+.admin-db-toolbar__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+// Status lines (loading / error) sit in the pane body, so they need the gutter
+// the grid's own cells would otherwise provide.
+.admin-db-browser__main > .builds-status {
+  padding: var(--space-md);
+}
+
+// Wide tables are panned by dragging (see useDragScroll) as well as scrolled,
+// so the surface wears the grab cursor. `width: max-content` lets each column
+// keep its natural width and pushes the excess into this scroller, instead of
+// squeezing columns until every cell wraps into a tall stack.
+.admin-db-grid-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  cursor: grab;
+}
+
+.admin-db-grid-scroll.is-dragging {
+  cursor: grabbing;
+}
+
+.admin-db-grid {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.admin-db-grid th,
+.admin-db-grid td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  vertical-align: top;
+  // Drag-to-pan would otherwise sweep a text selection across the rows.
+  user-select: none;
+}
+
+// Padding moves to the sort button below so the whole header cell — not just
+// the few characters of the label — is the hover and click target.
+.admin-db-grid th {
+  white-space: nowrap;
+  background: var(--color-bg-muted);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.admin-db-grid__sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  color: var(--color-fg-muted);
+  transition: color 120ms ease;
+}
+
+.admin-db-grid__sort-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.admin-db-grid__sort:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+// Previews the sort a click would apply. Rendered always (so the label never
+// shifts) but only visible while the header is hovered.
+.admin-db-grid__sort-hint {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.admin-db-grid td {
+  color: var(--color-fg-muted);
+  transition: background 120ms ease;
+}
+
+// ── Header / column / row hover ─────────────────────────────────────────────
+//
+// The hovered heading tints its whole column (driven from React — CSS can't
+// reach the cells under an arbitrary `th`), and the hovered row tints across.
+// Both washes are translucent accent, and the cell where they cross takes a
+// doubled tint, so the pointer's position reads at a glance on a wide table.
+
+.admin-db-grid th.is-col-hover {
+  background: color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-muted));
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+.admin-db-grid th.is-col-hover .admin-db-grid__sort {
+  color: var(--color-accent);
+}
+
+.admin-db-grid th.is-col-hover .admin-db-grid__sort-hint {
+  opacity: 0.65;
+}
+
+.admin-db-grid td.is-col-hover {
+  background: color-mix(in oklab, var(--color-accent) 7%, transparent);
+}
+
+.admin-db-grid tbody tr:hover td:not(.admin-db-grid__empty) {
+  background: color-mix(in oklab, var(--color-accent) 7%, transparent);
+  color: var(--color-fg);
+}
+
+// Where the hovered row crosses the hovered column. Backgrounds don't compose
+// on a single element — one declaration wins — so the intersection states its
+// own doubled tint rather than relying on the two washes layering.
+.admin-db-grid tbody tr:hover td.is-col-hover {
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}
+
+// The actions cell is opaque (row content scrolls beneath it), so it can't
+// inherit the translucent wash — it gets the same tint mixed over its own
+// background instead, or the hovered row would stop dead at its left border.
+.admin-db-grid tbody tr:hover .admin-db-grid__actions {
+  background: color-mix(in oklab, var(--color-accent) 7%, var(--color-card));
+}
+
+// Actions stay pinned to the right edge so they stay reachable however far the
+// grid is panned sideways. The cell needs an opaque background because row
+// content scrolls underneath it, and its own z-index band above normal cells.
+// Scoped under `.admin-db-grid` to outrank the `th, td` rules above (which set
+// border-right, and z-index on the sticky header row).
+.admin-db-grid .admin-db-grid__actions,
+.admin-db-grid .admin-db-grid__actions-head {
+  position: sticky;
+  right: 0;
+  white-space: nowrap;
+  border-right: 0;
+  border-left: 1px solid var(--color-border);
+  box-shadow: -8px 0 12px -8px rgb(0 0 0 / 45%);
+}
+
+.admin-db-grid .admin-db-grid__actions {
+  z-index: 2;
+  background: var(--color-card);
+  padding: 2px 6px;
+}
+
+// Sticky on both axes (top with the header row, right with the actions
+// column), so it has to sit above both.
+.admin-db-grid .admin-db-grid__actions-head {
+  z-index: 3;
+}
+
+.admin-db-grid__actions-inner {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+.admin-db-grid__empty {
+  text-align: center !important;
+  padding: var(--space-lg) !important;
+  color: var(--color-fg-subtle);
+  font-style: italic;
+}
+
+// One line per cell, clipped with an ellipsis. Wrapping long values (JSON blobs,
+// log text, UUIDs) is what let a single row grow hundreds of pixels tall; the
+// full value is still in the title attribute and the row dialog.
+.admin-db-cell {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.admin-db-cell.is-null {
+  color: var(--color-fg-muted);
+  font-style: italic;
+}
+
+.admin-db-cell--hidden {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+// Pinned under the grid, so the pager is in the same place on every table
+// rather than wherever the last row happened to end.
+.admin-db-browser__footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+.admin-db-browser__footer .list-footer {
+  padding-top: 0;
+}
+
+.admin-db-dialog {
+  max-width: 640px;
+}
+
+.admin-db-detail__row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-md);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-db-detail__row dt {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-db-detail__type {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-fg-muted);
+  margin-left: 6px;
+}
+
+.admin-db-detail__value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-db-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.admin-db-field-row > .input,
+.admin-db-field-row > select.input {
+  flex: 1;
+  min-width: 0;
+}
+
+// ─── Admin → Deploy ──────────────────────────────────────────────────────────
+
+.admin-deploy-targets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.admin-deploy-target {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-md);
+}
+
+.admin-deploy-target__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+}
+
+.admin-deploy-target__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.admin-deploy-target__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-deploy-target__desc {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.admin-deploy-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+  min-height: 420px;
+}
+
+.admin-deploy-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  padding: var(--space-sm);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.admin-deploy-run {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-deploy-run:hover {
+  background: var(--color-bg-subtle);
+}
+
+.admin-deploy-run.is-active {
+  background: var(--color-accent-soft);
+}
+
+.admin-deploy-run__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.admin-deploy-run__label {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-deploy-run__time {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.admin-deploy-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.admin-deploy-log__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.admin-deploy-log__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-deploy-log__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-deploy-log__body {
+  min-height: 360px;
+  max-height: 60vh;
+}
+
+// Shared spinner for the Loader2 / RefreshCw icons on these two pages.
+.is-spinning {
+  animation: admin-spin 900ms linear infinite;
+}
+
+@keyframes admin-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1000px) {
+  .admin-db-browser,
+  .admin-deploy-layout {
+    grid-template-columns: 1fr;
+  }
+
+  // Stacked: the table list becomes a short scrolling strip above the rows so
+  // the grid still gets most of the fixed height.
+  .admin-db-browser {
+    grid-template-rows: minmax(0, 240px) minmax(0, 1fr);
+  }
+
+  .admin-db-browser__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+}

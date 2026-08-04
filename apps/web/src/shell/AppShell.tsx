@@ -1,27 +1,18 @@
-import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ChevronDown, LayoutGrid, Settings, ShieldCheck, UserCircle2 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  cn,
-} from "@mobileflow/ui";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
+import { ChevronDown, LayoutGrid, Settings, ShieldCheck } from "lucide-react";
+import { cn } from "@mobileflow/ui";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
+import { UserMenu } from "./UserMenu";
 
 export function AppShell() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { orgId, appId } = useParams();
-  const { me, signOut } = useAuth();
+  const { me } = useAuth();
 
   const inAppScope = location.pathname.startsWith("/app/");
   const fallbackOrgId = me?.organizations[0]?.orgId ?? orgId ?? "";
-
-  const displayName = me?.user.name?.trim() || me?.user.username || me?.user.email?.split("@")[0] || "Account";
-  const initial = (displayName[0] ?? "?").toUpperCase();
 
   return (
     <div className="app-shell">
@@ -30,34 +21,7 @@ export function AppShell() {
       <main className="app-main">
         <header className="app-header">
           <ThemeToggle />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className="app-header-user-btn" aria-label="Account menu">
-                {me?.user.avatarUrl ? (
-                  <img src={me.user.avatarUrl} alt="" className="app-header-user-avatar" />
-                ) : (
-                  <UserCircle2 size={22} aria-hidden />
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="user-menu">
-              <div className="user-menu-identity">
-                <span className="user-menu-avatar" aria-hidden>
-                  {me?.user.avatarUrl ? <img src={me.user.avatarUrl} alt="" /> : initial}
-                </span>
-                <div className="user-menu-identity-text">
-                  <div className="user-menu-name">{displayName}</div>
-                  {me?.user.email && <div className="user-menu-email">{me.user.email}</div>}
-                </div>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => navigate("/settings/account")}>
-                Personal Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void signOut()}>Sign Out</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <UserMenu />
         </header>
         <div className="app-content app-scroll">
           <Outlet />
@@ -204,8 +168,14 @@ function NavSection({
   const location = useLocation();
   const open = location.pathname === basePath || location.pathname.startsWith(`${basePath}/`);
 
+  // Children stay mounted so the expand/collapse can transition. Transitions are
+  // switched on one commit after mount, otherwise a section that is already open
+  // on first paint (deep link, hard refresh) animates itself open for no reason.
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => setAnimated(true), []);
+
   return (
-    <div className={cn("app-rail-nav-section", open && "is-open")}>
+    <div className={cn("app-rail-nav-section", open && "is-open", animated && "is-animated")}>
       <NavLink
         to={landingPath}
         className={cn("app-rail-nav-item app-rail-nav-section-toggle", open && "is-active")}
@@ -213,7 +183,9 @@ function NavSection({
         <span>{label}</span>
         <ChevronDown size={14} className="app-rail-nav-section-chev" aria-hidden />
       </NavLink>
-      {open && <div className="app-rail-nav-section-children">{children}</div>}
+      <div className="app-rail-nav-section-children" aria-hidden={!open}>
+        <div className="app-rail-nav-section-children__inner">{children}</div>
+      </div>
     </div>
   );
 }

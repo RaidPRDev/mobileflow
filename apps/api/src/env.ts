@@ -44,6 +44,13 @@ const Schema = z.object({
   SUPERADMIN_PASSWORD: z.string().optional(),
   TESTERCLIENT_EMAIL: z.string().email().optional(),
   TESTERCLIENT_PASSWORD: z.string().optional(),
+  // Admin → Deploy runs this repo's deploy scripts as child processes of the
+  // API. That belongs to a developer's own machine, so the routes are refused
+  // when NODE_ENV=production unless this is deliberately turned on.
+  ADMIN_LOCAL_DEPLOY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   // Comma-separated list of CIDRs / IPs the API will trust X-Forwarded-* from.
   // Default is loopback only, which is correct for "API listens on 127.0.0.1
   // behind nginx on the same box". For multi-host deploys, set this to the
@@ -52,6 +59,7 @@ const Schema = z.object({
   TRUST_PROXY: z.string().default("loopback"),
   API_BASE_URL: z.string().url().default("http://127.0.0.1:4000"),
   WEB_BASE_URL: z.string().url().default("http://127.0.0.1:5173"),
+  LOG_DIR: z.string().min(1).default("logs"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GITHUB_CLIENT_ID: z.string().optional(),
