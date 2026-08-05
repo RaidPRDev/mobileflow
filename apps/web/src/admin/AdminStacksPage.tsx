@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2 } from "lucide-react";
 import { ApiError, api, type BuildTarget } from "../api/client";
@@ -45,7 +46,11 @@ export function AdminStacksPage() {
         available Linux host; iOS stacks require a Mac with the matching Xcode installed.
       </p>
 
-      {q.isLoading && <div className="builds-status">Loading stacks…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading stacks…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as ApiError).message}</div>
       )}
@@ -58,7 +63,7 @@ export function AdminStacksPage() {
       )}
 
       {!!stacks.length && (
-        <div className="data-grid admin-stacks-table" role="table">
+        <div className="data-grid admin-stacks-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Stack</span>
             <span role="columnheader">Platform</span>

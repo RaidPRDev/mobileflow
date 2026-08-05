@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Combobox } from "@mobileflow/ui";
+import { Button, Combobox, Loading } from "@mobileflow/ui";
 import { ArrowLeft, Check, GitBranch, Pencil, PlusCircle } from "lucide-react";
 import {
   ApiError,
@@ -80,7 +80,11 @@ function SelectBuild({ appId }: { appId: string }) {
       <div className="new-build-section">
         <p className="new-build-help">Select a build to deploy</p>
 
-        {buildsQ.isLoading && <div className="builds-status">Loading builds…</div>}
+        {buildsQ.isLoading && (
+          <div className="builds-status">
+            <Loading>Loading builds…</Loading>
+          </div>
+        )}
         {buildsQ.error && (
           <div className="builds-status is-error">{(buildsQ.error as ApiError).message}</div>
         )}
@@ -276,7 +280,9 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
         <span className="new-build-label">Destination</span>
         <p className="new-build-help">Assign build to a store destination</p>
         {destsQ.isLoading ? (
-          <div className="builds-status">Loading destinations…</div>
+          <div className="builds-status">
+            <Loading>Loading destinations…</Loading>
+          </div>
         ) : matchingDestinations.length > 0 ? (
           <>
             <Combobox

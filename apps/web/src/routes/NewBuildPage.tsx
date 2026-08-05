@@ -15,6 +15,7 @@ import {
   Label,
   Switch,
   cn,
+  Loading,
 } from "@mobileflow/ui";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
 import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
@@ -134,7 +135,11 @@ function SelectCommit({ appId }: { appId: string }) {
         </div>
 
         <div className="commits-list">
-          {commitsQ.isLoading && <div className="commits-page__status">Loading commits…</div>}
+          {commitsQ.isLoading && (
+            <div className="commits-page__status">
+              <Loading>Loading commits…</Loading>
+            </div>
+          )}
           {commitsQ.error && (
             <div className="commits-page__status is-error">
               {(commitsQ.error as ApiError).message}
@@ -674,7 +679,9 @@ function CommitPanel({ appId, sha, commit, loading, loadError, branchName }: Com
       </div>
       <div className="commit-panel__main">
         {loading ? (
-          <span className="commit-panel__loading">Loading commit…</span>
+          <span className="commit-panel__loading">
+            <Loading>Loading commit…</Loading>
+          </span>
         ) : loadError ? (
           <span className="commit-panel__error">{loadError}</span>
         ) : commit ? (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@mobileflow/ui";
+import { Button, Loading } from "@mobileflow/ui";
 import { Check, ChevronDown, Lock, Search, X } from "lucide-react";
 import { ApiError, api, type GitProvider, type RepoRow } from "../api/client";
 
@@ -94,7 +94,7 @@ export function AppGitSettingsPage() {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Could not disconnect"),
   });
 
-  if (appQ.isLoading) return <p className="settings-page__status">Loading…</p>;
+  if (appQ.isLoading) return <p className="settings-page__status"><Loading /></p>;
   if (appQ.error)
     return <p className="settings-page__status is-danger">{(appQ.error as ApiError).message}</p>;
   if (!app) return null;
@@ -223,7 +223,11 @@ export function AppGitSettingsPage() {
           </div>
 
           <div className="git-repos">
-            {reposQ.isLoading && <div className="git-repos__empty">Loading repositories…</div>}
+            {reposQ.isLoading && (
+              <div className="git-repos__empty">
+                <Loading>Loading repositories…</Loading>
+              </div>
+            )}
             {reposQ.error && (
               <div className="git-repos__empty is-error">{(reposQ.error as ApiError).message}</div>
             )}

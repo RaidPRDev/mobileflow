@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, cn } from "@mobileflow/ui";
+import { Button, cn, Loading } from "@mobileflow/ui";
 import { CircleCheck, CircleX, Loader2, Play, Server, StopCircle } from "lucide-react";
 import {
   ApiError,
@@ -273,7 +273,7 @@ function JobPanel({
     [lines],
   );
 
-  if (!job) return <div className="builds-status">Loading run…</div>;
+  if (!job) return <div className="builds-status"><Loading>Loading run…</Loading></div>;
 
   return (
     <>

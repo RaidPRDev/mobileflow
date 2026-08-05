@@ -23,7 +23,9 @@ export function AppShell() {
           <ThemeToggle />
           <UserMenu />
         </header>
-        <div className="app-content app-scroll">
+        {/* Keyed on the pathname so each navigation remounts the scroll
+            container, which replays the fade and resets scroll to the top. */}
+        <div className="app-content app-scroll page-fade" key={location.pathname}>
           <Outlet />
         </div>
       </main>

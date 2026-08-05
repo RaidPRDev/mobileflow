@@ -100,6 +100,16 @@
   background: var(--color-bg-subtle);
   color: var(--color-fg-muted);
   font-size: 14px;
+  // Empty states resolve out of a loading spinner like any other content, so
+  // they get the same entrance as the tables and lists they stand in for.
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-state,
+  .builds-empty {
+    animation: none;
+  }
 }
 
 .empty-state__title,

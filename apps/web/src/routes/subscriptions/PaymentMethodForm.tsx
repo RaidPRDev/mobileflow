@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Loading } from "@mobileflow/ui";
 import { ApiError, api } from "../../api/client";
 import { PROCESSOR_COMPONENTS } from "./processors";
 
@@ -26,7 +27,7 @@ export function PaymentMethodForm({ orgId, onSaved, onCancel }: Props) {
     enabled: !!cfgQ.data,
   });
 
-  if (cfgQ.isLoading) return <p className="text-help">Loading…</p>;
+  if (cfgQ.isLoading) return <p className="text-help"><Loading /></p>;
   if (!cfgQ.data) return <p className="text-error">Billing is not configured.</p>;
 
   const Component = PROCESSOR_COMPONENTS[cfgQ.data.provider];
@@ -38,7 +39,7 @@ export function PaymentMethodForm({ orgId, onSaved, onCancel }: Props) {
     );
   }
 
-  if (intentQ.isLoading) return <p className="text-help">Loading…</p>;
+  if (intentQ.isLoading) return <p className="text-help"><Loading /></p>;
   const hasSetup = !!(intentQ.data?.clientSecret || intentQ.data?.redirectUrl);
   if (intentQ.error || !hasSetup) {
     return (

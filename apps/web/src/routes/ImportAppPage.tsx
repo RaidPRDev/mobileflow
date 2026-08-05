@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input } from "@mobileflow/ui";
+import { Button, Input, Loading } from "@mobileflow/ui";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Lock, Search, X } from "lucide-react";
 import type { Runtime } from "@mobileflow/shared";
 import { ApiError, api, type GitConnectionRow, type GitProvider, type RepoRow } from "../api/client";
@@ -455,7 +455,11 @@ function RepoStep(props: RepoStepProps) {
       </div>
 
       <div className="import-repos">
-        {isLoading && <div className="import-repos__empty">Loading repositories…</div>}
+        {isLoading && (
+          <div className="import-repos__empty">
+            <Loading>Loading repositories…</Loading>
+          </div>
+        )}
         {!isLoading && loadError && (
           <div className="import-repos__empty is-error">{loadError}</div>
         )}

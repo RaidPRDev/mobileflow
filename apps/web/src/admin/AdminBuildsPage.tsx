@@ -6,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../api/client";
@@ -43,7 +44,11 @@ export function AdminBuildsPage() {
         <h1 className="page-title">Builds (cross-org)</h1>
       </header>
 
-      {q.isLoading && <div className="builds-status">Loading builds…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading builds…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as Error).message}</div>
       )}
@@ -56,7 +61,7 @@ export function AdminBuildsPage() {
       )}
 
       {!!builds.length && (
-        <div className="data-grid admin-builds-table" role="table">
+        <div className="data-grid admin-builds-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Build</span>
             <span role="columnheader">Status</span>

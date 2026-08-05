@@ -61,9 +61,13 @@
   // where the easing keyword in the shorthand tokens below would be invalid.
   --duration-fast: 120ms;
   --duration-base: 180ms;
+  --duration-slow: 260ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   --transition-fast: var(--duration-fast) ease;
   --transition-base: var(--duration-base) ease;
+  --transition-slow: var(--duration-slow) var(--ease-out);
 
   --space-2xs: 2px;
   --space-xs: 4px;

@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
+import { Loading } from "@mobileflow/ui";
 import { api } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
@@ -25,7 +26,11 @@ export function AdminOrgsPage() {
         <h1 className="page-title">Organizations</h1>
       </header>
 
-      {q.isLoading && <div className="builds-status">Loading organizations…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading organizations…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as Error).message}</div>
       )}
@@ -37,7 +42,7 @@ export function AdminOrgsPage() {
       )}
 
       {!!orgs.length && (
-        <div className="data-grid admin-orgs-table" role="table">
+        <div className="data-grid admin-orgs-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Organization</span>
             <span role="columnheader">Plan</span>

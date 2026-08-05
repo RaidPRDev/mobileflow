@@ -12,6 +12,7 @@ import {
   Input,
   Label,
   cn,
+  Loading,
 } from "@mobileflow/ui";
 import {
   ArrowDown,
@@ -156,7 +157,11 @@ export function AdminDatabasePage() {
           </div>
 
           <nav className="admin-db-browser__tables app-scroll">
-            {tablesQ.isLoading && <div className="builds-status">Loading tables…</div>}
+            {tablesQ.isLoading && (
+              <div className="builds-status">
+                <Loading>Loading tables…</Loading>
+              </div>
+            )}
             {tablesQ.error && (
               <div className="builds-status is-error">{(tablesQ.error as ApiError).message}</div>
             )}
@@ -221,7 +226,11 @@ export function AdminDatabasePage() {
                 </IconButton>
               </div>
 
-              {rowsQ.isLoading && <div className="builds-status">Loading rows…</div>}
+              {rowsQ.isLoading && (
+                <div className="builds-status">
+                  <Loading>Loading rows…</Loading>
+                </div>
+              )}
               {rowsQ.error && (
                 <div className="builds-status is-error">{(rowsQ.error as ApiError).message}</div>
               )}

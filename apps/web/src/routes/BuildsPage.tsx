@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Combobox, type ComboboxOption } from "@mobileflow/ui";
+import { Button, Combobox, type ComboboxOption, Loading } from "@mobileflow/ui";
 import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
 import { ApiError, api, type BuildRow, type BuildStatus, type BuildTarget } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
@@ -115,7 +115,11 @@ export function BuildsPage() {
         </div>
       </header>
 
-      {buildsQ.isLoading && <div className="builds-status">Loading builds…</div>}
+      {buildsQ.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading builds…</Loading>
+        </div>
+      )}
       {buildsQ.error && (
         <div className="builds-status is-error">{(buildsQ.error as ApiError).message}</div>
       )}
@@ -182,7 +186,7 @@ function BuildsList({
 
   return (
     <>
-      <div className="data-grid builds-table" role="table" ref={gridRef}>
+      <div className="data-grid builds-table fade-in" role="table" ref={gridRef}>
         <div className="data-grid__head" role="row">
           <span role="columnheader">Build</span>
           <span role="columnheader">Status</span>

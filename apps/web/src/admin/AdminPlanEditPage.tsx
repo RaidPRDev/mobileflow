@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Switch } from "@mobileflow/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+  Loading,
+  Switch,
+} from "@mobileflow/ui";
 import { ArrowLeft } from "lucide-react";
 import { ApiError, api } from "../api/client";
 
@@ -92,7 +102,9 @@ export function AdminPlanEditPage() {
   if (q.isLoading) {
     return (
       <div className="page">
-        <p className="builds-status">Loading…</p>
+        <p className="builds-status">
+          <Loading />
+        </p>
       </div>
     );
   }

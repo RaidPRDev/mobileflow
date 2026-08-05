@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
   IconButton,
   Input,
+  Loading,
 } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -41,7 +42,11 @@ export function AdminUsersPage() {
         <h1 className="page-title">Users</h1>
       </header>
 
-      {q.isLoading && <div className="builds-status">Loading users…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading users…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as Error).message}</div>
       )}
@@ -53,7 +58,7 @@ export function AdminUsersPage() {
       )}
 
       {!!users.length && (
-        <div className="data-grid admin-users-table" role="table">
+        <div className="data-grid admin-users-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">User</span>
             <span role="columnheader">Role</span>

@@ -208,6 +208,13 @@
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg-subtle);
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commits-empty {
+    animation: none;
+  }
 }
 
 .commits-empty__title {

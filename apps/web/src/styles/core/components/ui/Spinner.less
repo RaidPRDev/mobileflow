@@ -1,0 +1,27 @@
+.spinner {
+  flex: none;
+  animation: spinner-rotate 800ms linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Spinner + label. Inline-flex so it can sit inside an existing status line
+// (.builds-status, .text-help, a table cell) without changing its box.
+.loading-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: inherit;
+}
+
+// The spinner still turns under reduced-motion — it is the only signal that
+// work is in flight — but slowly enough to read as a status, not an animation.
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}

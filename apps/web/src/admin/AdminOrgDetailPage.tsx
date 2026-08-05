@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
@@ -74,7 +75,9 @@ export function AdminOrgDetailPage() {
   if (q.isLoading) {
     return (
       <div className="page">
-        <p className="builds-status">Loading…</p>
+        <p className="builds-status">
+          <Loading />
+        </p>
       </div>
     );
   }
@@ -164,7 +167,7 @@ export function AdminOrgDetailPage() {
           {data.recentBuilds.length === 0 ? (
             <p className="admin-section-card__body empty-state__body">No builds.</p>
           ) : (
-            <div className="data-grid admin-builds-table" role="table">
+            <div className="data-grid admin-builds-table fade-in" role="table">
               <div className="data-grid__head" role="row">
                 <span role="columnheader">Build</span>
                 <span role="columnheader">Status</span>

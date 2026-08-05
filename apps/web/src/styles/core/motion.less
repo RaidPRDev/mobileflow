@@ -1,0 +1,47 @@
+// Shared entrance motion. Two rules cover the whole app:
+//
+//   .page-fade  — the route container in AppShell/AdminLayout. It is keyed on
+//                 the pathname, so remounting on navigation replays the fade.
+//   .fade-in    — content that appears once a query resolves. CSS animations
+//                 only run on mount, so a polled list that stays mounted keeps
+//                 still instead of re-fading on every refetch.
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-in {
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+.page-fade {
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+// Staggered variants for sibling sections that should cascade rather than
+// arrive all at once. Applied alongside .fade-in.
+.fade-in-delay-1 {
+  animation-delay: 60ms;
+}
+
+.fade-in-delay-2 {
+  animation-delay: 120ms;
+}
+
+.fade-in-delay-3 {
+  animation-delay: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .page-fade {
+    animation: none;
+  }
+}

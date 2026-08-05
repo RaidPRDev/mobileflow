@@ -16,6 +16,7 @@ import {
   FileDrop,
   Input,
   Label,
+  Loading,
 } from "@mobileflow/ui";
 import { ApiError, api, type CertificateGroup, type CertificateRow } from "../api/client";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
@@ -116,11 +117,15 @@ export function CertificatesPage() {
         <EditCertDialog cert={editingCert} appId={appId} onClose={() => setEditingCert(null)} />
       )}
 
-      {certsQ.isLoading && <p className="text-help">Loading…</p>}
+      {certsQ.isLoading && (
+        <p className="text-help">
+          <Loading>Loading certificates…</Loading>
+        </p>
+      )}
       {certsQ.error && <p className="text-error">{(certsQ.error as ApiError).message}</p>}
 
       {!!certsQ.data?.length && (
-        <div className="data-grid certs-table" role="table">
+        <div className="data-grid certs-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Name</span>
             <span role="columnheader">Type</span>

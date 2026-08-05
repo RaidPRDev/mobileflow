@@ -11,6 +11,7 @@ import {
   Input,
   Label,
   Switch,
+  Loading,
 } from "@mobileflow/ui";
 import { ArrowLeft } from "lucide-react";
 import { ApiError, api, type BuildTarget } from "../api/client";
@@ -116,7 +117,9 @@ export function AdminStackEditPage() {
   if (!isNew && q.isLoading) {
     return (
       <div className="page">
-        <p className="builds-status">Loading…</p>
+        <p className="builds-status">
+          <Loading />
+        </p>
       </div>
     );
   }

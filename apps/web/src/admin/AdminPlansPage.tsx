@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ChevronRight, XCircle } from "lucide-react";
+import { Loading } from "@mobileflow/ui";
 import { api } from "../api/client";
 
 interface Plan {
@@ -32,7 +33,11 @@ export function AdminPlansPage() {
         The <code>unlimited</code> plan is read-only and assignable only via the org detail page.
       </p>
 
-      {q.isLoading && <div className="builds-status">Loading plans…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading plans…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as Error).message}</div>
       )}
@@ -44,7 +49,7 @@ export function AdminPlansPage() {
       )}
 
       {!!plans.length && (
-        <div className="data-grid admin-plans-table" role="table">
+        <div className="data-grid admin-plans-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Plan</span>
             <span role="columnheader">Price</span>

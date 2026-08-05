@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   IconButton,
+  Loading,
 } from "@mobileflow/ui";
 import {
   ApiError,
@@ -90,7 +91,7 @@ export function StoreDestinationDetailPage() {
   const pageIdx = Math.min(page, pageCount - 1);
   const visible = history.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
 
-  if (destQ.isLoading) return <p className="settings-page__status">Loading…</p>;
+  if (destQ.isLoading) return <p className="settings-page__status"><Loading /></p>;
   if (destQ.error)
     return <p className="settings-page__status is-danger">{(destQ.error as ApiError).message}</p>;
   if (!destination) {
@@ -147,13 +148,17 @@ export function StoreDestinationDetailPage() {
       <section className="settings-row">
         <div className="settings-row__label">History</div>
         <div className="settings-row__content dest-history">
-          {depQ.isLoading && <div className="builds-status">Loading…</div>}
+          {depQ.isLoading && (
+            <div className="builds-status">
+              <Loading />
+            </div>
+          )}
           {!depQ.isLoading && history.length === 0 && (
             <p className="settings-page__status">No deployments yet.</p>
           )}
           {history.length > 0 && (
             <>
-              <div className="data-grid dest-history-table" role="table" ref={historyGridRef}>
+              <div className="data-grid dest-history-table fade-in" role="table" ref={historyGridRef}>
                 <div className="data-grid__head" role="row">
                   <span role="columnheader">Build</span>
                   <span role="columnheader">Status</span>

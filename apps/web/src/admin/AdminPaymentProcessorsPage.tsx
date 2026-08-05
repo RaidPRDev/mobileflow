@@ -15,6 +15,7 @@ import {
   TabsTrigger,
   TabsContent,
   cn,
+  Loading,
 } from "@mobileflow/ui";
 import { ApiError, api, type AdapterField, type PaymentProcessorRow } from "../api/client";
 
@@ -58,7 +59,11 @@ export function AdminPaymentProcessorsPage() {
       </p>
 
       <div className="page-section stack-sm">
-        {q.isLoading && <p className="text-help">Loading…</p>}
+        {q.isLoading && (
+          <p className="text-help">
+            <Loading />
+          </p>
+        )}
         {q.data?.processors.map((row) => (
           <ProcessorCard
             key={row.provider}

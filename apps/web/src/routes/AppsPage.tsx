@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
   IconButton,
   Switch,
+  Loading,
 } from "@mobileflow/ui";
 import { ChevronDown } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
@@ -68,7 +69,11 @@ export function AppsPage() {
         </DropdownMenu>
       </header>
 
-      {isLoading && <p className="apps-page__status">Loading…</p>}
+      {isLoading && (
+        <p className="apps-page__status">
+          <Loading />
+        </p>
+      )}
       {error && <p className="apps-page__status is-danger">{(error as ApiError).message}</p>}
 
       {apps && apps.length === 0 && (
@@ -82,7 +87,7 @@ export function AppsPage() {
       )}
 
       {apps && apps.length > 0 && (
-        <ul className="apps-list">
+        <ul className="apps-list fade-in">
           {apps.map((app) => (
             <AppListItem
               key={app.id}

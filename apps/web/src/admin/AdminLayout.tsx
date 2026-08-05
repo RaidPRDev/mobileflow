@@ -1,5 +1,5 @@
-import { Navigate, NavLink, Outlet } from "react-router-dom";
-import { cn } from "@mobileflow/ui";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { cn, Loading } from "@mobileflow/ui";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
@@ -7,11 +7,12 @@ import { UserMenu } from "../shell/UserMenu";
 
 export function AdminLayout() {
   const { status, me } = useAuth();
+  const location = useLocation();
   if (status === "loading") {
     return (
       <div className="app-shell">
         <div className="empty-state" style={{ margin: "auto" }}>
-          Loading…
+          <Loading />
         </div>
       </div>
     );
@@ -50,7 +51,7 @@ export function AdminLayout() {
           <ThemeToggle />
           <UserMenu />
         </header>
-        <div className="app-content app-scroll">
+        <div className="app-content app-scroll page-fade" key={location.pathname}>
           <Outlet />
         </div>
       </main>

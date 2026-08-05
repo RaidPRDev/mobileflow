@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
 import {
@@ -101,7 +102,11 @@ export function DeploymentsPage() {
         </div>
       </header>
 
-      {list.isLoading && <div className="builds-status">Loading deployments…</div>}
+      {list.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading deployments…</Loading>
+        </div>
+      )}
       {list.error && <div className="builds-status is-error">{(list.error as ApiError).message}</div>}
 
       {list.data?.length === 0 && (
@@ -121,7 +126,7 @@ export function DeploymentsPage() {
 
       {total > 0 && (
         <>
-          <div className="data-grid deployments-table" role="table" ref={gridRef}>
+          <div className="data-grid deployments-table fade-in" role="table" ref={gridRef}>
             <div className="data-grid__head" role="row">
               <span role="columnheader">Triggered by</span>
               <span role="columnheader">Type</span>
@@ -292,7 +297,11 @@ function DeploymentLogDialog({
           </DialogTitle>
         </DialogHeader>
         <DialogBody className="deployment-log-dialog__body">
-          {detail.isLoading && <div className="deployment-log-dialog__loading">Loading…</div>}
+          {detail.isLoading && (
+            <div className="deployment-log-dialog__loading">
+              <Loading />
+            </div>
+          )}
           {detail.error && (
             <div className="deployment-log-dialog__error">
               {(detail.error as ApiError).message}

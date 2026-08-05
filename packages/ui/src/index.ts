@@ -59,4 +59,6 @@ export {
 export { Switch, type SwitchProps } from "./Switch";
 export { RadioGroup, type RadioGroupProps, type RadioOption } from "./RadioGroup";
 export { Tooltip, type TooltipProps } from "./Tooltip";
+export { Spinner, type SpinnerProps } from "./Spinner";
+export { Loading, type LoadingProps } from "./Loading";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./Tabs";

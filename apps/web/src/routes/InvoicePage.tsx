@@ -1,7 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
-import { Button } from "@mobileflow/ui";
+import { Button, Loading } from "@mobileflow/ui";
 import { api, type PaymentDetail } from "../api/client";
 
 // In-app invoice viewer for a single payment. The Stripe hosted page is the
@@ -19,7 +19,11 @@ export function InvoicePage() {
   if (!orgId || !paymentId) return null;
 
   if (q.isLoading) {
-    return <p className="text-help">Loading…</p>;
+    return (
+      <p className="text-help">
+        <Loading />
+      </p>
+    );
   }
   if (q.isError || !q.data) {
     return <p className="text-error">Payment not found.</p>;

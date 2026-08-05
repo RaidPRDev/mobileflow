@@ -14,6 +14,7 @@ import {
   IconButton,
   ImageDrop,
   Input,
+  Loading,
 } from "@mobileflow/ui";
 import { ApiError, api, type OrgRow } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -139,7 +140,7 @@ export function AccountPage() {
     });
   }
 
-  if (orgQ.isLoading) return <p className="settings-page__status">Loading…</p>;
+  if (orgQ.isLoading) return <p className="settings-page__status"><Loading /></p>;
   if (orgQ.error)
     return <p className="settings-page__status is-danger">{(orgQ.error as ApiError).message}</p>;
   if (!org) return null;

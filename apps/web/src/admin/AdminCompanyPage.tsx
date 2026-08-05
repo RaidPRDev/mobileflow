@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, Label, cn } from "@mobileflow/ui";
+import { Button, Input, Label, Loading, cn } from "@mobileflow/ui";
 import { Upload, Trash2 } from "lucide-react";
 import { ApiError, api } from "../api/client";
 
@@ -253,7 +253,11 @@ function LogoDropzone({ existingMime }: { existingMime: string | null }) {
         </div>
       )}
 
-      {upload.isPending && <p className="text-help">Uploading…</p>}
+      {upload.isPending && (
+        <p className="text-help">
+          <Loading>Uploading…</Loading>
+        </p>
+      )}
       {error && <p className="text-error">{error}</p>}
     </fieldset>
   );

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Loading,
 } from "@mobileflow/ui";
 import { CreditCard } from "lucide-react";
 import {
@@ -554,7 +555,9 @@ function PaymentsRow({
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={3} className="payments-table__status">Loading…</td>
+                  <td colSpan={3} className="payments-table__status">
+                    <Loading />
+                  </td>
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>

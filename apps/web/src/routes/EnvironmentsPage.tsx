@@ -14,6 +14,7 @@ import {
   Input,
   Label,
   cn,
+  Loading,
 } from "@mobileflow/ui";
 import { ApiError, api, type EnvVarRow, type EnvironmentWithVars } from "../api/client";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
@@ -120,11 +121,15 @@ export function EnvironmentsPage() {
         </div>
       </div>
 
-      {envsQ.isLoading && <p className="text-help">Loading…</p>}
+      {envsQ.isLoading && (
+        <p className="text-help">
+          <Loading />
+        </p>
+      )}
       {envsQ.error && <p className="text-error">{(envsQ.error as ApiError).message}</p>}
 
       {!!envsQ.data?.length && (
-        <div className="data-grid envs-table" role="table">
+        <div className="data-grid envs-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Name</span>
             <span role="columnheader">Secrets</span>

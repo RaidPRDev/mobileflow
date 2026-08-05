@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@mobileflow/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Loading } from "@mobileflow/ui";
 import { ApiError, api, type GitProvider } from "../api/client";
 
 const PROVIDERS: { id: GitProvider; label: string }[] = [
@@ -47,7 +47,7 @@ export function GitConnectPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["git-connections", orgId] }),
   });
 
-  if (appQ.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (appQ.isLoading) return <p className="text-sm text-muted-foreground"><Loading /></p>;
   if (appQ.error) return <p className="text-sm text-destructive">{(appQ.error as ApiError).message}</p>;
 
   return (
@@ -99,7 +99,11 @@ export function GitConnectPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
-            {reposQ.isLoading && <p className="text-sm text-muted-foreground">Loading repos…</p>}
+            {reposQ.isLoading && (
+              <p className="text-sm text-muted-foreground">
+                <Loading>Loading repos…</Loading>
+              </p>
+            )}
             {reposQ.error && <p className="text-sm text-destructive">{(reposQ.error as ApiError).message}</p>}
             {reposQ.data && (
               <div className="grid gap-2 max-h-[420px] overflow-auto">

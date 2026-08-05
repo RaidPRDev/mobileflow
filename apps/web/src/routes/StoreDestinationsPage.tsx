@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@mobileflow/ui";
+import { Button, Loading } from "@mobileflow/ui";
 import appleIcon from "@assets/icons/apple-icon.svg";
 import androidIcon from "@assets/icons/android-icon.svg";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
@@ -103,7 +103,11 @@ export function StoreDestinationsPage() {
         />
       )}
 
-      {destQ.isLoading && <div className="builds-status">Loading destinations…</div>}
+      {destQ.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading destinations…</Loading>
+        </div>
+      )}
       {destQ.error && (
         <div className="builds-status is-error">{(destQ.error as ApiError).message}</div>
       )}
@@ -118,7 +122,7 @@ export function StoreDestinationsPage() {
 
       {total > 0 && (
         <>
-          <div className="destination-list" role="list" ref={listRef}>
+          <div className="destination-list fade-in" role="list" ref={listRef}>
             {visible.map((d) => {
               const type = d.type as DestType;
               const latest = latestByDest.get(d.id) ?? null;

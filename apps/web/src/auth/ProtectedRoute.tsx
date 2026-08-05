@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from "react-router-dom";
+import { Loading } from "@mobileflow/ui";
 import { useAuth } from "./AuthProvider";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -7,7 +8,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (status === "loading") {
     return (
       <div className="min-h-full grid place-items-center text-sm text-muted-foreground">
-        Loading…
+        <Loading />
       </div>
     );
   }

@@ -25,6 +25,13 @@
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg-subtle);
+  animation: fade-in var(--duration-slow) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apps-empty {
+    animation: none;
+  }
 }
 
 .apps-empty__title {

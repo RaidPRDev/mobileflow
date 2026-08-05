@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Button } from "@mobileflow/ui";
+import { Button, Loading } from "@mobileflow/ui";
 import { ExternalLink, GitBranch, Search } from "lucide-react";
 import { ApiError, api, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
@@ -56,7 +56,11 @@ export function CommitsPage() {
   }, [commitsQ.data?.items, filter]);
 
   if (appQ.isLoading) {
-    return <div className="commits-page__status">Loading…</div>;
+    return (
+      <div className="commits-page__status">
+        <Loading />
+      </div>
+    );
   }
   if (appQ.error) {
     return <div className="commits-page__status is-error">{(appQ.error as ApiError).message}</div>;
@@ -99,7 +103,11 @@ export function CommitsPage() {
       </div>
 
       <div className="commits-list" ref={listRef}>
-        {commitsQ.isLoading && <div className="commits-page__status">Loading commits…</div>}
+        {commitsQ.isLoading && (
+          <div className="commits-page__status">
+            <Loading>Loading commits…</Loading>
+          </div>
+        )}
         {commitsQ.error && (
           <div className="commits-page__status is-error">
             {(commitsQ.error as ApiError).message}
@@ -159,7 +167,7 @@ function CommitRowItem({ commit, accountAvatarUrl, accountLogin, onStartBuild }:
 
   return (
     <RowContextMenu actions={[{ label: "Start build", onSelect: onStartBuild }]}>
-      <div className="commit-row">
+      <div className="commit-row fade-in">
         <div className="commit-row__avatar">
           {avatarSrc ? (
             <img src={avatarSrc} alt={avatarAlt} />

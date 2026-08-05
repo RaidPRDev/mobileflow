@@ -14,6 +14,7 @@ import {
   Input,
   Switch,
   Tooltip,
+  Loading,
 } from "@mobileflow/ui";
 import { Info, Upload } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
@@ -126,7 +127,7 @@ export function AppGeneralSettingsPage() {
     }
   }
 
-  if (appQ.isLoading) return <p className="settings-page__status">Loading…</p>;
+  if (appQ.isLoading) return <p className="settings-page__status"><Loading /></p>;
   if (appQ.error)
     return <p className="settings-page__status is-danger">{(appQ.error as ApiError).message}</p>;
   if (!app) return null;

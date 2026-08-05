@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Button } from "@mobileflow/ui";
+import { Button, Loading } from "@mobileflow/ui";
 import {
   CheckCircle2,
   Circle,
@@ -285,7 +285,11 @@ export function BuildPage() {
   }, [b?.status]);
 
   if (!b && pollQ.isLoading && !wsConnected) {
-    return <div className="build-detail__status">Loading…</div>;
+    return (
+      <div className="build-detail__status">
+        <Loading />
+      </div>
+    );
   }
   if (pollQ.error && !b) {
     return <div className="build-detail__status is-error">{(pollQ.error as ApiError).message}</div>;
@@ -492,7 +496,13 @@ export function BuildPage() {
           {showEnv && (
             <DetailRow
               label="Environment"
-              value={environmentName ?? <span className="build-side-panel__muted">Loading…</span>}
+              value={
+                environmentName ?? (
+                  <span className="build-side-panel__muted">
+                    <Loading />
+                  </span>
+                )
+              }
             />
           )}
         </aside>

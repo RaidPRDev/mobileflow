@@ -20,6 +20,7 @@ import {
   IconButton,
   Input,
   Label,
+  Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
 import { ApiError, api } from "../api/client";
@@ -86,7 +87,11 @@ export function AdminHostsPage() {
 
       {showForm && <NewHostCard onDone={() => setShowForm(false)} />}
 
-      {q.isLoading && <div className="builds-status">Loading hosts…</div>}
+      {q.isLoading && (
+        <div className="builds-status">
+          <Loading>Loading hosts…</Loading>
+        </div>
+      )}
       {q.error && (
         <div className="builds-status is-error">{(q.error as Error).message}</div>
       )}
@@ -99,7 +104,7 @@ export function AdminHostsPage() {
       )}
 
       {!!hosts.length && (
-        <div className="data-grid admin-hosts-table" role="table">
+        <div className="data-grid admin-hosts-table fade-in" role="table">
           <div className="data-grid__head" role="row">
             <span role="columnheader">Host</span>
             <span role="columnheader">Kind</span>

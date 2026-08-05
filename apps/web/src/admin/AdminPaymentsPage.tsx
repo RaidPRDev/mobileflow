@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Badge, Input } from "@mobileflow/ui";
+import { Badge, Input, Loading } from "@mobileflow/ui";
 import { Download } from "lucide-react";
 import { api, type AdminPaymentRow } from "../api/client";
 
@@ -109,7 +109,9 @@ export function AdminPaymentsPage() {
             <tbody>
               {q.isLoading ? (
                 <tr>
-                  <td colSpan={9} className="payments-table__status">Loading…</td>
+                  <td colSpan={9} className="payments-table__status">
+                    <Loading />
+                  </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
