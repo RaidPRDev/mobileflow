@@ -16,7 +16,7 @@ export class LinuxDockerWebRunner implements Runner {
     if (ctx.build.target !== "web") throw new Error("LinuxDockerWebRunner only handles target=web");
     const host = await resolveLinuxHost();
     if (!host) throw new Error("Linux build host is not configured");
-    await ctx.log(`Linux host (${host.source}): ${host.username}@${host.host}:${host.port}`);
+    await ctx.log(`Linux host (${host.source}): ${host.host}`);
 
     const [a] = await db.select().from(apps).where(eq(apps.id, ctx.app.id)).limit(1);
     if (!a?.gitConnectionId || !a.gitRepoFullName) throw new Error("App is not connected to a repo");

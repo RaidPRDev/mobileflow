@@ -297,16 +297,7 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-
-  // Custom scrollbar for the dark terminal so it doesn't read as a light strip.
-  &::-webkit-scrollbar { width: 10px; height: 10px; }
-  &::-webkit-scrollbar-track { background: #0c0f13; }
-  &::-webkit-scrollbar-thumb {
-    background: #2a2f37;
-    border-radius: var(--radius-pill);
-    border: 2px solid #0c0f13;
-  }
-  &::-webkit-scrollbar-thumb:hover { background: #3a4049; }
+  // Scrollbar comes from the shared `app-scroll` class on the element.
 }
 
 // ── Tokenized log lines ─────────────────────────────────────────────────────

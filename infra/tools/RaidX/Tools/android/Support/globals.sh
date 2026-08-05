@@ -14,11 +14,14 @@ export APP_MODULE="app"
 export BUILD_TYPE="release"
 
 # Gradle settings.
-# `-Dorg.gradle.console=rich` makes Gradle emit ANSI even though docker run has
-# no TTY; FORCE_COLOR/CLICOLOR_FORCE cover the rest of the toolchain (npm, pod,
-# capacitor, clang). The MobileFlow web UI parses these escape codes and the
-# regex highlighter colors timestamps/levels/paths on top.
-export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false -Dorg.gradle.console=rich"
+# `console=plain` because rich mode also draws an animated progress bar
+# ("<====> 97% EXECUTING [38s]"), which only makes sense on a terminal that can
+# redraw a line — in the stored build log it accumulates into an unreadable
+# run-on string. Plain still prints "> Task :app:bundleRelease" per task, and
+# the web UI's regex highlighter colors timestamps/levels/paths on top, so we
+# lose little. FORCE_COLOR/CLICOLOR_FORCE still cover the rest of the toolchain
+# (npm, pod, capacitor, clang), which emit color without a progress area.
+export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false -Dorg.gradle.console=plain"
 export FORCE_COLOR=1
 export CLICOLOR_FORCE=1
 export TERM=xterm-256color

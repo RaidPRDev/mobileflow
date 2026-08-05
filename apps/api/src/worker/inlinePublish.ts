@@ -5,6 +5,7 @@ import { decryptString } from "../lib/crypto.js";
 import { pickDeployRunner } from "./runners/deploySelector.js";
 import type { DeployContext } from "./deployRunner.js";
 import type { RunnerContext } from "./runner.js";
+import { maskLogLine } from "../lib/maskLog.js";
 
 /**
  * Runs the store upload inline as part of the build's "publishing" phase
@@ -57,7 +58,7 @@ export async function runInlinePublish(
   await ctx.log(`Publishing to ${dest.name} (${dest.type}) — deployment ${deployment.id.slice(0, 8)}`);
 
   const appendDeploymentLog = async (line: string) => {
-    const stamped = `${new Date().toISOString()} ${line}\n`;
+    const stamped = `${new Date().toISOString()} ${maskLogLine(line)}\n`;
     await db
       .update(deployments)
       .set({ logText: sql`${deployments.logText} || ${stamped}` })

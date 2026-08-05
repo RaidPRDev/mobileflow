@@ -20,10 +20,10 @@ else
   GRADLE_CMD="gradle"
 fi
 
-# `--console=rich` forces ANSI output even though docker run has no TTY. Pairs
-# with the GRADLE_OPTS export in globals.sh; either alone is sufficient but
-# both is unambiguous.
-GRADLE_FLAGS="--console=rich"
+# `--console=plain` drops the animated progress bar, which is meaningless in a
+# non-TTY log. Pairs with the GRADLE_OPTS export in globals.sh; either alone is
+# sufficient but both is unambiguous.
+GRADLE_FLAGS="--console=plain"
 
 # Clean previous builds
 echo "🧹 Cleaning previous builds..."

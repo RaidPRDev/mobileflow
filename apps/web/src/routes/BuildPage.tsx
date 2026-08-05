@@ -27,6 +27,8 @@ interface SnapshotEvent {
   build: BuildDetail;
   steps: BuildDetail["steps"];
   log: string;
+  /** Raw DB length of the log — the masked `log` string can be shorter. */
+  logLength?: number;
 }
 interface LogEvent { type: "log"; line: string; offset: number }
 interface StepEvent { type: "step"; name: string; status: BuildStepStatus; exitCode?: number }
@@ -84,7 +86,9 @@ export function BuildPage() {
     queryKey: ["build", buildId, "poll"],
     queryFn: async () => {
       const res = await api.getBuild(buildId!, offsetRef.current);
-      offsetRef.current = res.log.offset + res.log.tail.length;
+      // Track the server's raw length, not the tail we received — the tail is
+      // masked on the way out and can be shorter than the bytes it covers.
+      offsetRef.current = res.log.length;
       if (res.log.tail) setLogBuf((prev) => prev + res.log.tail);
       return res;
     },
@@ -123,9 +127,10 @@ export function BuildPage() {
         return;
       }
       if (evt.type === "snapshot") {
-        setSnapshot({ ...evt.build, steps: evt.steps, log: { offset: 0, length: evt.log.length, tail: "" } });
+        const rawLength = evt.logLength ?? evt.log.length;
+        setSnapshot({ ...evt.build, steps: evt.steps, log: { offset: 0, length: rawLength, tail: "" } });
         setLogBuf(evt.log);
-        offsetRef.current = evt.log.length;
+        offsetRef.current = rawLength;
       } else if (evt.type === "log") {
         setLogBuf((prev) => prev + evt.line);
         offsetRef.current = evt.offset;
@@ -373,7 +378,7 @@ export function BuildPage() {
             ref={logRef}
             raw={logBuf}
             onScroll={onLogScroll}
-            className="build-logs__pre"
+            className="build-logs__pre app-scroll"
             empty={<span className="build-logs__empty">(no output yet)</span>}
           />
           {b.errorMessage && (
@@ -384,7 +389,7 @@ export function BuildPage() {
           )}
         </section>
 
-        <aside className="build-side-panel" aria-label="Build details">
+        <aside className="build-side-panel app-scroll" aria-label="Build details">
           <DetailRow label="Duration" value={durationText} />
           <DetailRow label="Build ID" value={<code className="is-mono">{shortId}</code>} />
           <DetailRow

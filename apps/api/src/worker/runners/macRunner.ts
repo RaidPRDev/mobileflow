@@ -43,7 +43,7 @@ export class MacRunner implements Runner {
     // and tells them nothing they can act on. "Using runner: MacRunner" (from
     // worker.ts) already identifies where the build runs.
     if (VERBOSE_BUILD_LOGS) {
-      await ctx.log(`Mac host (${host.source}): ${host.username}@${host.host}:${host.port}`);
+      await ctx.log(`Mac host (${host.source}): ${host.host}`);
     }
 
     const [a] = await db.select().from(apps).where(eq(apps.id, ctx.app.id)).limit(1);

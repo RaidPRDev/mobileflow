@@ -31,7 +31,7 @@ export class LinuxDockerAndroidRunner implements Runner {
     if (ctx.build.target !== "android") throw new Error("LinuxDockerAndroidRunner only handles target=android");
     const host = await resolveLinuxHost();
     if (!host) throw new Error("Linux build host is not configured (no DB row and no LINUX_BUILD_* env)");
-    await ctx.log(`Linux host (${host.source}): ${host.username}@${host.host}:${host.port}`);
+    await ctx.log(`Linux host (${host.source}): ${host.host}`);
 
     const [a] = await db.select().from(apps).where(eq(apps.id, ctx.app.id)).limit(1);
     if (!a?.gitConnectionId || !a.gitRepoFullName) throw new Error("App is not connected to a repo");

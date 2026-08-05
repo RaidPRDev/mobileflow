@@ -29,7 +29,7 @@ export class AppStoreUploadRunner implements DeployRunner {
     const fileName = fileNameFromUrl(ipa.url);
     const auth = parseAppStoreAuth(ctx.config as Record<string, unknown>);
 
-    await ctx.log(`App Store upload (${auth.mode}) via altool: ${target.username}@${target.host}`);
+    await ctx.log(`App Store upload (${auth.mode}) via altool: ${target.host}`);
     await ctx.log(`Artifact URL: ${ipa.url}`);
     await logDestinationDiagnostics(ctx, auth);
     await logSigningDiagnostics(ctx, auth);
@@ -240,9 +240,9 @@ async function logDestinationDiagnostics(ctx: DeployContext, auth: AppStoreAuth)
   await ctx.log(`  authMode: ${auth.mode}`);
   if (auth.mode === "altool") {
     await ctx.log(`  appleId: ${auth.appleId}`);
-    await ctx.log(`  appAppleId: ${auth.appAppleId ?? "(none)"} (cross-check only — not passed to altool)`);
-    await ctx.log(`  teamId: ${auth.teamId ?? "(none)"} (cross-check only — not passed to altool)`);
-    await ctx.log(`  providerPublicId: ${auth.providerPublicId ?? "(none — fine unless this Apple ID has multiple teams)"}`);
+    await ctx.log(`  appAppleId: ${auth.appAppleId ?? "(none)"}`);
+    await ctx.log(`  teamId: ${auth.teamId ?? "(none)"}`);
+    await ctx.log(`  providerPublicId: ${auth.providerPublicId ?? "(none)"}`);
     await ctx.log(`  appSpecificPassword: ${fingerprintPassword(auth.appSpecificPassword)}`);
   } else {
     await ctx.log(`  issuerId: ${auth.issuerId}`);

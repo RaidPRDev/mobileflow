@@ -4,6 +4,7 @@ import { apps, builds, deployments, storeDestinations } from "../db/schema.js";
 import { decryptString } from "../lib/crypto.js";
 import { pickDeployRunner } from "./runners/deploySelector.js";
 import type { DeployContext } from "./deployRunner.js";
+import { maskLogLine } from "../lib/maskLog.js";
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = 0;
@@ -53,7 +54,7 @@ async function runOne(id: string) {
   }
 
   const append = async (line: string) => {
-    const stamped = `${new Date().toISOString()} ${line}\n`;
+    const stamped = `${new Date().toISOString()} ${maskLogLine(line)}\n`;
     await db.update(deployments).set({ logText: sql`${deployments.logText} || ${stamped}` }).where(eq(deployments.id, id));
   };
 

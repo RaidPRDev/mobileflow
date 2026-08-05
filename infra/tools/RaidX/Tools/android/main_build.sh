@@ -15,8 +15,8 @@ SCRIPTS_DIR="$TOOLS_DIR/Support/Scripts"
 GLOBALS_FILE="$TOOLS_DIR/Support/globals.sh"
 
 # Source globals so downstream scripts inherit FORCE_COLOR/CLICOLOR_FORCE/TERM
-# and the rich-console GRADLE_OPTS. Without this, the env exports in globals.sh
-# only apply if a script sources it directly.
+# and GRADLE_OPTS. Without this, the env exports in globals.sh only apply if a
+# script sources it directly.
 if [ -f "$GLOBALS_FILE" ]; then
   # shellcheck source=/dev/null
   source "$GLOBALS_FILE"

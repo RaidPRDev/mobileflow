@@ -5,6 +5,7 @@ import type { RunnerContext } from "./runner.js";
 import { pickRunner } from "./runners/selector.js";
 import { buildBus } from "./events.js";
 import { sweepMacBuildSandboxes } from "./maintenance.js";
+import { maskLogLine } from "../lib/maskLog.js";
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = 0;
@@ -142,7 +143,7 @@ async function fail(b: Build, message: string): Promise<Date> {
 }
 
 async function appendLog(buildId: string, line: string) {
-  const stamped = `${new Date().toISOString()} ${line}\n`;
+  const stamped = `${new Date().toISOString()} ${maskLogLine(line)}\n`;
   const [updated] = await db
     .update(builds)
     .set({ logText: sql`${builds.logText} || ${stamped}` })

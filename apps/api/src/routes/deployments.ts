@@ -6,6 +6,7 @@ import { apps, builds, deployments, storeDestinations, users } from "../db/schem
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { decryptString, encryptString } from "../lib/crypto.js";
 import { sanitizeLabel } from "../lib/sanitize.js";
+import { maskLogLine } from "../lib/maskLog.js";
 
 // Going forward only "app_store" and "play_store" are accepted on creation.
 // (Legacy "testflight" / "play_internal" values may still exist in the enum
@@ -392,6 +393,8 @@ export async function deploymentRoutes(server: FastifyInstance) {
     if (!a) return reply.notFound();
     await requireOrgMember(req, reply, a.orgId);
     if (reply.sent) return;
-    return d;
+    // Masked on read as well as on write, so deployments logged before masking
+    // existed are cleaned up too.
+    return { ...d, logText: maskLogLine(d.logText ?? "") };
   });
 }

@@ -7,6 +7,7 @@ import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { assertCanStartBuild } from "../plans/gate.js";
 import { buildBus } from "../worker/events.js";
 import { SESSION_COOKIE, getSession } from "../auth/session.js";
+import { maskLogLine } from "../lib/maskLog.js";
 
 /**
  * Phases shown in the UI and persisted to build_steps. "publishing" is only
@@ -192,7 +193,10 @@ export async function buildsRoutes(app: FastifyInstance) {
       triggeredByEmail: row.triggeredByEmail,
       certificateLabel,
       steps,
-      log: { offset: since, length: b.logText.length, tail: logTail },
+      // `length` is the raw DB length and stays the client's cursor; the tail
+      // is masked on the way out so logs written before masking existed are
+      // cleaned too.
+      log: { offset: since, length: b.logText.length, tail: maskLogLine(logTail) },
     };
   });
 
@@ -261,7 +265,8 @@ export async function buildsRoutes(app: FastifyInstance) {
             certificateLabel,
           },
           steps,
-          log: b.logText,
+          log: maskLogLine(b.logText),
+          logLength: b.logText.length,
         }),
       );
 
