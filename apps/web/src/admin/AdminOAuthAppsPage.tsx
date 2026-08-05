@@ -14,6 +14,7 @@ import {
   cn,
 } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
+import { SecretInput } from "../components/SecretInput";
 
 type Provider = "google" | "github" | "gitlab" | "bitbucket";
 type Kind = "signin" | "git";
@@ -214,8 +215,7 @@ function ProviderCard({
             <Label className="is-small">
               Client secret {existing && "(leave blank to keep)"}
             </Label>
-            <Input
-              type="password"
+            <SecretInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
             />

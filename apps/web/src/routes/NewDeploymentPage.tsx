@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Combobox } from "@mobileflow/ui";
-import { ArrowLeft, Check, GitBranch } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, Pencil, PlusCircle } from "lucide-react";
 import {
   ApiError,
   api,
@@ -10,6 +10,12 @@ import {
   type BuildTarget,
 } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
+import {
+  StoreDestinationDialog,
+  TYPE_LABEL,
+  TYPE_PLATFORM,
+  type DestType,
+} from "./StoreDestinationDialog";
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
   ios: { label: "iOS", iconBg: "#0a0a0a", icon: <AppleIcon /> },
@@ -186,6 +192,7 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
   const qc = useQueryClient();
   const [destinationId, setDestinationId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [addingDestination, setAddingDestination] = useState(false);
 
   // Use the cached builds list (populated by the select step) to compute the
   // sequential build number — cheap because react-query dedupes the request.
@@ -215,6 +222,16 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
     }
     return [];
   }, [buildEntry, destsQ.data]);
+
+  // Which store this build can actually go to. Drives both the "you have no
+  // Google Play destination" notice and the type the add dialog opens on.
+  const requiredType: DestType | null = !buildEntry
+    ? null
+    : buildEntry.build.target === "ios"
+      ? "app_store"
+      : buildEntry.build.target === "android"
+        ? "play_store"
+        : null;
 
   const deploy = useMutation({
     mutationFn: () => api.createDeployment(appId, { buildId, destinationId }),
@@ -261,28 +278,68 @@ function ConfigureDeployment({ appId, buildId }: { appId: string; buildId: strin
         {destsQ.isLoading ? (
           <div className="builds-status">Loading destinations…</div>
         ) : matchingDestinations.length > 0 ? (
-          <Combobox
-            value={destinationId}
-            onChange={setDestinationId}
-            options={[
-              { value: "", label: "None" },
-              ...matchingDestinations.map((d) => ({ value: d.id, label: d.name })),
-            ]}
-          />
+          <>
+            <Combobox
+              value={destinationId}
+              onChange={setDestinationId}
+              options={[
+                { value: "", label: "None" },
+                ...matchingDestinations.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+            />
+            <button
+              type="button"
+              className="new-deploy-add-dest"
+              onClick={() => setAddingDestination(true)}
+            >
+              <PlusCircle size={16} aria-hidden />
+              <span>Create new destination to store</span>
+            </button>
+          </>
         ) : (
-          <Button
-            variant="outline"
-            onClick={() => navigate(`/app/${appId}/deploy/store-destinations`)}
-          >
-            Set up your first destination to store
-          </Button>
-        )}
-        {matchingDestinations.length > 0 && (
-          <Link to={`/app/${appId}/deploy/store-destinations`} className="new-build-link new-deploy-add-link">
-            Create new destination to store
-          </Link>
+          <div className="new-deploy-dest-empty">
+            <p className="new-deploy-dest-empty__text">
+              {requiredType ? (
+                <>
+                  This is an {PLATFORM_META[buildEntry!.build.target].label} build, and no{" "}
+                  <strong>{TYPE_LABEL[requiredType]}</strong> destination has been set up yet.
+                </>
+              ) : (
+                "This build has no store destination available."
+              )}
+            </p>
+            {requiredType && (
+              <button
+                type="button"
+                className="new-deploy-add-dest"
+                onClick={() => setAddingDestination(true)}
+              >
+                <PlusCircle size={16} aria-hidden />
+                <span>Add a {TYPE_LABEL[requiredType]} destination</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
+
+      {addingDestination && (
+        <StoreDestinationDialog
+          appId={appId}
+          defaultType={requiredType ?? undefined}
+          onCreated={(created) => {
+            // Only auto-select when the new destination actually fits this
+            // build — the user can switch the store inside the dialog.
+            if (
+              buildEntry &&
+              created.type in TYPE_PLATFORM &&
+              TYPE_PLATFORM[created.type as DestType] === buildEntry.build.target
+            ) {
+              setDestinationId(created.id);
+            }
+          }}
+          onClose={() => setAddingDestination(false)}
+        />
+      )}
 
       {error && <p className="new-build-error">{error}</p>}
 
@@ -336,8 +393,14 @@ function SelectedBuildSummary({
           </span>
         </span>
       </span>
-      <button type="button" className="deploy-build-summary__change" onClick={onChange}>
-        Change
+      <button
+        type="button"
+        className="deploy-build-summary__change"
+        onClick={onChange}
+        aria-label="Change build"
+        title="Change build"
+      >
+        <Pencil size={16} aria-hidden />
       </button>
     </div>
   );

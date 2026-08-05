@@ -388,6 +388,74 @@
   margin-bottom: var(--space-lg);
 }
 
+// Header row: title on the left, expand chevron hard right.
+.new-env-section__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  // Pull the padding back out with a negative margin so the title still lines
+  // up with the fields below while the hover surface extends past them.
+  width: calc(100% + var(--space-sm) * 2);
+  margin: 0 calc(var(--space-sm) * -1);
+  padding: 6px var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+  transition: background 120ms ease;
+
+  &:hover {
+    background: var(--color-bg-muted);
+
+    .new-env-section__chevron {
+      color: var(--color-fg);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+}
+
+.new-env-section__chevron {
+  flex-shrink: 0;
+  color: var(--color-fg-muted);
+  transition: transform 200ms ease;
+}
+
+.new-env-section__toggle[aria-expanded="true"] .new-env-section__chevron {
+  transform: rotate(180deg);
+}
+
+// Height animation without measuring: the panel is a grid whose single row
+// goes from 0fr to 1fr, and the inner wrapper clips the overflow meanwhile.
+.new-env-section__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+
+  &.is-open {
+    grid-template-rows: 1fr;
+  }
+}
+
+.new-env-section__panel-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-env-section__panel,
+  .new-env-section__chevron,
+  .new-env-section__toggle {
+    transition: none;
+  }
+}
+
 .new-env-section__title {
   font-size: 14px;
   font-weight: 600;
@@ -847,22 +915,57 @@
   text-overflow: ellipsis;
 }
 
-.deploy-build-summary__change {
-  background: transparent;
+// Inline "add a destination" action — plus icon first, then the label.
+.new-deploy-add-dest {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  align-self: flex-start;
+  margin-top: var(--space-xs);
+  padding: 6px var(--space-sm);
   border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
   font: inherit;
+  font-size: 13px;
   color: var(--color-accent);
   cursor: default;
-  padding: var(--space-xs) var(--space-sm);
+
+  svg {
+    flex-shrink: 0;
+  }
 
   &:hover {
-    text-decoration: underline;
+    background: var(--color-bg-muted);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
 }
 
-.new-deploy-add-link {
-  margin-top: var(--space-xs);
+// "This build is Android and you have no Play Store destination" notice.
+.new-deploy-dest-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.new-deploy-dest-empty__text {
+  margin: 0;
   font-size: 13px;
+  color: var(--color-fg-muted);
+
+  strong {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
 }
 
 // ─── Deploy wizard: build picker table (step 1) ──────────────────────────────
@@ -1107,17 +1210,28 @@
   gap: 4px;
 }
 
+// Icon-only "change the selected build" action at the end of the summary row.
 .deploy-build-summary__change {
-  background: transparent;
-  border: 0;
-  color: var(--color-accent);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   margin-left: auto;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: default;
 
   &:hover {
-    text-decoration: underline;
+    background: var(--color-bg-muted);
+    color: var(--color-accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
 }

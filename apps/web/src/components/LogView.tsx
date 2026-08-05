@@ -74,7 +74,8 @@ export const LogView = forwardRef<HTMLDivElement, LogViewProps>(function LogView
 
 function lineClass(line: ParsedLine): string {
   const parts = ["build-logs__line"];
-  if (line.isStderr) parts.push("is-stderr");
+  // Keyed off content, not stream — see ParsedLine.isError.
+  if (line.isError) parts.push("is-error");
   if (line.isPhaseHeader) parts.push("is-phase");
   return parts.join(" ");
 }

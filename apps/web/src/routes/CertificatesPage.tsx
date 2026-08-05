@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { Apple, ChevronDown, MoreVertical, Smartphone } from "lucide-react";
+import { Apple, ChevronDown, CircleMinus, Smartphone } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -14,14 +14,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   FileDrop,
-  IconButton,
   Input,
   Label,
 } from "@mobileflow/ui";
 import { ApiError, api, type CertificateGroup, type CertificateRow } from "../api/client";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { SecretInput } from "../components/SecretInput";
-import deleteIcon from "../../../../assets/icons/delete-icon.svg";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 
 type Platform = "ios" | "android";
 
@@ -59,6 +59,12 @@ export function CertificatesPage() {
   const [openPlatform, setOpenPlatform] = useState<Platform | null>(null);
   const [editingCert, setEditingCert] = useState<CertificateGroup | null>(null);
   const [deletingCert, setDeletingCert] = useState<CertificateGroup | null>(null);
+
+  // One source of truth for both the ⋮ button and the right-click menu.
+  const rowActions = (c: CertificateGroup): RowAction[] => [
+    { label: "Edit", onSelect: () => setEditingCert(c) },
+    { label: "Delete", destructive: true, onSelect: () => setDeletingCert(c) },
+  ];
 
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteCertificate(id),
@@ -123,50 +129,48 @@ export function CertificatesPage() {
             <span role="columnheader" aria-label="Actions"></span>
           </div>
           {certsQ.data.map((c) => (
-            <div key={c.id} className="data-grid__row certs-row" role="row">
-              <div role="cell">
-                <div className="cell-stack">
-                  <div className="data-row-name">{c.label}</div>
-                  {c.provisioningProfiles.length > 0 && (
-                    <div className="data-row-meta">
-                      {c.provisioningProfiles.length} provisioning profile
-                      {c.provisioningProfiles.length === 1 ? "" : "s"}
-                    </div>
-                  )}
+            <RowContextMenu key={c.id} actions={rowActions(c)}>
+              <div
+                className="data-grid__row certs-row"
+                role="row"
+                onDoubleClick={(e) => {
+                  if (isInteractiveTarget(e.target)) return;
+                  clearTextSelection();
+                  setEditingCert(c);
+                }}
+              >
+                <div role="cell">
+                  <div className="cell-stack">
+                    <div className="data-row-name">{c.label}</div>
+                    {c.provisioningProfiles.length > 0 && (
+                      <div className="data-row-meta">
+                        {c.provisioningProfiles.length} provisioning profile
+                        {c.provisioningProfiles.length === 1 ? "" : "s"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div role="cell">
+                  <span className="data-row-meta">{c.kind}</span>
+                </div>
+                <div role="cell">
+                  <span className="data-row-platform">
+                    <span className={`data-row-platform-icon is-${c.platform}`}>
+                      {c.platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
+                    </span>
+                    <span>{c.platform === "ios" ? "iOS" : "Android"}</span>
+                  </span>
+                </div>
+                <div role="cell">
+                  <span className="data-row-meta">
+                    {formatExpiration(c.metadata?.expirationDate)}
+                  </span>
+                </div>
+                <div role="cell" className="data-grid__actions">
+                  <RowActionsButton actions={rowActions(c)} />
                 </div>
               </div>
-              <div role="cell">
-                <span className="data-row-meta">{c.kind}</span>
-              </div>
-              <div role="cell">
-                <span className="data-row-platform">
-                  <span className={`data-row-platform-icon is-${c.platform}`}>
-                    {c.platform === "ios" ? <Apple size={12} /> : <Smartphone size={12} />}
-                  </span>
-                  <span>{c.platform === "ios" ? "iOS" : "Android"}</span>
-                </span>
-              </div>
-              <div role="cell">
-                <span className="data-row-meta">{formatExpiration(c.metadata?.expirationDate)}</span>
-              </div>
-              <div role="cell" className="data-grid__actions">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <IconButton variant="menu" aria-label="More actions">
-                      <MoreVertical size={16} />
-                    </IconButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onSelect={() => setEditingCert(c)}>
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem destructive onSelect={() => setDeletingCert(c)}>
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
+            </RowContextMenu>
           ))}
         </div>
       )}
@@ -216,7 +220,7 @@ function buildCertDeleteDetails(c: CertificateGroup): string[] {
   return details;
 }
 
-// Small inline ×-style button using the shared delete-icon.svg.
+// Small inline "remove this file" button shown at the end of each file row.
 function FileDeleteButton({ onClick, ariaLabel }: { onClick: () => void; ariaLabel: string }) {
   return (
     <button
@@ -225,7 +229,7 @@ function FileDeleteButton({ onClick, ariaLabel }: { onClick: () => void; ariaLab
       onClick={onClick}
       aria-label={ariaLabel}
     >
-      <img src={deleteIcon} alt="" aria-hidden />
+      <CircleMinus size={18} aria-hidden />
     </button>
   );
 }
@@ -318,6 +322,7 @@ function AddCertDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
+        className="cert-dialog"
         aria-describedby={undefined}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
@@ -343,79 +348,85 @@ function AddCertDialog({
             <div className="card-content">
               <PlatformHeader platform={platform} />
 
-              <div className="field-group">
-                <Label className="is-small">
-                  {isIos ? "App development / Store certificate" : "Keystore (.jks / .keystore)"}
-                </Label>
-                {file ? (
-                  <div className="cert-file-row">
-                    <span className="cert-file-row__name">{file.name}</span>
-                    <FileDeleteButton onClick={() => setFile(null)} ariaLabel="Remove file" />
+              {/* Certificate on the left, provisioning profiles on the right —
+                  the grid collapses to one column on narrow screens. */}
+              <div className="cert-form-grid">
+                <div className="cert-form-grid__col">
+                  <div className="field-group">
+                    <Label className="is-small cert-section-label">
+                      {isIos ? "Development Certificate" : "Keystore (.jks / .keystore)"}
+                    </Label>
+                    {file ? (
+                      <div className="cert-file-row">
+                        <span className="cert-file-row__name">{file.name}</span>
+                        <FileDeleteButton onClick={() => setFile(null)} ariaLabel="Remove file" />
+                      </div>
+                    ) : (
+                      <FileDrop
+                        accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
+                        value={null}
+                        onChange={(files) => setFile(files[0] ?? null)}
+                        hint={<>Drop file here or <span className="filedrop-link">browse</span></>}
+                      />
+                    )}
                   </div>
-                ) : (
-                  <FileDrop
-                    accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
-                    value={null}
-                    onChange={(files) => setFile(files[0] ?? null)}
-                    hint={<>Drop file here or <span className="filedrop-link">browse</span></>}
-                  />
-                )}
-              </div>
 
-              {/* Sits directly under the certificate it unlocks. */}
-              <div className="field-group">
-                <Label htmlFor="cert-pass" className="is-small">
-                  {isIos ? "Certificate password" : "Keystore password"}
-                </Label>
-                <SecretInput
-                  id="cert-pass"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+                  {/* Sits directly under the certificate it unlocks. */}
+                  <div className="field-group">
+                    <Label htmlFor="cert-pass" className="is-small">
+                      {isIos ? "Certificate password" : "Keystore password"}
+                    </Label>
+                    <SecretInput
+                      id="cert-pass"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
 
-              {isIos && (
-                <div className="field-group">
-                  <Label className="is-small">Provisioning profiles</Label>
-                  <p className="text-help">
-                    Upload the profile for your main app. Optionally include additional profiles if
-                    you are building app extensions.
-                  </p>
-                  {provisionFiles.length > 0 && (
-                    <div className="cert-file-list">
-                      {provisionFiles.map((f, i) => (
-                        <div key={`${f.name}-${i}`} className="cert-file-row">
-                          <span className="cert-file-row__name">{f.name}</span>
-                          <FileDeleteButton
-                            onClick={() => setProvisionFiles(provisionFiles.filter((_, idx) => idx !== i))}
-                            ariaLabel={`Remove ${f.name}`}
-                          />
-                        </div>
-                      ))}
+                  {!isIos && (
+                    <div className="field-group">
+                      <Label htmlFor="alias" className="is-small">Key alias</Label>
+                      <Input
+                        id="alias"
+                        value={alias}
+                        onChange={(e) => setAlias(e.target.value)}
+                        placeholder="key0"
+                        required
+                      />
                     </div>
                   )}
-                  <FileDrop
-                    accept=".mobileprovision"
-                    multiple
-                    value={null}
-                    onChange={(files) => setProvisionFiles([...provisionFiles, ...files])}
-                    hint={<>Drop files here or <span className="filedrop-link">browse</span></>}
-                  />
                 </div>
-              )}
 
-              {!isIos && (
-                <div className="field-group">
-                  <Label htmlFor="alias" className="is-small">Key alias</Label>
-                  <Input
-                    id="alias"
-                    value={alias}
-                    onChange={(e) => setAlias(e.target.value)}
-                    placeholder="key0"
-                    required
-                  />
-                </div>
-              )}
+                {isIos && (
+                  <div className="cert-form-grid__col">
+                    <div className="field-group">
+                      <Label className="is-small cert-section-label">Provisioning profiles</Label>
+                      {provisionFiles.length > 0 && (
+                        <div className="cert-file-list">
+                          {provisionFiles.map((f, i) => (
+                            <div key={`${f.name}-${i}`} className="cert-file-row">
+                              <span className="cert-file-row__name">{f.name}</span>
+                              <FileDeleteButton
+                                onClick={() =>
+                                  setProvisionFiles(provisionFiles.filter((_, idx) => idx !== i))
+                                }
+                                ariaLabel={`Remove ${f.name}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <FileDrop
+                        accept=".mobileprovision"
+                        multiple
+                        value={null}
+                        onChange={(files) => setProvisionFiles([...provisionFiles, ...files])}
+                        hint={<>Drop files here or <span className="filedrop-link">browse</span></>}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -524,6 +535,7 @@ function EditCertDialog({ cert, appId, onClose }: { cert: CertificateGroup; appI
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
+        className="cert-dialog"
         aria-describedby={undefined}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
@@ -548,120 +560,124 @@ function EditCertDialog({ cert, appId, onClose }: { cert: CertificateGroup; appI
             <div className="card-content">
               <PlatformHeader platform={cert.platform} />
 
-              <div className="field-group">
-                <Label className="is-small">
-                  {isIos ? "App development / Store certificate" : "Keystore (.jks / .keystore)"}
-                </Label>
-                {editState.removedMain && editState.mainFile === null ? (
-                  <FileDrop
-                    accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
-                    value={null}
-                    onChange={(files) =>
-                      setEditState({ mainFile: files[0] ?? null, removedMain: true })
-                    }
-                    hint={<>Drop replacement file here or <span className="filedrop-link">browse</span></>}
-                  />
-                ) : (
-                  <div className="cert-file-block">
-                    <div className="cert-file-row">
-                      <span className="cert-file-row__name">
-                        {editState.mainFile ? editState.mainFile.name : cert.fileName}
-                      </span>
-                      <FileDeleteButton
-                        onClick={() => setEditState({ mainFile: null, removedMain: true })}
-                        ariaLabel="Remove file"
+              {/* Certificate on the left, provisioning profiles on the right —
+                  the grid collapses to one column on narrow screens. */}
+              <div className="cert-form-grid">
+                <div className="cert-form-grid__col">
+                  <div className="field-group">
+                    <Label className="is-small cert-section-label">
+                      {isIos ? "Development Certificate" : "Keystore (.jks / .keystore)"}
+                    </Label>
+                    {editState.removedMain && editState.mainFile === null ? (
+                      <FileDrop
+                        accept={isIos ? ".p12,.cer" : ".jks,.keystore"}
+                        value={null}
+                        onChange={(files) =>
+                          setEditState({ mainFile: files[0] ?? null, removedMain: true })
+                        }
+                        hint={<>Drop replacement file here or <span className="filedrop-link">browse</span></>}
+                      />
+                    ) : (
+                      <div className="cert-file-block">
+                        <div className="cert-file-row">
+                          <span className="cert-file-row__name">
+                            {editState.mainFile ? editState.mainFile.name : cert.fileName}
+                          </span>
+                          <FileDeleteButton
+                            onClick={() => setEditState({ mainFile: null, removedMain: true })}
+                            ariaLabel="Remove file"
+                          />
+                        </div>
+                        {!editState.mainFile && cert.kind === "p12" && (
+                          <CertMetaTable
+                            rows={[
+                              ["Name", cert.metadata?.commonName],
+                              ["Creation date", formatExpiration(cert.metadata?.creationDate)],
+                              ["Expiration date", formatExpiration(cert.metadata?.expirationDate)],
+                            ]}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="field-group">
+                    <Label htmlFor="edit-cert-pass" className="is-small">
+                      {isIos ? "Certificate password" : "Keystore password"}
+                    </Label>
+                    <SecretInput
+                      id="edit-cert-pass"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Leave blank to keep current password"
+                    />
+                  </div>
+
+                  {isKeystore && (
+                    <div className="field-group">
+                      <Label htmlFor="edit-alias" className="is-small">Key alias</Label>
+                      <Input
+                        id="edit-alias"
+                        value={alias}
+                        onChange={(e) => setAlias(e.target.value)}
+                        placeholder="key0"
+                        required
                       />
                     </div>
-                    {!editState.mainFile && cert.kind === "p12" && (
-                      <CertMetaTable
-                        rows={[
-                          ["Name", cert.metadata?.commonName],
-                          ["Creation date", formatExpiration(cert.metadata?.creationDate)],
-                          ["Expiration date", formatExpiration(cert.metadata?.expirationDate)],
-                        ]}
+                  )}
+                </div>
+
+                {isIos && (
+                  <div className="cert-form-grid__col">
+                    <div className="field-group">
+                      <Label className="is-small cert-section-label">Provisioning profiles</Label>
+                      {(existingProfiles.length > 0 || newProfiles.length > 0) && (
+                        <div className="cert-file-list">
+                          {existingProfiles.map((p) => (
+                            <div key={p.id} className="cert-file-block">
+                              <div className="cert-file-row">
+                                <span className="cert-file-row__name">{p.fileName}</span>
+                                <FileDeleteButton
+                                  onClick={() => {
+                                    setExistingProfiles(existingProfiles.filter((x) => x.id !== p.id));
+                                    setRemovedProfileIds([...removedProfileIds, p.id]);
+                                  }}
+                                  ariaLabel={`Remove ${p.fileName}`}
+                                />
+                              </div>
+                              {(p.metadata?.bundleId || p.metadata?.teamId || p.metadata?.expirationDate) && (
+                                <CertMetaTable
+                                  rows={[
+                                    ["BundleID", p.metadata?.bundleId],
+                                    ["Team", p.metadata?.teamId],
+                                    ["Expiration", formatExpiration(p.metadata?.expirationDate)],
+                                  ]}
+                                />
+                              )}
+                            </div>
+                          ))}
+                          {newProfiles.map((f, i) => (
+                            <div key={`new-${f.name}-${i}`} className="cert-file-row">
+                              <span className="cert-file-row__name">{f.name}</span>
+                              <FileDeleteButton
+                                onClick={() => setNewProfiles(newProfiles.filter((_, idx) => idx !== i))}
+                                ariaLabel={`Remove ${f.name}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <FileDrop
+                        accept=".mobileprovision"
+                        multiple
+                        value={null}
+                        onChange={(files) => setNewProfiles([...newProfiles, ...files])}
+                        hint={<>Drop files here or <span className="filedrop-link">browse</span></>}
                       />
-                    )}
+                    </div>
                   </div>
                 )}
               </div>
-
-              <div className="field-group">
-                <Label htmlFor="edit-cert-pass" className="is-small">
-                  {isIos ? "Certificate password" : "Keystore password"}
-                </Label>
-                <SecretInput
-                  id="edit-cert-pass"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Leave blank to keep current password"
-                />
-              </div>
-
-              {isKeystore && (
-                <div className="field-group">
-                  <Label htmlFor="edit-alias" className="is-small">Key alias</Label>
-                  <Input
-                    id="edit-alias"
-                    value={alias}
-                    onChange={(e) => setAlias(e.target.value)}
-                    placeholder="key0"
-                    required
-                  />
-                </div>
-              )}
-
-              {isIos && (
-                <div className="field-group">
-                  <Label className="is-small">Provisioning profiles</Label>
-                  <p className="text-help">
-                    Upload the profile for your main app. Optionally include additional profiles if
-                    you are building app extensions.
-                  </p>
-                  {(existingProfiles.length > 0 || newProfiles.length > 0) && (
-                    <div className="cert-file-list">
-                      {existingProfiles.map((p) => (
-                        <div key={p.id} className="cert-file-block">
-                          <div className="cert-file-row">
-                            <span className="cert-file-row__name">{p.fileName}</span>
-                            <FileDeleteButton
-                              onClick={() => {
-                                setExistingProfiles(existingProfiles.filter((x) => x.id !== p.id));
-                                setRemovedProfileIds([...removedProfileIds, p.id]);
-                              }}
-                              ariaLabel={`Remove ${p.fileName}`}
-                            />
-                          </div>
-                          {(p.metadata?.bundleId || p.metadata?.teamId || p.metadata?.expirationDate) && (
-                            <CertMetaTable
-                              rows={[
-                                ["BundleID", p.metadata?.bundleId],
-                                ["Team", p.metadata?.teamId],
-                                ["Expiration", formatExpiration(p.metadata?.expirationDate)],
-                              ]}
-                            />
-                          )}
-                        </div>
-                      ))}
-                      {newProfiles.map((f, i) => (
-                        <div key={`new-${f.name}-${i}`} className="cert-file-row">
-                          <span className="cert-file-row__name">{f.name}</span>
-                          <FileDeleteButton
-                            onClick={() => setNewProfiles(newProfiles.filter((_, idx) => idx !== i))}
-                            ariaLabel={`Remove ${f.name}`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <FileDrop
-                    accept=".mobileprovision"
-                    multiple
-                    value={null}
-                    onChange={(files) => setNewProfiles([...newProfiles, ...files])}
-                    hint={<>Drop files here or <span className="filedrop-link">browse</span></>}
-                  />
-                </div>
-              )}
             </div>
           </div>
 

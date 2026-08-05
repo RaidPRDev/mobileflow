@@ -27,12 +27,24 @@ import type { Runner, RunnerContext } from "../runner.js";
  *   - `MAC_BUILD_TOOLS/main_build.sh` matching the existing iOS pipeline
  *   - SSH key in `authorized_keys` for `MAC_BUILD_USER`
  */
+/**
+ * Operator-only chatter (host/user/port, temp-dir sweeps) that means nothing to
+ * the person watching their build. Set MF_VERBOSE_BUILD_LOGS=1 to put it back
+ * when debugging the runner itself.
+ */
+const VERBOSE_BUILD_LOGS = process.env.MF_VERBOSE_BUILD_LOGS === "1";
+
 export class MacRunner implements Runner {
   async run(ctx: RunnerContext): Promise<{ artifacts: { kind: string; url: string; sizeBytes?: number }[] }> {
     if (ctx.build.target !== "ios") throw new Error("MacRunner only handles target=ios");
     const host = await resolveMacHost();
     if (!host) throw new Error("Mac build host is not configured");
-    await ctx.log(`Mac host (${host.source}): ${host.username}@${host.host}:${host.port}`);
+    // Deliberately not logged for users: it exposes the Mac's user@host:port
+    // and tells them nothing they can act on. "Using runner: MacRunner" (from
+    // worker.ts) already identifies where the build runs.
+    if (VERBOSE_BUILD_LOGS) {
+      await ctx.log(`Mac host (${host.source}): ${host.username}@${host.host}:${host.port}`);
+    }
 
     const [a] = await db.select().from(apps).where(eq(apps.id, ctx.app.id)).limit(1);
     if (!a?.gitConnectionId || !a.gitRepoFullName) throw new Error("App is not connected to a repo");
@@ -144,7 +156,9 @@ export class MacRunner implements Runner {
             )
             .limit(1);
           if (concurrent.length > 0) {
-            await ctx.log("[cleanup] skipped xc artifact cleanup — concurrent build(s) active during this window");
+            if (VERBOSE_BUILD_LOGS) {
+              await ctx.log("[cleanup] skipped xc artifact cleanup — concurrent build(s) active during this window");
+            }
             return;
           }
           const cmd =
@@ -153,9 +167,15 @@ export class MacRunner implements Runner {
             `-newermt "@${buildStartUnix}" -exec rm -rf {} + 2>/dev/null; ` +
             `echo done`;
           await exec(ssh, `bash -lc ${shq(cmd)}`, () => {});
-          await ctx.log("[cleanup] wiped xcdistributionlogs/xcresult from this build window");
+          // Housekeeping of the Mac's temp dir. Nothing the user can act on, so
+          // it stays out of their log even when it fails (it's non-fatal).
+          if (VERBOSE_BUILD_LOGS) {
+            await ctx.log("[cleanup] wiped xcdistributionlogs/xcresult from this build window");
+          }
         } catch (e) {
-          await ctx.log(`[cleanup] xc artifact cleanup failed (non-fatal): ${(e as Error).message}`);
+          if (VERBOSE_BUILD_LOGS) {
+            await ctx.log(`[cleanup] xc artifact cleanup failed (non-fatal): ${(e as Error).message}`);
+          }
         }
       };
 
@@ -165,7 +185,16 @@ export class MacRunner implements Runner {
       try {
         await run(`mkdir -p ${shq(remoteDir)}`);
         await ctx.log(`Cloning ${a.gitRepoFullName} @ ${ctx.build.commitSha.slice(0, 7)}`);
-        await run(`bash -lc ${shq(`set -e; cd ${shq(remoteDir)} && git init -q && git remote add origin ${shq(cloneUrl)} && git fetch --depth 1 origin ${shq(ctx.build.commitSha)} && git checkout -q FETCH_HEAD`)}`);
+        // `-c credential.helper=` clears the helper list for this fetch. On a
+        // Mac the default is git-credential-osxkeychain, which tries to cache
+        // the token in the login keychain; from a non-interactive SSH session
+        // that's denied and git prints "failed to store: -25308"
+        // (errSecInteractionNotAllowed). The clone URL already carries the
+        // OAuth token, so no helper is wanted — and we'd rather not persist a
+        // build credential into the Mac's keychain anyway.
+        // GIT_TERMINAL_PROMPT=0 makes a genuinely bad token fail fast instead
+        // of blocking on a username prompt.
+        await run(`bash -lc ${shq(`set -e; export GIT_TERMINAL_PROMPT=0; cd ${shq(remoteDir)} && git init -q && git remote add origin ${shq(cloneUrl)} && git -c credential.helper= fetch --depth 1 origin ${shq(ctx.build.commitSha)} && git checkout -q FETCH_HEAD`)}`);
         await ctx.step("preparing", "success", 0);
       } catch (e) {
         await ctx.step("preparing", "failed", 1);

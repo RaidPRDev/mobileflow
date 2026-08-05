@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { FieldError } from "../components/FieldError";
+import { SecretInput } from "../components/SecretInput";
 import {
   Button,
   Combobox,
@@ -18,7 +19,7 @@ import {
 } from "@mobileflow/ui";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
 import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
-import { ApiError, api, type DestinationRow } from "../api/client";
+import { ApiError, api, type CreatedDestination, type DestinationRow } from "../api/client";
 
 export type DestType = "app_store" | "play_store";
 
@@ -69,20 +70,28 @@ const PACKAGE_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
 export function StoreDestinationDialog({
   appId,
   existing,
+  defaultType,
+  onCreated,
   onClose,
 }: {
   appId: string;
   existing?: DestinationRow;
+  /** Preselects the store for a create dialog (e.g. the deploy flow knows the build is Android). */
+  defaultType?: DestType;
+  /** Fired with the new row after a successful create — lets callers select it straight away. */
+  onCreated?: (created: CreatedDestination) => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const isEdit = !!existing;
 
   // Type isn't editable once a destination exists — switching app_store <→>
-  // play_store would change which credentials apply. Default to existing or
-  // app_store. Cast covers legacy DB values (testflight/play_internal): we
-  // still let the user edit them, just under the closest current label.
-  const initialType: DestType = existing?.type === "play_store" ? "play_store" : "app_store";
+  // play_store would change which credentials apply. Default to existing, the
+  // caller's hint, or app_store. Cast covers legacy DB values
+  // (testflight/play_internal): we still let the user edit them, just under the
+  // closest current label.
+  const initialType: DestType =
+    existing?.type === "play_store" ? "play_store" : existing ? "app_store" : defaultType ?? "app_store";
   const [type, setType] = useState<DestType>(initialType);
   const [name, setName] = useState(existing?.name ?? "");
 
@@ -249,8 +258,9 @@ export function StoreDestinationDialog({
         });
       }
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["destinations", appId] });
+      if (!isEdit) onCreated?.(saved);
       onClose();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
@@ -441,9 +451,8 @@ function AppleFields(p: AppleFieldsProps) {
               </a>
             </p>
             {showPasswordInput ? (
-              <Input
+              <SecretInput
                 id="asp"
-                type="password"
                 value={p.appSpecificPassword}
                 onChange={(e) => p.setAppSpecificPassword(e.target.value)}
                 placeholder={passwordKeep ? keepHint : "xxxx-xxxx-xxxx-xxxx"}

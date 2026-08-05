@@ -541,7 +541,7 @@ function DeleteAccountSection({
       <hr className="settings-divider" />
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Close and Delete Account</DialogTitle>
           </DialogHeader>

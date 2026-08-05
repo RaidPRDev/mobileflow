@@ -58,7 +58,50 @@
 
 .cert-platform-card .card-content {
   padding: var(--space-lg);
+  gap: 1.25rem;
+}
+
+// Certificate dialogs run a touch wider than the 560px default and give the
+// body real vertical breathing room; the sections themselves stay stacked.
+// Doubled selector to outrank the width on .dialog-content.
+.dialog-content.cert-dialog {
+  max-width: 620px;
+
+  .dialog-body {
+    padding-top: var(--space-sm);
+  }
+}
+
+.cert-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: var(--space-md);
+}
+
+.cert-form-grid__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+
+  // The stacked sections add up fast, so the field wrappers inside them drop
+  // the extra vertical padding the shared .field-group carries.
+  > .field-group {
+    padding: 0;
+  }
+
+  // Extra breathing room before the provisioning-profiles section.
+  & + & {
+    margin-top: 1rem;
+  }
+}
+
+// The two section headings ("Development Certificate", "Provisioning
+// profiles") read as titles, not field labels — the password
+// label below keeps the plain .is-small size. The `.is-small` in the selector
+// is what outranks `.label.is-small`, which loads after this file.
+.label.is-small.cert-section-label {
+  font-size: 16px;
 }
 
 .cert-file-list {
@@ -115,9 +158,10 @@
 
 .cert-meta__row {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr);
   align-items: center;
-  padding: 8px 12px;
+  // Trimmed from 8px: three of these stack under every file row.
+  padding: 6px 12px;
   border-bottom: 1px solid var(--color-border);
 
   &:last-child {
@@ -144,21 +188,23 @@
   border: 0;
   padding: 0;
   cursor: default;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  // Stroke icon, so the colour comes through currentColor — no filter tinting,
+  // which is what used to wash out the icon's inner detail.
+  color: var(--color-danger);
 
-  img {
-    width: 18px;
-    height: 18px;
-    /* The SVG ships with the ionicon stroke classes that don't have global
-       styles; tint to red here so it reads as a destructive action. */
-    filter: invert(38%) sepia(73%) saturate(2589%) hue-rotate(338deg) brightness(91%) contrast(102%);
+  &:hover {
+    background: var(--color-bg-muted);
   }
 
-  &:hover img {
-    opacity: 0.85;
+  &:focus-visible {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 1px;
   }
 }

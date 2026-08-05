@@ -35,6 +35,13 @@ export interface ParsedLine {
   tokens: Token[];
   isStderr: boolean;
   isPhaseHeader: boolean;
+  /**
+   * Stream-independent judgement of whether this line reports a problem.
+   * Drives the red wash. `isStderr` deliberately does NOT: git, xcodebuild and
+   * altool all write ordinary progress to stderr, so colouring by stream paints
+   * a successful build in alarm-red.
+   */
+  isError: boolean;
 }
 
 export interface ParseState {
@@ -219,8 +226,39 @@ function ansiToTokens(line: string): Token[] {
 
 // ── Public entry points ────────────────────────────────────────────────────
 
+// The API stamps every persisted line with a full ISO timestamp
+// ("2026-08-04T18:11:32.820Z "). Spending ~25 columns of every row on
+// millisecond precision nobody reads pushes the actual message off-screen, so
+// we render just the wall clock in a dim leading column.
+const LEADING_ISO_TS = /^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})(?:[.,]\d+)?Z ?/;
+
+/**
+ * Does this line actually report a problem? Checked against the text rather
+ * than the stream it arrived on. Ordered so an explicit success statement wins:
+ * altool's "UPLOAD SUCCEEDED with no errors, 1 warning" must not read as a
+ * failure just because the word "errors" appears in it.
+ */
+function looksLikeError(text: string): boolean {
+  if (/\b(succeed(?:ed|s)?|success(?:ful(?:ly)?)?)\b/i.test(text)) return false;
+  if (/\bno errors?\b|\b0 errors?\b/i.test(text)) return false;
+  return /\berror\b|\bfatal\b|\bfailed\b|\bfailure\b|\brejected\b|\bcannot\b|\bcould not\b|\bunable to\b|❌|✗|Code=-?\d+/i.test(
+    text,
+  );
+}
+
 function parseLine(raw: string, id: number): ParsedLine {
   let line = raw;
+
+  // Order matters: the timestamp is applied by the API *outside* the stderr
+  // marker, so a stderr line reads "<iso> ! text". Peeling the timestamp first
+  // is what makes the `! ` check below reachable at all.
+  let shortTs: string | null = null;
+  const ts = LEADING_ISO_TS.exec(line);
+  if (ts) {
+    shortTs = ts[1]!;
+    line = line.slice(ts[0].length);
+  }
+
   let isStderr = false;
   // Stripped from ssh.ts flush(): `! <line>` for stderr lines.
   if (line.startsWith("! ")) {
@@ -229,10 +267,16 @@ function parseLine(raw: string, id: number): ParsedLine {
   }
   // Detect phase header lines emitted by runner.ts (e.g. "[installing] starting…").
   const isPhaseHeader = /^\[[a-z][a-z_]+\]\s+(?:starting…|done)\s*$/.test(line);
+  const isError = looksLikeError(line);
+
   const tokens: Token[] = [];
-  if (isStderr) tokens.push({ kind: "stderr-marker", text: "! " });
+  if (shortTs) tokens.push({ kind: "timestamp", text: `[${shortTs}] `, variant: "gutter" });
+  // The "!" prefix is kept only where it carries meaning. On a healthy build
+  // most stderr traffic is routine progress, and flagging all of it trains the
+  // reader to ignore the marker precisely when it matters.
+  if (isStderr && isError) tokens.push({ kind: "stderr-marker", text: "! " });
   tokens.push(...ansiToTokens(line));
-  return { id, tokens, isStderr, isPhaseHeader };
+  return { id, tokens, isStderr, isPhaseHeader, isError };
 }
 
 export function parseDelta(

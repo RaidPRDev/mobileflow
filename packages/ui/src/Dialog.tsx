@@ -21,26 +21,53 @@ export interface DialogContentProps
   hideCloseButton?: boolean;
 }
 
+function composeRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
+  return (node: T) => {
+    for (const ref of refs) {
+      if (typeof ref === "function") ref(node);
+      else if (ref) (ref as React.MutableRefObject<T | null>).current = node;
+    }
+  };
+}
+
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, hideCloseButton, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content ref={ref} className={cn("dialog-content", className)} {...props}>
-      {children}
-      {!hideCloseButton && (
-        <DialogPrimitive.Close
-          aria-label="Close"
-          className="dialog-close"
-          style={{ position: "absolute", top: 12, right: 12 }}
-        >
-          <X size={16} />
-        </DialogPrimitive.Close>
-      )}
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+>(({ className, children, hideCloseButton, onOpenAutoFocus, ...props }, ref) => {
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={composeRefs(ref, contentRef)}
+        className={cn("dialog-content", className)}
+        // Radix focuses the first focusable child on open, which drops the
+        // caret into the leading text field and makes it look like the form is
+        // already being edited. Focus the dialog itself instead: Tab, Escape
+        // and the screen-reader announcement all still work, but nothing is
+        // typed into until the user picks a field.
+        onOpenAutoFocus={(e) => {
+          onOpenAutoFocus?.(e);
+          if (e.defaultPrevented) return;
+          e.preventDefault();
+          contentRef.current?.focus({ preventScroll: true });
+        }}
+        {...props}
+      >
+        {children}
+        {!hideCloseButton && (
+          <DialogPrimitive.Close
+            aria-label="Close"
+            className="dialog-close"
+            style={{ position: "absolute", top: 12, right: 12 }}
+          >
+            <X size={16} />
+          </DialogPrimitive.Close>
+        )}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 export const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

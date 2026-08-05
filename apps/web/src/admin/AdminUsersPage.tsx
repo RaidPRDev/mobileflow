@@ -174,7 +174,7 @@ function UserRow({ user }: { user: AdminUser }) {
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete user</DialogTitle>
           </DialogHeader>

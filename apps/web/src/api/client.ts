@@ -314,6 +314,12 @@ export interface DestinationRow {
   configSummary: DestinationConfigSummary;
 }
 
+/** POST /destinations echoes the inserted row without appId/configSummary. */
+export type CreatedDestination = Pick<
+  DestinationRow,
+  "id" | "name" | "type" | "bundleId" | "trackOrChannel" | "createdAt"
+>;
+
 export interface DeploymentRow {
   id: string;
   buildId: string;
@@ -635,7 +641,7 @@ export const api = {
       trackOrChannel?: string | null;
       config: Record<string, unknown>;
     },
-  ) => request<unknown>(`/apps/${appId}/destinations`, { method: "POST", body: JSON.stringify(body) }),
+  ) => request<CreatedDestination>(`/apps/${appId}/destinations`, { method: "POST", body: JSON.stringify(body) }),
   updateDestination: (
     id: string,
     body: {

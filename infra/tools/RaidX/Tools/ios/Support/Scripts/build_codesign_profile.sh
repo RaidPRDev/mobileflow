@@ -129,38 +129,7 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
 
 # ================================
-# 3️⃣ EXTRACT CODE_SIGN_IDENTITY
-# ================================
-echo "🔍 Available code signing identities in $KEYCHAIN_NAME:"
-security find-identity -p codesigning -v "$KEYCHAIN_NAME" || true
-
-CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null \
-  | awk -F '"' '/iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development/ {print $2; exit}')
-
-if [ -z "$CODE_SIGN_IDENTITY" ]; then
-  # find-identity -p codesigning requires a valid trust chain; if the Apple
-  # WWDR intermediate isn't visible to this keychain it returns zero matches.
-  # Fall back to scraping the certificate label directly. xcodebuild signs by
-  # the identity string, so this still produces a working build.
-  echo "⚠️  find-identity returned 0 matches under the codesigning policy."
-  echo "    Falling back to keychain dump (trust chain may be incomplete)."
-  CODE_SIGN_IDENTITY=$(security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null \
-    | grep -A1 '"labl"<blob>=' \
-    | grep -E 'iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development' \
-    | sed 's/.*"labl"<blob>="\([^"]*\)".*/\1/' \
-    | head -1)
-fi
-
-if [ -z "$CODE_SIGN_IDENTITY" ]; then
-  echo "❌ Could not determine CODE_SIGN_IDENTITY from the imported .p12."
-  echo "🔍 Debug — keychain contents:"
-  security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null | grep -E '"labl"<blob>=' || true
-  exit 1
-fi
-echo "✅ CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
-
-# ================================
-# 4️⃣ INSTALL PROVISIONING PROFILE
+# 3️⃣ INSTALL PROVISIONING PROFILE
 # ================================
 if [ ! -f "$PROVISION_PATH" ]; then
   echo "❌ Provisioning profile not found: $PROVISION_PATH"
@@ -177,7 +146,43 @@ DEVELOPMENT_TEAM=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$TMP_PL
 APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$TMP_PLIST")
 BUNDLE_ID=${APP_IDENTIFIER#*.}
 PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$TMP_PLIST" 2>/dev/null || echo "")
+
+# Which distribution channel is this profile for? exportArchive validates the
+# profile against the export method, so exporting a Development profile with
+# `app-store-connect` fails twice over: "is not an iOS App Store profile", and
+# an Apple Distribution certificate the profile doesn't contain gets selected.
+# Derive the channel from the profile itself instead of assuming App Store:
+#   ProvisionsAllDevices                 -> enterprise (in-house)
+#   ProvisionedDevices + get-task-allow  -> development
+#   ProvisionedDevices                   -> ad hoc
+#   neither                              -> App Store / TestFlight
+PROVISIONS_ALL_DEVICES=$(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$TMP_PLIST" 2>/dev/null || echo "false")
+GET_TASK_ALLOW=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$TMP_PLIST" 2>/dev/null || echo "false")
+if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$TMP_PLIST" >/dev/null 2>&1; then
+  HAS_PROVISIONED_DEVICES="true"
+else
+  HAS_PROVISIONED_DEVICES="false"
+fi
 rm -f "$TMP_PLIST"
+
+if [[ "$PROVISIONS_ALL_DEVICES" == "true" ]]; then
+  PROFILE_CHANNEL="enterprise"
+elif [[ "$HAS_PROVISIONED_DEVICES" == "true" && "$GET_TASK_ALLOW" == "true" ]]; then
+  PROFILE_CHANNEL="development"
+elif [[ "$HAS_PROVISIONED_DEVICES" == "true" ]]; then
+  PROFILE_CHANNEL="adhoc"
+else
+  PROFILE_CHANNEL="appstore"
+fi
+
+# exportOptionsPlist `method` values, Xcode 15.3+ naming (the old
+# development/ad-hoc/app-store spellings still work but emit deprecations).
+case "$PROFILE_CHANNEL" in
+  development) EXPORT_METHOD="debugging" ;;
+  adhoc)       EXPORT_METHOD="release-testing" ;;
+  enterprise)  EXPORT_METHOD="enterprise" ;;
+  *)           EXPORT_METHOD="app-store-connect" ;;
+esac
 
 if [ -z "$DEVELOPMENT_TEAM" ] || [ -z "$APP_IDENTIFIER" ] || [ -z "$BUNDLE_ID" ] || [ -z "$PROFILE_UUID" ]; then
   echo "❌ Failed to parse provisioning profile (DEVELOPMENT_TEAM/APP_IDENTIFIER/BUNDLE_ID/UUID missing)."
@@ -197,6 +202,74 @@ echo "✅ Provisioning profile installed: $PROVISION_FOLDER/$PROFILE_UUID.mobile
 INSTALLED_PROFILE_UUIDS="$PROFILE_UUID"
 
 # ================================
+# 4️⃣ EXTRACT CODE_SIGN_IDENTITY
+# ================================
+echo "🔍 Available code signing identities in $KEYCHAIN_NAME:"
+security find-identity -p codesigning -v "$KEYCHAIN_NAME" || true
+
+# Prefer the certificate class the profile actually contains. A .p12 exported
+# with both identities in it would otherwise hand a distribution cert to a
+# development profile (or vice versa) and fail at exportArchive.
+if [[ "$PROFILE_CHANNEL" == "development" ]]; then
+  IDENTITY_PREFERRED='Apple Development|iPhone Developer'
+  IDENTITY_FALLBACK='iPhone Distribution|Apple Distribution'
+else
+  IDENTITY_PREFERRED='iPhone Distribution|Apple Distribution'
+  IDENTITY_FALLBACK='Apple Development|iPhone Developer'
+fi
+
+find_identity_matching() {
+  # $1 = alternation of CN prefixes to match
+  security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null \
+    | awk -F '"' -v want="$1" '$0 ~ want {print $2; exit}'
+}
+
+dump_identity_matching() {
+  # find-identity -p codesigning requires a valid trust chain; if the Apple
+  # WWDR intermediate isn't visible to this keychain it returns zero matches.
+  # Fall back to scraping the certificate label directly. xcodebuild signs by
+  # the identity string, so this still produces a working build.
+  security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null \
+    | grep -A1 '"labl"<blob>=' \
+    | grep -E "$1" \
+    | sed 's/.*"labl"<blob>="\([^"]*\)".*/\1/' \
+    | head -1
+}
+
+CODE_SIGN_IDENTITY=$(find_identity_matching "$IDENTITY_PREFERRED")
+[ -n "$CODE_SIGN_IDENTITY" ] || CODE_SIGN_IDENTITY=$(find_identity_matching "$IDENTITY_FALLBACK")
+
+if [ -z "$CODE_SIGN_IDENTITY" ]; then
+  echo "⚠️  find-identity returned 0 matches under the codesigning policy."
+  echo "    Falling back to keychain dump (trust chain may be incomplete)."
+  CODE_SIGN_IDENTITY=$(dump_identity_matching "$IDENTITY_PREFERRED")
+  [ -n "$CODE_SIGN_IDENTITY" ] || CODE_SIGN_IDENTITY=$(dump_identity_matching "$IDENTITY_FALLBACK")
+fi
+
+if [ -z "$CODE_SIGN_IDENTITY" ]; then
+  echo "❌ Could not determine CODE_SIGN_IDENTITY from the imported .p12."
+  echo "🔍 Debug — keychain contents:"
+  security dump-keychain "$KEYCHAIN_NAME" 2>/dev/null | grep -E '"labl"<blob>=' || true
+  exit 1
+fi
+echo "✅ CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
+
+# Loud warning rather than a hard failure: the identity/profile pairing is
+# ultimately enforced by codesign, and we'd rather surface xcodebuild's own
+# diagnostics than guess wrong here.
+case "$PROFILE_CHANNEL:$CODE_SIGN_IDENTITY" in
+  development:Apple\ Development*|development:iPhone\ Developer*) ;;
+  development:*)
+    echo "⚠️  Profile '$PROVISION_NAME' is a Development profile but the .p12 holds '$CODE_SIGN_IDENTITY'."
+    echo "    Upload the Apple Development certificate for this signing certificate entry."
+    ;;
+  *:Apple\ Development*|*:iPhone\ Developer*)
+    echo "⚠️  Profile '$PROVISION_NAME' is a $PROFILE_CHANNEL profile but the .p12 holds '$CODE_SIGN_IDENTITY'."
+    echo "    Upload the Apple Distribution certificate for this signing certificate entry."
+    ;;
+esac
+
+# ================================
 # 5️⃣ SUMMARY
 # ================================
 echo "✅ Provisioning Profile Information:"
@@ -204,6 +277,7 @@ echo "   🆔 DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM"
 echo "   📱 APP_IDENTIFIER: $APP_IDENTIFIER"
 echo "   📦 BUNDLE_ID: $BUNDLE_ID"
 echo "   📋 PROFILE_UUID: $PROFILE_UUID"
+echo "   📡 PROFILE_CHANNEL: $PROFILE_CHANNEL (export method: $EXPORT_METHOD)"
 echo "   🔑 CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
 
 # ================================
@@ -214,6 +288,8 @@ echo "   🔑 CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
   echo "export APP_IDENTIFIER=\"$APP_IDENTIFIER\""
   echo "export BUNDLE_ID=\"$BUNDLE_ID\""
   echo "export PROFILE_UUID=\"$PROFILE_UUID\""
+  echo "export PROFILE_CHANNEL=\"$PROFILE_CHANNEL\""
+  echo "export EXPORT_METHOD=\"$EXPORT_METHOD\""
   echo "export CODE_SIGN_IDENTITY=\"$CODE_SIGN_IDENTITY\""
   # Keychain identity + secrets, so build_ios_app.sh can unlock and dispose
   # can clean up. The .ios_build_env lives under the per-build directory

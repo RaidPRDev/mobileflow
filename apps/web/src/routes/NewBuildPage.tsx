@@ -14,10 +14,11 @@ import {
   Input,
   Label,
   Switch,
+  cn,
 } from "@mobileflow/ui";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
 import googlePlayIcon from "@assets/icons/google-playstore-icon.svg";
-import { ArrowLeft, Check, GitBranch, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, GitBranch, Plus, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type BuildTarget, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { stacksByTarget, useStacks } from "../lib/stacks";
@@ -948,7 +949,6 @@ function NewEnvironmentDialog({ appId, open, onOpenChange, onCreated }: NewEnvir
                 setName(e.target.value);
                 if (e.target.value.trim()) setShowNameError(false);
               }}
-              autoFocus
             />
             {showNameError && <p className="new-env-error">Name is required</p>}
           </div>
@@ -958,6 +958,7 @@ function NewEnvironmentDialog({ appId, open, onOpenChange, onCreated }: NewEnvir
             description="Encrypted values available only to your build at runtime."
             rows={secrets}
             onChange={setSecrets}
+            defaultOpen={false}
           />
           <KvSection
             title="Variables"
@@ -986,9 +987,13 @@ interface KvSectionProps {
   description: string;
   rows: NewEnvKV[];
   onChange: (rows: NewEnvKV[]) => void;
+  defaultOpen?: boolean;
 }
 
-function KvSection({ title, description, rows, onChange }: KvSectionProps) {
+function KvSection({ title, description, rows, onChange, defaultOpen = true }: KvSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = `new-build-env-${title.toLowerCase()}-panel`;
+
   const update = (i: number, patch: Partial<NewEnvKV>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const remove = (i: number) =>
@@ -997,39 +1002,52 @@ function KvSection({ title, description, rows, onChange }: KvSectionProps) {
 
   return (
     <div className="new-env-section">
-      <div className="new-env-section__title">{title}</div>
-      <p className="new-env-section__desc">{description}</p>
-      <div className="new-env-kv">
-        <div className="new-env-kv__head">
-          <span>KEY</span>
-          <span>VALUE</span>
-          <span></span>
-        </div>
-        {rows.map((row, i) => (
-          <div key={i} className="new-env-kv__row">
-            <Input
-              placeholder="Key"
-              value={row.key}
-              onChange={(e) => update(i, { key: e.target.value })}
-            />
-            <Input
-              placeholder="Value"
-              value={row.value}
-              onChange={(e) => update(i, { value: e.target.value })}
-            />
-            <button
-              type="button"
-              className="new-env-kv__remove"
-              aria-label="Remove row"
-              onClick={() => remove(i)}
-            >
-              <Trash2 size={14} />
+      <button
+        type="button"
+        className="new-env-section__toggle"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="new-env-section__title">{title}</span>
+        <ChevronDown size={16} className="new-env-section__chevron" aria-hidden />
+      </button>
+      <div className={cn("new-env-section__panel", open && "is-open")} id={panelId}>
+        <div className="new-env-section__panel-inner">
+          <p className="new-env-section__desc">{description}</p>
+          <div className="new-env-kv">
+            <div className="new-env-kv__head">
+              <span>KEY</span>
+              <span>VALUE</span>
+              <span></span>
+            </div>
+            {rows.map((row, i) => (
+              <div key={i} className="new-env-kv__row">
+                <Input
+                  placeholder="Key"
+                  value={row.key}
+                  onChange={(e) => update(i, { key: e.target.value })}
+                />
+                <Input
+                  placeholder="Value"
+                  value={row.value}
+                  onChange={(e) => update(i, { value: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="new-env-kv__remove"
+                  aria-label="Remove row"
+                  onClick={() => remove(i)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            <button type="button" className="new-build-link-button" onClick={add}>
+              <Plus size={12} /> Add another
             </button>
           </div>
-        ))}
-        <button type="button" className="new-build-link-button" onClick={add}>
-          <Plus size={12} /> Add another
-        </button>
+        </div>
       </div>
     </div>
   );

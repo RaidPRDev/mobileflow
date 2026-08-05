@@ -40,13 +40,17 @@ export class AppStoreUploadRunner implements DeployRunner {
       // by the time a deploy retries), so fetch it back over HTTPS.
       const tmpDir = `/tmp/altool-${ctx.build.id}`;
       const ipaPath = `${tmpDir}/${fileName}`;
-      await ctx.log(`Downloading IPA onto Mac: ${ipaPath}`);
+      await ctx.log(`Downloading IPA onto Mac: ${fileName}`);
+      // --no-progress-meter, not -s: we still want curl's error text on stderr,
+      // but its progress table renders as pages of unreadable columns in the
+      // web log (no carriage-return handling there). One summary line instead.
       const dl = await exec(
         ssh,
         `bash -lc ${shq(
           `set -e; mkdir -p ${shq(tmpDir)} && ` +
-          `curl -fSL --retry 3 --retry-delay 2 -o ${shq(ipaPath)} ${shq(ipa.url)} && ` +
-          `test -s ${shq(ipaPath)}`,
+          `curl -fSL --no-progress-meter --retry 3 --retry-delay 2 -o ${shq(ipaPath)} ${shq(ipa.url)} && ` +
+          `test -s ${shq(ipaPath)} && ` +
+          `echo "Downloaded $(du -h ${shq(ipaPath)} | cut -f1)"`,
         )}`,
         (line) => ctx.log(line),
       );
@@ -71,20 +75,40 @@ export class AppStoreUploadRunner implements DeployRunner {
           await exec(ssh, `bash -lc ${shq(`rm -f ~/.appstoreconnect/private_keys/AuthKey_${auth.keyId}.p8`)}`, () => {});
           await handleAltoolResult(ctx, r.exitCode, cap.getStdout(), cap.getStderr());
         } else {
-          // altool reads the password from stdin when -p @stdin is passed. We
-          // never spell the password into the command line.
+          // altool has NO "@stdin" password form. Per `altool --help` the only
+          // options are a literal value, "@keychain:<item>", "@env:<var>", or
+          // omitting --password entirely so it reads stdin. "-p @stdin" made
+          // altool authenticate with the literal string "@stdin", which Apple
+          // rejects as a bad app-specific password (-22938) — so this path
+          // could never have worked, whatever the stored credential was.
+          //
+          // We still refuse to spell the password into the command line (every
+          // user on the Mac can read that via `ps`). Instead it arrives on
+          // stdin, is read into a shell variable, and altool picks it up with
+          // @env:.
+          const PW_VAR = "MF_ALTOOL_PASSWORD";
           const args = [
             "--upload-app",
             "--type", "ios",
             "--file", shq(ipaPath),
-            "-u", shq(auth.appleId),
-            "-p", "@stdin",
+            "--username", shq(auth.appleId),
+            "--password", `@env:${PW_VAR}`,
           ];
-          if (auth.appAppleId) args.push("--apple-id", shq(auth.appAppleId));
-          if (auth.teamId) args.push("--team-id", shq(auth.teamId));
+          // NOT passed: --apple-id and --team-id. Neither is an altool option
+          // for --upload-app — altool identifies the app from the archive's
+          // bundle id. Passing --apple-id is what produced the misleading
+          // "Could not determine provider public id from Apple ID '<app id>'".
+          // An Apple ID that belongs to several teams needs
+          // --provider-public-id, which is a UUID from `altool
+          // --list-providers`, not the 10-character Team ID. Both fields are
+          // still kept on the destination for the cross-checks above.
+          if (auth.providerPublicId) args.push("--provider-public-id", shq(auth.providerPublicId));
           args.push("--output-format", "json");
-          const cmd = `xcrun altool ${args.join(" ")}`;
-          await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> -u <APPLE_ID> -p @stdin${auth.appAppleId ? " --apple-id <APP_APPLE_ID>" : ""}${auth.teamId ? " --team-id <TEAM_ID>" : ""} --output-format json`);
+          // `read` consumes the single password line; exec hands the rest of
+          // the pipe (nothing) to altool.
+          const cmd =
+            `IFS= read -r ${PW_VAR}; export ${PW_VAR}; exec xcrun altool ${args.join(" ")}`;
+          await ctx.log(`$ xcrun altool --upload-app --type ios --file <ipa> --username <APPLE_ID> --password @env:${PW_VAR}${auth.providerPublicId ? " --provider-public-id <PROVIDER_ID>" : ""} --output-format json`);
           const cap = captureAltoolOutput(ctx);
           const r = await execWithStdin(ssh, `bash -lc ${shq(cmd)}`, auth.appSpecificPassword + "\n", cap.onLine);
           await handleAltoolResult(ctx, r.exitCode, cap.getStdout(), cap.getStderr());
@@ -98,7 +122,19 @@ export class AppStoreUploadRunner implements DeployRunner {
 
 type AppStoreAuth =
   | { mode: "api_key"; issuerId: string; keyId: string; privateKeyP8: string }
-  | { mode: "altool"; appleId: string; appSpecificPassword: string; appAppleId?: string; teamId?: string };
+  | {
+      mode: "altool";
+      appleId: string;
+      appSpecificPassword: string;
+      appAppleId?: string;
+      teamId?: string;
+      /**
+       * Only needed when the Apple ID belongs to more than one provider/team.
+       * It is the UUID-shaped "Public ID" from `xcrun altool --list-providers`,
+       * NOT the 10-character Team ID.
+       */
+      providerPublicId?: string;
+    };
 
 function parseAppStoreAuth(cfg: Record<string, unknown>): AppStoreAuth {
   const mode = typeof cfg.authMode === "string" ? cfg.authMode : inferMode(cfg);
@@ -119,7 +155,8 @@ function parseAppStoreAuth(cfg: Record<string, unknown>): AppStoreAuth {
     }
     const appAppleId = strOrEmpty(cfg.appAppleId) || undefined;
     const teamId = strOrEmpty(cfg.teamId) || undefined;
-    return { mode, appleId, appSpecificPassword, appAppleId, teamId };
+    const providerPublicId = strOrEmpty(cfg.providerPublicId) || undefined;
+    return { mode, appleId, appSpecificPassword, appAppleId, teamId, providerPublicId };
   }
   throw new Error(`Unknown App Store authMode: ${mode}`);
 }
@@ -203,12 +240,10 @@ async function logDestinationDiagnostics(ctx: DeployContext, auth: AppStoreAuth)
   await ctx.log(`  authMode: ${auth.mode}`);
   if (auth.mode === "altool") {
     await ctx.log(`  appleId: ${auth.appleId}`);
-    await ctx.log(`  appAppleId: ${auth.appAppleId ?? "(none)"}`);
-    await ctx.log(`  teamId: ${auth.teamId ?? "(none)"}`);
+    await ctx.log(`  appAppleId: ${auth.appAppleId ?? "(none)"} (cross-check only — not passed to altool)`);
+    await ctx.log(`  teamId: ${auth.teamId ?? "(none)"} (cross-check only — not passed to altool)`);
+    await ctx.log(`  providerPublicId: ${auth.providerPublicId ?? "(none — fine unless this Apple ID has multiple teams)"}`);
     await ctx.log(`  appSpecificPassword: ${fingerprintPassword(auth.appSpecificPassword)}`);
-    if (!auth.appAppleId) {
-      await ctx.log("  ! warning: appAppleId is empty — altool may fail to resolve the team for this app");
-    }
   } else {
     await ctx.log(`  issuerId: ${auth.issuerId}`);
     await ctx.log(`  keyId: ${auth.keyId}`);
@@ -295,7 +330,7 @@ async function logSigningDiagnostics(ctx: DeployContext, auth: AppStoreAuth): Pr
         await ctx.log("    Apple will reject the upload — altool expects the destination team to own the signing identity.");
       }
     } else if (!checkTeam) {
-      await ctx.log("  ! destination has no teamId set — altool may fall back to the wrong team for this Apple ID");
+      await ctx.log("  ! destination has no teamId set — can't cross-check it against the signing profile");
     }
     if (teamFromCn && provMeta.teamId && teamFromCn !== provMeta.teamId) {
       await ctx.log(`  ! signing identity team (${teamFromCn}) and profile team (${provMeta.teamId}) disagree — the .p12 and .mobileprovision are from different teams`);
@@ -385,6 +420,10 @@ function interpretAltoolStderr(stderr: string): string[] {
   if (/Could not determine provider public id/i.test(stderr) && hints.length === 0) {
     hints.push("Apple could not resolve which team owns this app.");
     hints.push("Verify the Apple ID is a member of the team that owns the App Apple ID, and that all App Store Connect agreements are accepted.");
+  }
+  if (/requires a provider public id/i.test(stderr) || /multiple providers/i.test(stderr)) {
+    hints.push("This Apple ID belongs to more than one team, so Apple needs to be told which one.");
+    hints.push("Run `xcrun altool --list-providers -u <appleId> -p @env:PW` on the build Mac, then set `providerPublicId` (the UUID-shaped Public ID, not the Team ID) on this destination.");
   }
   return hints;
 }

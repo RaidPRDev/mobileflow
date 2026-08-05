@@ -320,11 +320,16 @@
   // Preserve whitespace/wrap behavior the old <pre> had.
   white-space: pre-wrap;
   word-break: break-word;
+  // Wrapped continuation lines hang past the timestamp gutter so the message
+  // column stays visually intact instead of sliding under the clock.
+  padding-left: 11ch;
+  text-indent: -11ch;
 
-  &.is-stderr {
-    // Subtle red wash so a stderr block reads as "noisy" without overpowering
-    // the token colors inside.
-    background: rgba(220, 38, 38, 0.06);
+  &.is-error {
+    // Subtle red wash. Reserved for lines whose text reports a problem, so a
+    // green build shows none of it.
+    background: rgba(220, 38, 38, 0.07);
+    box-shadow: inset 2px 0 0 rgba(248, 113, 113, 0.55);
   }
 
   &.is-phase {
@@ -335,6 +340,13 @@
 }
 
 .log-tok--timestamp     { color: #6b7280; }
+
+// Leading wall-clock gutter ("[18:11:32] "). Dimmer than inline timestamps —
+// it's a ruler, not content — and excluded from copy-paste selection noise by
+// staying plain text.
+.log-tok--timestamp.is-gutter {
+  color: #464c56;
+}
 .log-tok--level         { color: #9ca3af; font-weight: 600; }
 .log-tok--level.is-info    { color: #60a5fa; }
 .log-tok--level.is-warn    { color: #fbbf24; }
@@ -350,7 +362,9 @@
 .log-tok--success       { color: #34d399; font-weight: 600; }
 .log-tok--failure       { color: #f87171; font-weight: 700; }
 
-.log-tok--stderr-marker { color: #f87171; opacity: 0.7; }
+// Only rendered on lines that report a problem, so it no longer needs to be
+// muted to avoid crying wolf.
+.log-tok--stderr-marker { color: #f87171; font-weight: 700; }
 
 .build-logs__empty {
   color: #6b7280;

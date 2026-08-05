@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Combobox,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
-  type ComboboxOption,
-} from "@mobileflow/ui";
+import { Button, Combobox, type ComboboxOption } from "@mobileflow/ui";
 import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
 import { ApiError, api, type BuildRow, type BuildStatus, type BuildTarget } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
   ios: { label: "iOS", iconBg: "#0a0a0a", icon: <AppleIcon /> },
@@ -249,139 +241,137 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
 
   const goToBuild = () => navigate(`/app/${appId}/build/builds/${build.id}`);
 
+  // One source of truth for both the ⋮ button and the right-click menu.
+  const actions: RowAction[] = [
+    { label: "View build", onSelect: goToBuild },
+    { label: "Rerun build", onSelect: onRerun },
+  ];
+  if (build.status === "success" && build.target === "ios") {
+    actions.push(
+      { label: "Send to App Store", disabled: !dep },
+      {
+        label: "Download IPA",
+        disabled: !ipa,
+        onSelect: () => ipa && window.open(ipa, "_blank", "noreferrer"),
+      },
+    );
+  }
+  if (build.status === "success" && build.target === "android") {
+    actions.push(
+      { label: "Send to Google Play Store", disabled: !dep },
+      {
+        label: "Download AAB",
+        disabled: !aab,
+        onSelect: () => aab && window.open(aab, "_blank", "noreferrer"),
+      },
+    );
+  }
+
   return (
-    <div
-      className="data-grid__row builds-row is-clickable"
-      role="row"
-      onClick={goToBuild}
-    >
-      <div role="cell" className="builds-row__build-cell">
-        <button
-          type="button"
-          className="builds-row__build"
-          onClick={(e) => {
-            e.stopPropagation();
-            goToBuild();
-          }}
-        >
-          #{number}
-        </button>
-      </div>
-      <div role="cell" className="builds-row__status">
-        {build.status === "success" ? (
-          <span className="tooltip-wrap" tabIndex={0}>
-            <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
-            <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
-          </span>
-        ) : build.status === "failed" ? (
-          <span className="tooltip-wrap" tabIndex={0}>
-            <XCircle size={18} className="status-icon is-failed" aria-hidden />
-            <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.failed}</span>
-          </span>
-        ) : (
-          <span className={`status-pill is-${build.status}`}>{build.status}</span>
-        )}
-      </div>
-      <div role="cell" className="builds-row__platform">
-        <span className="builds-row__platform-icon" style={{ background: platform.iconBg }}>
-          {platform.icon}
-        </span>
-        <span className="builds-row__platform-label">{platform.label}</span>
-      </div>
-      <div role="cell" className="builds-row__triggered">
-        <span className="builds-row__triggered-avatar">
-          <span className="commit-row__avatar-fallback">{triggeredByInitial}</span>
-        </span>
-        <div className="builds-row__triggered-meta">
-          <span className="builds-row__triggered-name">{triggeredByName}</span>
-          <span
-            className="tooltip-wrap builds-row__triggered-date"
-            tabIndex={0}
-            aria-label={fullDate}
+    <RowContextMenu actions={actions}>
+      <div
+        className="data-grid__row builds-row is-clickable"
+        role="row"
+        onClick={goToBuild}
+      >
+        <div role="cell" className="builds-row__build-cell">
+          <button
+            type="button"
+            className="builds-row__build"
+            onClick={(e) => {
+              e.stopPropagation();
+              goToBuild();
+            }}
           >
-            {relativeTime(build.createdAt)}
-            <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
-          </span>
+            #{number}
+          </button>
         </div>
-      </div>
-      <div role="cell" className="builds-row__commit">
-        <span className="builds-row__commit-avatar">
-          {accountAvatarUrl ? (
-            <img src={accountAvatarUrl} alt="" />
+        <div role="cell" className="builds-row__status">
+          {build.status === "success" ? (
+            <span className="tooltip-wrap" tabIndex={0}>
+              <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+              <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
+            </span>
+          ) : build.status === "failed" ? (
+            <span className="tooltip-wrap" tabIndex={0}>
+              <XCircle size={18} className="status-icon is-failed" aria-hidden />
+              <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.failed}</span>
+            </span>
           ) : (
-            <span className="commit-row__avatar-fallback">C</span>
+            <span className={`status-pill is-${build.status}`}>{build.status}</span>
           )}
-        </span>
-        <div className="builds-row__commit-meta">
-          <div className="builds-row__commit-line">
-            <span className="builds-row__commit-sha">{commitShort}</span>
-            <span className="builds-row__commit-msg">{commitTitle}</span>
-          </div>
-          <div className="builds-row__commit-sub">
+        </div>
+        <div role="cell" className="builds-row__platform">
+          <span className="builds-row__platform-icon" style={{ background: platform.iconBg }}>
+            {platform.icon}
+          </span>
+          <span className="builds-row__platform-label">{platform.label}</span>
+        </div>
+        <div role="cell" className="builds-row__triggered">
+          <span className="builds-row__triggered-avatar">
+            <span className="commit-row__avatar-fallback">{triggeredByInitial}</span>
+          </span>
+          <div className="builds-row__triggered-meta">
+            <span className="builds-row__triggered-name">{triggeredByName}</span>
             <span
-              className="tooltip-wrap"
+              className="tooltip-wrap builds-row__triggered-date"
               tabIndex={0}
               aria-label={fullDate}
             >
               {relativeTime(build.createdAt)}
               <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
             </span>
-            {build.branch && (
-              <>
-                <span className="commit-row__from">to</span>
-                <span className="commit-row__branch">
-                  <GitBranch size={11} aria-hidden />
-                  <span>{build.branch}</span>
-                </span>
-              </>
-            )}
           </div>
         </div>
-      </div>
-      <div role="cell" className="builds-row__deployment">
-        {dep ? (
-          <span className="deployment-pill">
-            {dep.destinationName ?? "—"}
-            {dep.destinationType ? ` / ${DESTINATION_LABEL[dep.destinationType] ?? dep.destinationType}` : ""}
+        <div role="cell" className="builds-row__commit">
+          <span className="builds-row__commit-avatar">
+            {accountAvatarUrl ? (
+              <img src={accountAvatarUrl} alt="" />
+            ) : (
+              <span className="commit-row__avatar-fallback">C</span>
+            )}
           </span>
-        ) : (
-          <span className="builds-row__deployment-empty">—</span>
-        )}
+          <div className="builds-row__commit-meta">
+            <div className="builds-row__commit-line">
+              <span className="builds-row__commit-sha">{commitShort}</span>
+              <span className="builds-row__commit-msg">{commitTitle}</span>
+            </div>
+            <div className="builds-row__commit-sub">
+              <span
+                className="tooltip-wrap"
+                tabIndex={0}
+                aria-label={fullDate}
+              >
+                {relativeTime(build.createdAt)}
+                <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
+              </span>
+              {build.branch && (
+                <>
+                  <span className="commit-row__from">to</span>
+                  <span className="commit-row__branch">
+                    <GitBranch size={11} aria-hidden />
+                    <span>{build.branch}</span>
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <div role="cell" className="builds-row__deployment">
+          {dep ? (
+            <span className="deployment-pill">
+              {dep.destinationName ?? "—"}
+              {dep.destinationType ? ` / ${DESTINATION_LABEL[dep.destinationType] ?? dep.destinationType}` : ""}
+            </span>
+          ) : (
+            <span className="builds-row__deployment-empty">—</span>
+          )}
+        </div>
+        <div role="cell" className="builds-row__menu" onClick={(e) => e.stopPropagation()}>
+          <RowActionsButton actions={actions} ariaLabel="Build actions" />
+        </div>
       </div>
-      <div role="cell" className="builds-row__menu" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label="Build actions" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={goToBuild}>View build</DropdownMenuItem>
-            <DropdownMenuItem onSelect={onRerun}>Rerun build</DropdownMenuItem>
-            {build.status === "success" && build.target === "ios" && (
-              <>
-                <DropdownMenuItem disabled={!dep}>Send to App Store</DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!ipa}
-                  onSelect={() => ipa && window.open(ipa, "_blank", "noreferrer")}
-                >
-                  Download IPA
-                </DropdownMenuItem>
-              </>
-            )}
-            {build.status === "success" && build.target === "android" && (
-              <>
-                <DropdownMenuItem disabled={!dep}>Send to Google Play Store</DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!aab}
-                  onSelect={() => aab && window.open(aab, "_blank", "noreferrer")}
-                >
-                  Download AAB
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+    </RowContextMenu>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -10,17 +10,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   IconButton,
   Input,
   Label,
+  cn,
 } from "@mobileflow/ui";
 import { ApiError, api, type EnvVarRow, type EnvironmentWithVars } from "../api/client";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 import { FieldError } from "../components/FieldError";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { SecretInput } from "../components/SecretInput";
+import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 
 const MAX_PREVIEW = 10;
 const SECRET_PLACEHOLDER = "********";
@@ -104,6 +104,13 @@ export function EnvironmentsPage() {
   const [duplicating, setDuplicating] = useState<EnvironmentWithVars | null>(null);
   const [deleting, setDeleting] = useState<EnvironmentWithVars | null>(null);
 
+  // One source of truth for both the ⋮ button and the right-click menu.
+  const rowActions = (env: EnvironmentWithVars): RowAction[] => [
+    { label: "Edit", onSelect: () => setEditing(env) },
+    { label: "Duplicate", onSelect: () => setDuplicating(env) },
+    { label: "Delete", destructive: true, onSelect: () => setDeleting(env) },
+  ];
+
   return (
     <div className="page">
       <div className="page-header">
@@ -128,33 +135,30 @@ export function EnvironmentsPage() {
             const secrets = env.vars.filter((v) => v.isSecret);
             const variables = env.vars.filter((v) => !v.isSecret);
             return (
-              <div key={env.id} className="data-grid__row envs-row" role="row">
-                <div role="cell">
-                  <div className="data-row-name">{env.name}</div>
+              <RowContextMenu key={env.id} actions={rowActions(env)}>
+                <div
+                  className="data-grid__row envs-row"
+                  role="row"
+                  onDoubleClick={(e) => {
+                    if (isInteractiveTarget(e.target)) return;
+                    clearTextSelection();
+                    setEditing(env);
+                  }}
+                >
+                  <div role="cell">
+                    <div className="data-row-name">{env.name}</div>
+                  </div>
+                  <div role="cell">
+                    <KvPreview rows={secrets} />
+                  </div>
+                  <div role="cell">
+                    <KvPreview rows={variables} />
+                  </div>
+                  <div role="cell" className="data-grid__actions">
+                    <RowActionsButton actions={rowActions(env)} />
+                  </div>
                 </div>
-                <div role="cell">
-                  <KvPreview rows={secrets} />
-                </div>
-                <div role="cell">
-                  <KvPreview rows={variables} />
-                </div>
-                <div role="cell" className="data-grid__actions">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <IconButton variant="menu" aria-label="More actions">
-                        <MoreVertical size={16} />
-                      </IconButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onSelect={() => setEditing(env)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setDuplicating(env)}>Duplicate</DropdownMenuItem>
-                      <DropdownMenuItem destructive onSelect={() => setDeleting(env)}>
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
+              </RowContextMenu>
             );
           })}
         </div>
@@ -264,7 +268,6 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
               id="new-env-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              autoFocus
               maxLength={ENV_NAME_MAX}
               placeholder="staging, production…"
               aria-invalid={showErrors && errors.name ? true : undefined}
@@ -278,6 +281,7 @@ function NewEnvironmentDialog({ appId, onClose }: { appId: string; onClose: () =
           <KvSection
             title="Secrets"
             description="Encrypted values available only to your build at runtime."
+            defaultOpen={false}
             rows={secrets}
             isSecret
             onChange={setSecrets}
@@ -429,7 +433,6 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
               id="edit-env-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              autoFocus
               maxLength={ENV_NAME_MAX}
               aria-invalid={submitted && errors.name ? true : undefined}
               aria-describedby={submitted && errors.name ? "edit-env-name-error" : undefined}
@@ -442,6 +445,7 @@ function EditEnvironmentDialog({ env, onClose }: { env: EnvironmentWithVars; onC
           <KvSection
             title="Secrets"
             description="Encrypted values available only to your build at runtime."
+            defaultOpen={false}
             rows={secrets}
             isSecret
             onChange={setSecrets}
@@ -481,6 +485,7 @@ function KvSection({
   onChange,
   rowErrors,
   rowIndexBase = 0,
+  defaultOpen = true,
 }: {
   title: string;
   description: string;
@@ -494,68 +499,97 @@ function KvSection({
    */
   rowErrors?: Record<number, { key?: string; value?: string }>;
   rowIndexBase?: number;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = `${isSecret ? "secrets" : "variables"}-panel`;
+  // SecretInput masks the value without a real <input type="password">, so the
+  // browser never offers to save these as account logins.
+  const ValueInput = isSecret ? SecretInput : Input;
+
   const update = (i: number, patch: Partial<FormKV>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const remove = (i: number) =>
     onChange(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : [blankRow(isSecret)]);
   const add = () => onChange([...rows, blankRow(isSecret)]);
 
+  // A collapsed section must never hide a validation error the user has to fix
+  // to submit, so open it as soon as one of its rows is flagged.
+  const hasError = rows.some((_, i) => {
+    const err = rowErrors?.[rowIndexBase + i];
+    return !!(err?.key || err?.value);
+  });
+  useEffect(() => {
+    if (hasError) setOpen(true);
+  }, [hasError]);
+
   return (
     <div className="new-env-section">
-      <div className="new-env-section__title">{title}</div>
-      <p className="new-env-section__desc">{description}</p>
-      <div className="new-env-kv">
-        <div className="new-env-kv__head">
-          <span>KEY</span>
-          <span>VALUE</span>
-          <span></span>
-        </div>
-        {rows.map((row, i) => {
-          const err = rowErrors?.[rowIndexBase + i];
-          return (
-            <div key={i} className="new-env-kv__row">
-              <div className="new-env-kv__cell">
-                <Input
-                  placeholder="Key"
-                  value={row.key}
-                  onChange={(e) => update(i, { key: e.target.value })}
-                  maxLength={ENV_KEY_MAX}
-                  aria-invalid={err?.key ? true : undefined}
-                />
-                {err?.key && <FieldError>{err.key}</FieldError>}
-              </div>
-              <div className="new-env-kv__cell">
-                <Input
-                  placeholder="Value"
-                  type={isSecret ? "password" : "text"}
-                  value={row.value}
-                  onChange={(e) => update(i, { value: e.target.value })}
-                  aria-invalid={err?.value ? true : undefined}
-                  onFocus={() => {
-                    // For existing secret rows, clear the placeholder so the user
-                    // can type a new value. The original is tracked via originalValue.
-                    if (isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
-                      update(i, { value: "" });
-                    }
-                  }}
-                />
-                {err?.value && <FieldError>{err.value}</FieldError>}
-              </div>
-              <button
-                type="button"
-                className="new-env-kv__remove"
-                aria-label="Remove row"
-                onClick={() => remove(i)}
-              >
-                <Trash2 size={14} />
-              </button>
+      <button
+        type="button"
+        className="new-env-section__toggle"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="new-env-section__title">{title}</span>
+        <ChevronDown size={16} className="new-env-section__chevron" aria-hidden />
+      </button>
+      <div className={cn("new-env-section__panel", open && "is-open")} id={panelId}>
+        <div className="new-env-section__panel-inner">
+          <p className="new-env-section__desc">{description}</p>
+          <div className="new-env-kv">
+            <div className="new-env-kv__head">
+              <span>KEY</span>
+              <span>VALUE</span>
+              <span></span>
             </div>
-          );
-        })}
-        <button type="button" className="new-build-link-button" onClick={add}>
-          <Plus size={12} /> Add another
-        </button>
+            {rows.map((row, i) => {
+              const err = rowErrors?.[rowIndexBase + i];
+              return (
+                <div key={i} className="new-env-kv__row">
+                  <div className="new-env-kv__cell">
+                    <Input
+                      placeholder="Key"
+                      value={row.key}
+                      onChange={(e) => update(i, { key: e.target.value })}
+                      maxLength={ENV_KEY_MAX}
+                      aria-invalid={err?.key ? true : undefined}
+                    />
+                    {err?.key && <FieldError>{err.key}</FieldError>}
+                  </div>
+                  <div className="new-env-kv__cell">
+                    <ValueInput
+                      placeholder="Value"
+                      value={row.value}
+                      onChange={(e) => update(i, { value: e.target.value })}
+                      aria-invalid={err?.value ? true : undefined}
+                      onFocus={() => {
+                        // For existing secret rows, clear the placeholder so the user
+                        // can type a new value. The original is tracked via originalValue.
+                        if (isSecret && row.id && row.value === SECRET_PLACEHOLDER) {
+                          update(i, { value: "" });
+                        }
+                      }}
+                    />
+                    {err?.value && <FieldError>{err.value}</FieldError>}
+                  </div>
+                  <button
+                    type="button"
+                    className="new-env-kv__remove"
+                    aria-label="Remove row"
+                    onClick={() => remove(i)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+            <button type="button" className="new-build-link-button" onClick={add}>
+              <Plus size={12} /> Add another
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -627,7 +661,6 @@ function DuplicateEnvironmentDialog({
               id="dup-env-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              autoFocus
               maxLength={ENV_NAME_MAX}
               aria-invalid={nameError ? true : undefined}
               aria-describedby={nameError ? "dup-env-name-error" : undefined}

@@ -7,6 +7,8 @@ import { ApiError, api, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
+import { RowContextMenu } from "../components/RowActions";
+import { allowNativeContextMenu } from "../lib/rowInteractions";
 
 export function CommitsPage() {
   const { appId } = useParams();
@@ -156,59 +158,64 @@ function CommitRowItem({ commit, accountAvatarUrl, accountLogin, onStartBuild }:
   const fullDate = formatFullDate(commit.date);
 
   return (
-    <div className="commit-row">
-      <div className="commit-row__avatar">
-        {avatarSrc ? (
-          <img src={avatarSrc} alt={avatarAlt} />
-        ) : (
-          <span className="commit-row__avatar-fallback">{initial}</span>
-        )}
-      </div>
-      <div className="commit-row__main">
-        <div className="commit-row__title">
-          <a
-            className="commit-row__sha tooltip-wrap"
-            href={commit.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="commit-row__sha-text">{shortSha}</span>
-            <ExternalLink size={11} aria-hidden />
-            <span className="tooltip-bubble tooltip-bubble--start" role="tooltip">
-              {commit.sha}
-            </span>
-          </a>
-          <span className="commit-row__message">{title}</span>
-        </div>
-        <div className="commit-row__meta">
-          <span className="commit-row__author">{commit.authorName}</span>
-          <span className="commit-row__sep">·</span>
-          <span
-            className="tooltip-wrap commit-row__date"
-            tabIndex={0}
-            aria-label={fullDate}
-          >
-            {relativeTime(commit.date)}
-            <span className="tooltip-bubble" role="tooltip">
-              {fullDate}
-            </span>
-          </span>
-          {commit.branch && (
-            <>
-              <span className="commit-row__from">from</span>
-              <span className="commit-row__branch">
-                <GitBranch size={12} aria-hidden />
-                <span>{commit.branch}</span>
-              </span>
-            </>
+    <RowContextMenu actions={[{ label: "Start build", onSelect: onStartBuild }]}>
+      <div className="commit-row">
+        <div className="commit-row__avatar">
+          {avatarSrc ? (
+            <img src={avatarSrc} alt={avatarAlt} />
+          ) : (
+            <span className="commit-row__avatar-fallback">{initial}</span>
           )}
         </div>
+        <div className="commit-row__main">
+          <div className="commit-row__title">
+            <a
+              className="commit-row__sha tooltip-wrap"
+              href={commit.url}
+              target="_blank"
+              rel="noreferrer"
+              // Right-clicking the hash should offer "Copy link address", not the
+              // row menu.
+              onContextMenu={allowNativeContextMenu}
+            >
+              <span className="commit-row__sha-text">{shortSha}</span>
+              <ExternalLink size={11} aria-hidden />
+              <span className="tooltip-bubble tooltip-bubble--start" role="tooltip">
+                {commit.sha}
+              </span>
+            </a>
+            <span className="commit-row__message">{title}</span>
+          </div>
+          <div className="commit-row__meta">
+            <span className="commit-row__author">{commit.authorName}</span>
+            <span className="commit-row__sep">·</span>
+            <span
+              className="tooltip-wrap commit-row__date"
+              tabIndex={0}
+              aria-label={fullDate}
+            >
+              {relativeTime(commit.date)}
+              <span className="tooltip-bubble" role="tooltip">
+                {fullDate}
+              </span>
+            </span>
+            {commit.branch && (
+              <>
+                <span className="commit-row__from">from</span>
+                <span className="commit-row__branch">
+                  <GitBranch size={12} aria-hidden />
+                  <span>{commit.branch}</span>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="commit-row__action">
+          <Button variant="outline" size="sm" onClick={onStartBuild}>
+            Start build
+          </Button>
+        </div>
       </div>
-      <div className="commit-row__action">
-        <Button variant="outline" size="sm" onClick={onStartBuild}>
-          Start build
-        </Button>
-      </div>
-    </div>
+    </RowContextMenu>
   );
 }

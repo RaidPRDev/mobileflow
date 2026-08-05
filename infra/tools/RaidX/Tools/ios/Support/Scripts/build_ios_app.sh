@@ -72,6 +72,9 @@ fi
 : "${PROVISION_NAME:?Missing PROVISION_NAME}"
 : "${PROFILE_UUID:?Missing PROFILE_UUID}"
 : "${CODE_SIGN_IDENTITY:?Missing CODE_SIGN_IDENTITY}"
+# Written by build_codesign_profile.sh from the profile's own contents. Default
+# only guards against a stale .ios_build_env from a pre-EXPORT_METHOD build.
+EXPORT_METHOD="${EXPORT_METHOD:-app-store-connect}"
 
 echo "🛠️  Building iOS archive for scheme: $APP_SCHEME"
 
@@ -154,6 +157,14 @@ mf_phase building success
 mf_phase signing running
 
 # 2. Generate exportOptions.plist
+#
+# `method` MUST match the provisioning profile's channel — exportArchive
+# validates the two against each other, so a hardcoded app-store-connect fails
+# every Development/Ad Hoc build with "is not an iOS App Store profile" and
+# then picks a distribution certificate the profile doesn't contain.
+# build_codesign_profile.sh derives EXPORT_METHOD from the profile itself.
+# signingCertificate pins the identity imported from this build's .p12 so
+# xcodebuild can't reach into another keychain on the search list for one.
 EXPORT_PLIST="$BUILD_DIR/exportOptions.generated.plist"
 cat > "$EXPORT_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -162,9 +173,11 @@ cat > "$EXPORT_PLIST" <<EOF
 <plist version="1.0">
 <dict>
   <key>method</key>
-  <string>app-store-connect</string>
+  <string>$EXPORT_METHOD</string>
   <key>signingStyle</key>
   <string>manual</string>
+  <key>signingCertificate</key>
+  <string>$CODE_SIGN_IDENTITY</string>
   <key>teamID</key>
   <string>$DEVELOPMENT_TEAM</string>
   <key>provisioningProfiles</key>
@@ -172,13 +185,26 @@ cat > "$EXPORT_PLIST" <<EOF
     <key>$BUNDLE_ID</key>
     <string>$PROFILE_UUID</string>
   </dict>
+EOF
+
+# uploadSymbols is only meaningful for App Store submissions.
+if [[ "$EXPORT_METHOD" == "app-store-connect" ]]; then
+  cat >> "$EXPORT_PLIST" <<EOF
   <key>uploadSymbols</key>
   <true/>
+EOF
+fi
+
+cat >> "$EXPORT_PLIST" <<EOF
   <key>compileBitcode</key>
   <false/>
 </dict>
 </plist>
 EOF
+
+# One readable line instead of dumping the plist XML — the full file is kept at
+# $EXPORT_PLIST inside the build dir (and in the .xcarchive) if it's ever needed.
+echo "📦 Signing for export: method=$EXPORT_METHOD, profile=$PROVISION_NAME, identity=$CODE_SIGN_IDENTITY"
 
 # 3. Export IPA  (re-signs + assembles the .ipa)
 echo "📦 Exporting IPA to: $EXPORT_PATH"

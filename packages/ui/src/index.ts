@@ -38,6 +38,17 @@ export {
   DropdownMenuCheckboxItem,
   type DropdownMenuItemProps,
 } from "./DropdownMenu";
+export {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuPortal,
+  ContextMenuGroup,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  type ContextMenuItemProps,
+} from "./ContextMenu";
 export { Combobox, type ComboboxOption, type ComboboxProps } from "./Combobox";
 export { FileDrop, type FileDropProps } from "./FileDrop";
 export {

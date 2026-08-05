@@ -1,15 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreVertical } from "lucide-react";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
-} from "@mobileflow/ui";
+import { Button } from "@mobileflow/ui";
 import appleIcon from "@assets/icons/apple-icon.svg";
 import androidIcon from "@assets/icons/android-icon.svg";
 import appStoreIcon from "@assets/icons/app-store-icon.svg";
@@ -26,6 +18,8 @@ import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { allowNativeContextMenu, clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 import {
   StoreDestinationDialog,
   TYPE_PLATFORM,
@@ -183,51 +177,72 @@ interface DestinationListItemProps {
 
 function DestinationListItem({ destination, type, latest, onOpen, onEdit, onDelete }: DestinationListItemProps) {
   const fullDate = latest ? formatFullDate(latest.createdAt) : null;
+
+  // A single click opens the destination, a double click edits it — so the
+  // navigation has to wait long enough for a second click to cancel it.
+  const openTimer = useRef<number | null>(null);
+  const cancelPendingOpen = () => {
+    if (openTimer.current !== null) {
+      window.clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+  useEffect(() => cancelPendingOpen, []);
+
+  const actions: RowAction[] = [
+    { label: "Edit", onSelect: onEdit },
+    { label: "Delete", destructive: true, onSelect: onDelete },
+  ];
+
   return (
-    <div
-      className="destination-card"
-      role="listitem"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <div className="destination-card__icon">{destIcon(type, 22)}</div>
-      <div className="destination-card__main">
-        <div className="destination-card__name">{destination.name}</div>
-        <div className="destination-card__sub">
-          {latest ? (
-            <>
-              Latest deployment{" "}
-              <span className="tooltip-wrap" tabIndex={0} aria-label={fullDate ?? ""}>
-                {relativeTime(latest.createdAt)}
-                <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
-              </span>
-            </>
-          ) : (
-            "No deployments yet"
-          )}
+    <RowContextMenu actions={actions}>
+      <div
+        className="destination-card"
+        role="listitem"
+        tabIndex={0}
+        onClick={() => {
+          cancelPendingOpen();
+          openTimer.current = window.setTimeout(() => {
+            openTimer.current = null;
+            onOpen();
+          }, 250);
+        }}
+        onDoubleClick={(e) => {
+          cancelPendingOpen();
+          if (isInteractiveTarget(e.target)) return;
+          clearTextSelection();
+          onEdit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        <div className="destination-card__icon">{destIcon(type, 22)}</div>
+        <div className="destination-card__main">
+          <div className="destination-card__name">{destination.name}</div>
+          <div className="destination-card__sub">
+            {latest ? (
+              <>
+                Latest deployment{" "}
+                <span className="tooltip-wrap" tabIndex={0} aria-label={fullDate ?? ""}>
+                  {relativeTime(latest.createdAt)}
+                  <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
+                </span>
+              </>
+            ) : (
+              "No deployments yet"
+            )}
+          </div>
+        </div>
+        <div className="destination-card__actions" onClick={(e) => e.stopPropagation()}>
+          {latest && <DeployedBuildPill dep={latest} />}
+          <RowActionsButton actions={actions} />
         </div>
       </div>
-      <div className="destination-card__actions" onClick={(e) => e.stopPropagation()}>
-        {latest && <DeployedBuildPill dep={latest} />}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label="More actions">
-              <MoreVertical size={16} />
-            </IconButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-            <DropdownMenuItem destructive onSelect={onDelete}>Delete</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+    </RowContextMenu>
   );
 }
 
@@ -239,6 +254,8 @@ function DeployedBuildPill({ dep }: { dep: DeploymentRow }) {
       to={`/app/${appId}/build/builds/${dep.buildId}`}
       className="deployed-build-pill"
       onClick={(e) => e.stopPropagation()}
+      // Keep the browser's link menu on right-click instead of the row menu.
+      onContextMenu={allowNativeContextMenu}
     >
       <PlatformBadge target={dep.buildTarget} />
       <span>Deployed build {label}</span>
