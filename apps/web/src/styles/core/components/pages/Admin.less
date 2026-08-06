@@ -468,13 +468,25 @@
 
 // ─── Plan edit page ──────────────────────────────────────────────────────────
 
+// The whole row is the button (see `components/PageBackLink`) so the label is
+// clickable too, not just the arrow badge. `inline-flex` — not `flex` — keeps
+// the hit area tight to the content; a block-level button would stretch the
+// full column width and swallow clicks well to the right of "Back".
 .page-back-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
   margin-bottom: var(--space-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: default;
 }
 
+// Circular arrow badge — a span inside the button, so it lights up on hover
+// anywhere across the row rather than owning the click itself.
 .page-back-link {
   width: 24px;
   height: 24px;
@@ -487,14 +499,13 @@
   justify-content: center;
   padding: 0;
   font-family: inherit;
-  cursor: default;
   transition: background var(--transition-fast), color var(--transition-fast);
   flex-shrink: 0;
+}
 
-  &:hover {
-    background: var(--color-bg-subtle);
-    color: var(--color-fg);
-  }
+.page-back-row:hover .page-back-link {
+  background: var(--color-bg-subtle);
+  color: var(--color-fg);
 }
 
 .page-back-label {
@@ -503,13 +514,19 @@
   color: var(--color-fg);
 }
 
+// The row itself is the link so the label is clickable too. Stays `flex` (not
+// inline-flex like `.page-back-row`) because it spans a fixed-width sidebar
+// column, where the whole strip reading as one target is what we want.
 .admin-back-row {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   padding: 0 var(--space-lg);
+  text-decoration: none;
+  cursor: default;
 }
 
+// Circular arrow badge — a span inside the link, lit by hover on the row.
 .admin-back-btn {
   width: 24px;
   height: 24px;
@@ -521,15 +538,13 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  cursor: default;
-  text-decoration: none;
   transition: background var(--transition-fast), color var(--transition-fast);
   flex-shrink: 0;
+}
 
-  &:hover {
-    background: var(--color-bg-subtle);
-    color: var(--color-fg);
-  }
+.admin-back-row:hover .admin-back-btn {
+  background: var(--color-bg-subtle);
+  color: var(--color-fg);
 }
 
 .admin-back-label {

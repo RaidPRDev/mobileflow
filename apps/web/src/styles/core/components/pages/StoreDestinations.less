@@ -254,10 +254,12 @@
 .dest-history-table {
   grid-template-columns:
     minmax(100px, 0.6fr) // build
-    minmax(70px, 0.4fr)  // status icon
+    // 92px, not 70: the cell only holds an icon, but the header now carries a
+    // sort arrow (4px gap + 11px) beside "STATUS", and the label truncates to an
+    // ellipsis rather than widening its own column.
+    minmax(92px, 0.4fr)  // status icon
     minmax(160px, 1fr)   // triggered by
-    minmax(200px, 1.6fr) // commit
-    minmax(110px, 0.6fr); // outcome label
+    minmax(200px, 1.6fr); // commit
 
   .data-grid__row > * {
     padding: 10px var(--space-sm);
@@ -284,17 +286,3 @@
   gap: var(--space-sm);
 }
 
-.dest-history-row__outcome {
-  justify-content: flex-end;
-}
-
-.dest-history-outcome {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-fg-muted);
-
-  &.is-success { color: var(--color-success, #16a34a); }
-  &.is-failed { color: var(--color-danger, #dc2626); }
-}

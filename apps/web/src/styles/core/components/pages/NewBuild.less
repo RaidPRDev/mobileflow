@@ -682,7 +682,9 @@
 .deploy-build-table__head {
   display: contents;
 
-  > span {
+  // `> *`, not `> span`: sortable headers render as <button> (see
+  // `components/SortableHead`) and need the same padding and border.
+  > * {
     padding: 12px var(--space-sm);
     font-size: 11px;
     text-transform: uppercase;
@@ -690,6 +692,22 @@
     color: var(--color-fg-subtle);
     border-bottom: 1px solid var(--color-border);
     background: var(--color-bg-subtle);
+  }
+}
+
+// Sortable cells hand their padding to the inner button (see Table.less).
+.deploy-build-table__head > .is-sortable {
+  padding: 0;
+}
+
+// This header strip is already tinted, so the shared `.table-sort` hover (which
+// tints to that same colour) would be invisible here. Keep the strip colour and
+// take hover one step further.
+.deploy-build-table__head .table-sort {
+  background: var(--color-bg-subtle);
+
+  &:hover {
+    background: var(--color-bg-muted);
   }
 }
 
@@ -984,7 +1002,9 @@
 .deploy-build-table__head {
   display: contents;
 
-  > span {
+  // `> *`, not `> span`: sortable headers render as <button> (see
+  // `components/SortableHead`) and need the same padding and border.
+  > * {
     padding: 12px var(--space-sm);
     font-size: 11px;
     text-transform: uppercase;
@@ -992,6 +1012,22 @@
     color: var(--color-fg-subtle);
     border-bottom: 1px solid var(--color-border);
     background: var(--color-bg-subtle);
+  }
+}
+
+// Sortable cells hand their padding to the inner button (see Table.less).
+.deploy-build-table__head > .is-sortable {
+  padding: 0;
+}
+
+// This header strip is already tinted, so the shared `.table-sort` hover (which
+// tints to that same colour) would be invisible here. Keep the strip colour and
+// take hover one step further.
+.deploy-build-table__head .table-sort {
+  background: var(--color-bg-subtle);
+
+  &:hover {
+    background: var(--color-bg-muted);
   }
 }
 

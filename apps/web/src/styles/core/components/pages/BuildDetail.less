@@ -278,6 +278,44 @@
   margin: 0;
 }
 
+.build-logs__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+// Hand-rolled rather than the shared ghost button: this panel keeps its own
+// terminal palette regardless of the app theme.
+.build-logs__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #6b7280;
+  transition: color 120ms ease, background 120ms ease;
+  
+  // `.tooltip-wrap` (also on this button) sets `cursor: help` at equal
+  // specificity, so qualify ours to win regardless of stylesheet order.
+  &.tooltip-wrap {
+    cursor: default;
+  }
+
+  &:hover:not(:disabled) {
+    color: #e4e4e7;
+    background: #1f2227;
+  }
+
+  &.tooltip-wrap:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
 .build-logs__count {
   font-size: 11px;
   font-family: var(--font-mono);

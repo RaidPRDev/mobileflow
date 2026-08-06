@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, CircleMinus, Plus } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -585,7 +585,7 @@ function KvSection({
                     aria-label="Remove row"
                     onClick={() => remove(i)}
                   >
-                    <Trash2 size={14} />
+                    <CircleMinus size={18} aria-hidden />
                   </button>
                 </div>
               );

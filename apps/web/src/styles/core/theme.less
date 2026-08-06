@@ -19,6 +19,10 @@
   --color-accent-hover: #1d4ed8;
   --color-accent-fg: #ffffff;
   --color-accent-soft: rgba(37, 99, 235, 0.10);
+  // Subdued accent for a selected item that is subordinate to another selected
+  // item — currently the active sidebar sub-item under its active section.
+  --color-accent-dim: #7691d8;
+  --color-accent-soft-dim: rgba(37, 99, 235, 0.06);
 
   --color-danger: #dc2626;
   --color-danger-fg: #ffffff;
@@ -34,6 +38,8 @@
   --color-sidebar-border: #e4e4e7;
   --color-sidebar-fg: #0a0a0a;
   --color-sidebar-fg-muted: #52525b;
+  // Nested nav entries — a step dimmer than their parent so the hierarchy reads.
+  --color-sidebar-fg-dim: #8b8b93;
 
   --color-card: #ffffff;
   --color-card-fg: #0a0a0a;
@@ -102,6 +108,10 @@
   --color-accent-hover: #2563eb;
   --color-accent-fg: #ffffff;
   --color-accent-soft: rgba(59, 130, 246, 0.16);
+  // Darker, not lighter: on the dark sidebar, moving toward the background is
+  // what reads as "less prominent".
+  --color-accent-dim: #2f5ea8;
+  --color-accent-soft-dim: rgba(59, 130, 246, 0.09);
 
   --color-danger: #ef4444;
   --color-danger-fg: #ffffff;
@@ -117,6 +127,7 @@
   --color-sidebar-border: #1f1f22;
   --color-sidebar-fg: #f5f5f5;
   --color-sidebar-fg-muted: #a1a1aa;
+  --color-sidebar-fg-dim: #71717a;
 
   --color-card: #131316;
   --color-card-fg: #f5f5f5;

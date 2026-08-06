@@ -17,8 +17,9 @@ import {
   Label,
   Loading,
 } from "@mobileflow/ui";
-import { CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
+import { CircleCheckBig, Info, Loader2, XCircle } from "lucide-react";
 import { ApiError, api } from "../api/client";
+import { CircleXBig } from "../components/CircleXBig";
 import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 import { HostTerminalPanel } from "./HostTerminalPanel";
@@ -225,12 +226,12 @@ function HostRowItem({ host }: { host: HostRow }) {
         <div role="cell" className="builds-row__status">
           {host.online ? (
             <span className="tooltip-wrap" tabIndex={0}>
-              <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+              <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
               <span className="tooltip-bubble" role="tooltip">Online</span>
             </span>
           ) : (
             <span className="tooltip-wrap" tabIndex={0}>
-              <XCircle size={18} className="status-icon is-failed" aria-hidden />
+              <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
               <span className="tooltip-bubble" role="tooltip">Offline</span>
             </span>
           )}

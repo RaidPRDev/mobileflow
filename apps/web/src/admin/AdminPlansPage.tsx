@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ChevronRight, XCircle } from "lucide-react";
+import { CircleCheckBig, ChevronRight } from "lucide-react";
 import { Loading } from "@mobileflow/ui";
 import { api } from "../api/client";
+import { CircleXBig } from "../components/CircleXBig";
 
 interface Plan {
   id: string;
@@ -98,12 +99,12 @@ function PlanRow({ plan }: { plan: Plan }) {
       <div role="cell" className="builds-row__status">
         {plan.canBuild ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+            <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">Builds enabled</span>
           </span>
         ) : (
           <span className="tooltip-wrap" tabIndex={0}>
-            <XCircle size={18} className="status-icon is-failed" aria-hidden />
+            <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">Builds disabled</span>
           </span>
         )}

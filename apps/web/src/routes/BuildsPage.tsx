@@ -2,11 +2,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Combobox, type ComboboxOption, Loading } from "@mobileflow/ui";
-import { CheckCircle2, GitBranch, XCircle } from "lucide-react";
-import { ApiError, api, type BuildRow, type BuildStatus, type BuildTarget } from "../api/client";
+import { CircleCheckBig, GitBranch } from "lucide-react";
+import {
+  ApiError,
+  api,
+  type BuildDeploymentSummary,
+  type BuildRow,
+  type BuildStatus,
+  type BuildTarget,
+} from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { useTableSort } from "../lib/useTableSort";
 import { ListFooter } from "../components/ListFooter";
+import { SortableHead } from "../components/SortableHead";
+import { TableFillerRows, fillerCount } from "../components/TableFillerRows";
+import { CircleXBig } from "../components/CircleXBig";
+import { AndroidIcon } from "../components/AndroidIcon";
 import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
@@ -29,6 +41,15 @@ const DESTINATION_LABEL: Record<string, string> = {
   play_store: "play store",
   play_internal: "play internal",
 };
+
+/** Shared by the Deployment cell and that column's sort accessor. */
+function deploymentLabelOf(dep: BuildDeploymentSummary | null): string {
+  if (!dep) return "";
+  const type = dep.destinationType
+    ? ` / ${DESTINATION_LABEL[dep.destinationType] ?? dep.destinationType}`
+    : "";
+  return `${dep.destinationName ?? "—"}${type}`;
+}
 
 type StateFilter = "all" | BuildStatus;
 type PlatformFilter = "all" | BuildTarget;
@@ -180,22 +201,44 @@ function BuildsList({
   });
   const [page, setPage] = useState(0);
   const total = numbered.length;
+
+  // Sort the whole list, then paginate — the reverse would only reorder each
+  // page. Opens on Build descending, i.e. the newest build first.
+  const { sorted, sortKey, dir, onSort } = useTableSort(
+    numbered,
+    {
+      build: (r) => r.number,
+      status: (r) => r.build.status,
+      platform: (r) => PLATFORM_META[r.build.target].label,
+      triggered: (r) => r.build.triggeredByName || r.build.triggeredByEmail || "",
+      commit: (r) => r.build.commitMessage?.split("\n")[0] || r.build.commitSha,
+      deployment: (r) => deploymentLabelOf(r.build.deployments?.[0] ?? null),
+    },
+    "build",
+    "desc",
+  );
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageIdx = Math.min(page, pageCount - 1);
-  const visible = numbered.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
+  const visible = sorted.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
 
   return (
     <>
       <div className="data-grid builds-table fade-in" role="table" ref={gridRef}>
-        <div className="data-grid__head" role="row">
-          <span role="columnheader">Build</span>
-          <span role="columnheader">Status</span>
-          <span role="columnheader">Platform</span>
-          <span role="columnheader">Triggered by</span>
-          <span role="columnheader">Commit</span>
-          <span role="columnheader">Deployment</span>
-          <span role="columnheader" aria-label="Actions"></span>
-        </div>
+        <SortableHead
+          columns={[
+            { key: "build", label: "Build" },
+            { key: "status", label: "Status" },
+            { key: "platform", label: "Platform" },
+            { key: "triggered", label: "Triggered by" },
+            { key: "commit", label: "Commit" },
+            { key: "deployment", label: "Deployment" },
+            { key: "menu", label: "", sortable: false, ariaLabel: "Actions" },
+          ]}
+          sortKey={sortKey}
+          dir={dir}
+          onSort={onSort}
+        />
         {visible.map(({ build, number }) => (
           <BuildRowItem
             key={build.id}
@@ -205,6 +248,12 @@ function BuildsList({
             onRerun={() => onRerun(build)}
           />
         ))}
+        <TableFillerRows
+          gridRef={gridRef}
+          rowSelector=".builds-row"
+          count={fillerCount(pageSize, visible.length, pageCount)}
+          columns={7}
+        />
       </div>
       <ListFooter
         total={total}
@@ -237,6 +286,7 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
   const fullDate = formatFullDate(build.createdAt);
   const successOrFail = build.status === "success" || build.status === "failed";
   const dep = build.deployments?.[0] ?? null;
+  const deploymentLabel = deploymentLabelOf(dep);
   const ipa = build.target === "ios"
     ? build.artifacts?.find((a) => a.kind === "ipa")?.url ?? null
     : null;
@@ -294,12 +344,12 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
         <div role="cell" className="builds-row__status">
           {build.status === "success" ? (
             <span className="tooltip-wrap" tabIndex={0}>
-              <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+              <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
               <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
             </span>
           ) : build.status === "failed" ? (
             <span className="tooltip-wrap" tabIndex={0}>
-              <XCircle size={18} className="status-icon is-failed" aria-hidden />
+              <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
               <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.failed}</span>
             </span>
           ) : (
@@ -364,9 +414,21 @@ function BuildRowItem({ build, number, accountAvatarUrl, onRerun }: BuildRowItem
         </div>
         <div role="cell" className="builds-row__deployment">
           {dep ? (
-            <span className="deployment-pill">
-              {dep.destinationName ?? "—"}
-              {dep.destinationType ? ` / ${DESTINATION_LABEL[dep.destinationType] ?? dep.destinationType}` : ""}
+            /* The tooltip carries the full target: the label truncates as the
+               column narrows and drops entirely on small screens, leaving the
+               icon. The bubble sits outside the pill because the pill clips its
+               own overflow for the ellipsis and would crop it. */
+            <span className="tooltip-wrap pill-tooltip-wrap" tabIndex={0} aria-label={deploymentLabel}>
+              <span className="deployment-pill">
+                <span
+                  className="deployment-pill__icon"
+                  style={{ background: platform.iconBg }}
+                >
+                  {platform.icon}
+                </span>
+                <span className="deployment-pill__label">{deploymentLabel}</span>
+              </span>
+              <span className="tooltip-bubble" role="tooltip">{deploymentLabel}</span>
             </span>
           ) : (
             <span className="builds-row__deployment-empty">—</span>
@@ -459,14 +521,6 @@ function AppleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
       <path d="M19.665 16.811a10.316 10.316 0 0 1-1.021 1.837c-.537.767-.978 1.297-1.316 1.592-.525.482-1.089.73-1.692.744-.432 0-.954-.123-1.562-.373-.61-.249-1.17-.371-1.683-.371-.537 0-1.113.122-1.73.371-.616.25-1.114.381-1.495.393-.577.025-1.154-.229-1.729-.764-.367-.318-.83-.866-1.388-1.645-.598-.83-1.087-1.79-1.467-2.876-.413-1.17-.62-2.305-.62-3.402 0-1.257.272-2.34.815-3.249.428-.728 1-1.301 1.715-1.72.713-.42 1.485-.633 2.314-.647.46 0 1.063.142 1.81.422.745.28 1.225.422 1.435.422.158 0 .69-.165 1.594-.493.857-.305 1.58-.43 2.17-.382 1.605.13 2.81.764 3.612 1.905-1.434.873-2.144 2.094-2.13 3.66.013 1.222.451 2.238 1.314 3.046.39.371.825.658 1.31.864-.105.305-.215.598-.331.879zm-3.873-15.43c0 .938-.342 1.815-1.027 2.628-.825.964-1.823 1.522-2.906 1.434a2.93 2.93 0 0 1-.022-.354c0-.9.392-1.864 1.087-2.654.347-.4.787-.733 1.32-1 .533-.262 1.037-.408 1.512-.434.014.13.036.26.036.38z" />
-    </svg>
-  );
-}
-
-function AndroidIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.523 15.341a1.04 1.04 0 1 1 0-2.082 1.04 1.04 0 0 1 0 2.082m-11.046 0a1.04 1.04 0 1 1 0-2.082 1.04 1.04 0 0 1 0 2.082m11.42-6.02 2.078-3.6a.43.43 0 1 0-.745-.43l-2.103 3.643a13.05 13.05 0 0 0-5.127-1.04c-1.842 0-3.59.378-5.127 1.04L4.77 5.291a.43.43 0 1 0-.745.43l2.078 3.6C2.554 11.218 0 14.696 0 18.708h24c0-4.012-2.554-7.49-6.103-9.387" />
     </svg>
   );
 }

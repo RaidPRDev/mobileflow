@@ -12,8 +12,8 @@ import {
   Loading,
   Switch,
 } from "@mobileflow/ui";
-import { ArrowLeft } from "lucide-react";
 import { ApiError, api } from "../api/client";
+import { PageBackLink } from "../components/PageBackLink";
 
 interface PlanEdit {
   name: string;
@@ -131,17 +131,7 @@ export function AdminPlanEditPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-back-row">
-            <button
-              type="button"
-              onClick={() => tryNavigate("/admin/plans")}
-              className="page-back-link"
-              aria-label="Back to plans"
-            >
-              <ArrowLeft size={14} aria-hidden />
-            </button>
-            <span className="page-back-label">Back to plans</span>
-          </div>
+          <PageBackLink label="Back to plans" onClick={() => tryNavigate("/admin/plans")} />
           <div className="plan-card__title-block">
             <h1 className="page-title">{plan.name}</h1>
             <code className="plan-card__id">{plan.id}</code>

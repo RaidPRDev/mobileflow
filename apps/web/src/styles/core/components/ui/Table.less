@@ -35,6 +35,58 @@
   }
 }
 
+// Sortable column header (see `components/SortableHead`). The cell keeps the
+// `columnheader` role and its border/background from the `__head > *` rule above
+// but hands its padding to the inner button, so the button fills the cell and
+// the hover tint covers the whole header rather than just the text.
+.data-grid__head > .is-sortable {
+  padding: 0;
+}
+
+// Typography is restated rather than inherited: buttons don't inherit font by
+// default, and `.table-sort` sits inside the cell rather than being the cell.
+.table-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 12px var(--space-sm);
+  border: 0;
+  background: transparent;
+  cursor: default;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-subtle);
+  text-align: left;
+  transition: color 120ms ease, background 120ms ease;
+
+  &:hover {
+    color: var(--color-fg);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.table-sort__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Previews the sort a click would apply — only visible while hovered, but
+// always laid out so the label never moves.
+.table-sort__hint {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.table-sort:hover .table-sort__hint {
+  opacity: 1;
+}
+
 .data-grid__row {
   display: contents;
 
@@ -48,6 +100,20 @@
 
   &:hover > * {
     background: var(--color-bg-subtle);
+  }
+}
+
+// Empty slots that keep a short last page as tall as a full one, so the pager
+// beneath doesn't ride up (see `components/TableFillerRows`). Carries the row
+// rhythm — one bottom border per slot — but faded, so the gap reads as absence
+// rather than as data. Deliberately not `.data-grid__row`: that class brings a
+// hover tint with it, and there is nothing here to hover.
+.table-filler-row {
+  display: contents;
+
+  > * {
+    border-bottom: 1px solid var(--color-border);
+    opacity: 0.4;
   }
 }
 

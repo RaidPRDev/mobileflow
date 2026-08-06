@@ -9,7 +9,7 @@ import {
   IconButton,
   Loading,
 } from "@mobileflow/ui";
-import { CheckCircle2 } from "lucide-react";
+import { CircleCheckBig } from "lucide-react";
 import { ApiError, api, type BuildTarget } from "../api/client";
 
 interface Stack {
@@ -107,7 +107,7 @@ function StackRow({ stack }: { stack: Stack }) {
       </div>
       <div role="cell" className="builds-row__status">
         {stack.isDefault ? (
-          <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+          <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
         ) : (
           <span className="builds-row__deployment-empty">—</span>
         )}

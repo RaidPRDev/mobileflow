@@ -15,9 +15,11 @@ import {
   IconButton,
   Loading,
 } from "@mobileflow/ui";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CircleCheckBig } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
 import { ApiError, api } from "../api/client";
+import { CircleXBig } from "../components/CircleXBig";
+import { AndroidIcon } from "../components/AndroidIcon";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
 const PLAN_OPTIONS = [
@@ -328,12 +330,12 @@ function OrgBuildRow({ build, appName }: { build: OrgBuild; appName: string }) {
       <div role="cell" className="builds-row__status">
         {status === "success" ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+            <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
           </span>
         ) : status === "failed" ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <XCircle size={18} className="status-icon is-failed" aria-hidden />
+            <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.failed}</span>
           </span>
         ) : (
@@ -401,14 +403,6 @@ function AppleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
       <path d="M19.665 16.811a10.316 10.316 0 0 1-1.021 1.837c-.537.767-.978 1.297-1.316 1.592-.525.482-1.089.73-1.692.744-.432 0-.954-.123-1.562-.373-.61-.249-1.17-.371-1.683-.371-.537 0-1.113.122-1.73.371-.616.25-1.114.381-1.495.393-.577.025-1.154-.229-1.729-.764-.367-.318-.83-.866-1.388-1.645-.598-.83-1.087-1.79-1.467-2.876-.413-1.17-.62-2.305-.62-3.402 0-1.257.272-2.34.815-3.249.428-.728 1-1.301 1.715-1.72.713-.42 1.485-.633 2.314-.647.46 0 1.063.142 1.81.422.745.28 1.225.422 1.435.422.158 0 .69-.165 1.594-.493.857-.305 1.58-.43 2.17-.382 1.605.13 2.81.764 3.612 1.905-1.434.873-2.144 2.094-2.13 3.66.013 1.222.451 2.238 1.314 3.046.39.371.825.658 1.31.864-.105.305-.215.598-.331.879zm-3.873-15.43c0 .938-.342 1.815-1.027 2.628-.825.964-1.823 1.522-2.906 1.434a2.93 2.93 0 0 1-.022-.354c0-.9.392-1.864 1.087-2.654.347-.4.787-.733 1.32-1 .533-.262 1.037-.408 1.512-.434.014.13.036.26.036.38z" />
-    </svg>
-  );
-}
-
-function AndroidIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.523 15.341a1.04 1.04 0 1 1 0-2.082 1.04 1.04 0 0 1 0 2.082m-11.046 0a1.04 1.04 0 1 1 0-2.082 1.04 1.04 0 0 1 0 2.082m11.42-6.02 2.078-3.6a.43.43 0 1 0-.745-.43l-2.103 3.643a13.05 13.05 0 0 0-5.127-1.04c-1.842 0-3.59.378-5.127 1.04L4.77 5.291a.43.43 0 1 0-.745.43l2.078 3.6C2.554 11.218 0 14.696 0 18.708h24c0-4.012-2.554-7.49-6.103-9.387" />
     </svg>
   );
 }

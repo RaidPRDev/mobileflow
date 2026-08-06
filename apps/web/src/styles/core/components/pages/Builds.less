@@ -48,10 +48,13 @@
 
 // Layout-only: chrome (head text, row borders, hover, padding) lives in
 // .data-grid (Table.less). This rule just lays out the columns.
+// Floors on the first two tracks are set by their *headers*, not their cells:
+// each carries a sort arrow (4px gap + 11px) beside the label, and the label
+// ellipsises rather than widening its own column.
 .builds-table {
   grid-template-columns:
-    minmax(60px, 0.5fr)         // build number
-    minmax(70px, 0.5fr)         // status
+    minmax(80px, 0.5fr)         // build number
+    minmax(92px, 0.5fr)         // status
     minmax(110px, 0.7fr)        // platform
     minmax(160px, 1fr)          // triggered by
     minmax(220px, 1.7fr)        // commit
@@ -266,18 +269,81 @@
 
 .builds-row__deployment {
   font-size: 12px;
+  // Grid items default to `min-width: auto`, which refuses to shrink below the
+  // pill's content width — the cell then overflows into the ⋮ column.
+  min-width: 0;
 }
 
+// Tooltip host for the destination pills. `.tooltip-wrap` positions the bubble,
+// but the pill inside clips its own overflow (for the label ellipsis), so the
+// bubble has to be a sibling of the pill rather than a child. This wrapper has to
+// pass the shrink through — without `min-width: 0` it would refuse to go below
+// the pill's content width and the ellipsis would never kick in.
+// Qualified with `.tooltip-wrap` so the cursor override beats that class's own
+// `cursor: help` no matter which stylesheet lands last.
+.tooltip-wrap.pill-tooltip-wrap {
+  min-width: 0;
+  max-width: 100%;
+  // The pill isn't a control, and `help` would contradict the clickable row it
+  // sits in.
+  cursor: inherit;
+}
+
+// Shares the palette of `.deployments-row__target-pill` and
+// `.deployed-build-pill` — all three name a store destination, so they should
+// read as the same object wherever they appear.
 .deployment-pill {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
   border-radius: var(--radius-pill);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+  // Same shrink trio as `.deployments-row__target-pill`: without these the
+  // label can't shrink, so `max-width` is powerless and long destination names
+  // spill out of the cell.
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+// Truncates with an ellipsis as the Deployment column narrows.
+.deployment-pill__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+// Solid platform-coloured badge — the pill's own background is a pale accent
+// tint, so the white platform glyphs need their own disc to sit on (same
+// treatment as `.builds-row__platform-icon` in the Platform column).
+.deployment-pill__icon {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+// Past this width the Deployment track sits at its 140px floor and an ellipsis
+// leaves too little text to be useful, so collapse the pill to just the
+// platform icon. The full target stays on the pill's title tooltip.
+@media (max-width: 1000px) {
+  .deployment-pill__label {
+    display: none;
+  }
+
+  .deployment-pill {
+    padding: 4px;
+  }
 }
 
 .builds-row__deployment-empty {
@@ -295,7 +361,10 @@
   grid-template-columns:
     minmax(160px, 1.2fr)  // triggered by
     minmax(80px, 0.5fr)   // type
-    minmax(70px, 0.4fr)   // status
+    // 92px: the cell holds only an icon, but the header carries "STATUS" plus a
+    // sort arrow (4px gap + 11px), and the label ellipsises rather than pushing
+    // its own column wider.
+    minmax(92px, 0.4fr)   // status
     minmax(180px, 1.2fr)  // target
     minmax(110px, 0.7fr)  // build
     minmax(220px, 1.7fr); // commit
@@ -344,13 +413,18 @@
   color: var(--color-fg);
 }
 
+// Same palette as `.deployed-build-pill` on the Store Destinations page — the
+// solid blue/green fill this used to carry (from an inline `STORE_BADGE_BG`
+// style) made the pill shout for attention in a column of them. Metrics stay
+// tighter than that pill's: this one lives in a dense table row.
 .deployments-row__target-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 4px 6px;
+  padding: 4px 10px 4px 4px;
   border-radius: var(--radius-pill);
-  color: #fff;
+  background: var(--color-bg-muted);
+  color: var(--color-fg);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -369,6 +443,9 @@
   min-width: 0;
 }
 
+// Platform-coloured disc, set inline per row. It used to be a translucent white
+// wash, which only worked while the pill itself was a saturated colour — on the
+// muted fill the white glyphs need their own solid disc.
 .deployments-row__target-icon {
   width: 18px;
   height: 18px;
@@ -377,7 +454,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 
 // Past this width the Target track is pinned at its 180px floor and an

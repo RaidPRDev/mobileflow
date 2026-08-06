@@ -39,12 +39,14 @@ export function AdminLayout() {
           <Item to="/admin/deploy" label="Deploy" />
           <Item to="/admin/logs" label="Logs" />
         </nav>
-        <div className="admin-back-row" style={{ marginTop: 16 }}>
-          <NavLink to="/" className="admin-back-btn" aria-label="Back to app">
-            <ArrowLeft size={14} aria-hidden />
-          </NavLink>
+        {/* The label lives inside the link so clicking the words navigates too
+            — it used to be a sibling, leaving only the 24px badge clickable. */}
+        <NavLink to="/" className="admin-back-row" style={{ marginTop: 16 }}>
+          <span className="admin-back-btn" aria-hidden>
+            <ArrowLeft size={14} />
+          </span>
           <span className="admin-back-label">Back to app</span>
-        </div>
+        </NavLink>
       </aside>
       <main className="app-main">
         <header className="app-header">

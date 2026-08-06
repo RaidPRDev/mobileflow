@@ -113,6 +113,14 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+// Indent alone read as a weak cue; the dimmer fill is what makes these look
+// subordinate to the section they hang off. Declared before :hover/.is-active —
+// same specificity, so those must come later to win.
+.app-rail-nav-item.is-sub {
+  padding-left: calc(var(--space-md) + 12px);
+  color: var(--color-sidebar-fg-dim);
+}
+
 .app-rail-nav-item:hover {
   background: var(--color-bg-muted);
   color: var(--color-sidebar-fg);
@@ -124,8 +132,13 @@
   font-weight: 500;
 }
 
-.app-rail-nav-item.is-sub {
-  padding-left: calc(var(--space-md) + 12px);
+// An active sub-item has to stay visibly subordinate to its active parent. Both
+// used to land on the same full accent and the same soft fill, so "Build ▸
+// Builds" read as two peers and the indent was the only cue. Three classes, so
+// this outranks the `.is-active` rule above regardless of source order.
+.app-rail-nav-item.is-sub.is-active {
+  background: var(--color-accent-soft-dim);
+  color: var(--color-accent-dim);
 }
 
 // Not `display: contents` — the section needs to be a real box so the collapsed

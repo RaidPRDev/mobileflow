@@ -267,7 +267,6 @@ export function AdminDatabasePage() {
                                   }
                                   setPage(0);
                                 }}
-                                title={`${c.dataType}${c.notNull ? " · not null" : ""}`}
                               >
                                 <span className="admin-db-grid__sort-name">{c.name}</span>
                                 {data.orderBy === c.name ? (

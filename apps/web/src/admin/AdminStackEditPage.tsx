@@ -13,8 +13,8 @@ import {
   Switch,
   Loading,
 } from "@mobileflow/ui";
-import { ArrowLeft } from "lucide-react";
 import { ApiError, api, type BuildTarget } from "../api/client";
+import { PageBackLink } from "../components/PageBackLink";
 
 const PLATFORM_OPTIONS = [
   { value: "ios", label: "iOS" },
@@ -143,17 +143,7 @@ export function AdminStackEditPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-back-row">
-            <button
-              type="button"
-              onClick={() => tryNavigate("/admin/stacks")}
-              className="page-back-link"
-              aria-label="Back to stacks"
-            >
-              <ArrowLeft size={14} aria-hidden />
-            </button>
-            <span className="page-back-label">Back to stacks</span>
-          </div>
+          <PageBackLink label="Back to stacks" onClick={() => tryNavigate("/admin/stacks")} />
           <div className="plan-card__title-block">
             <h1 className="page-title">{isNew ? "New stack" : edit.label || stack!.id}</h1>
             {!isNew && <code className="plan-card__id">{stack!.id}</code>}
