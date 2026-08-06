@@ -221,7 +221,8 @@
 
 // Test output panel — spans across the row when present (handled by the grid).
 .admin-hosts-row__test-output {
-  grid-column: 1 / -1;
+  // Escaped: `math: always` would evaluate a bare `1 / -1` to `-1`.
+  grid-column: ~"1 / -1";
   background: var(--color-bg-subtle);
 
   pre {
@@ -1645,6 +1646,76 @@
   min-width: 0;
 }
 
+// Export/import progress checklist (the modal that tracks a running transfer).
+.admin-db-progress {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.admin-db-progress__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-fg-muted);
+
+  &.is-active {
+    color: var(--color-fg);
+  }
+
+  &.is-done {
+    color: var(--color-fg);
+
+    .admin-db-progress__icon {
+      color: var(--color-accent);
+    }
+  }
+
+  &.is-error {
+    color: var(--color-danger);
+
+    .admin-db-progress__icon {
+      color: var(--color-danger);
+    }
+  }
+}
+
+// Fixed-size slot so labels stay aligned whether the icon is a spinner, a
+// check, or (while pending) nothing but a faint dot.
+.admin-db-progress__icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-db-progress__step.is-pending .admin-db-progress__icon::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.admin-db-progress__label {
+  min-width: 0;
+}
+
+.admin-db-progress__detail {
+  margin-left: auto;
+  padding-left: var(--space-md);
+  flex: none;
+  font-size: 12px;
+  color: var(--color-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
 // ─── Admin → Deploy ──────────────────────────────────────────────────────────
 
 .admin-deploy-tabs {
@@ -1687,6 +1758,56 @@
   gap: var(--space-sm);
 }
 
+// Tooling scripts are peers, not a ranked list — a grid keeps them one row
+// tall so the runs/log panel below gets the viewport space. `auto-fit`
+// collapses unused tracks, so fewer targets just get wider cards.
+.admin-deploy-targets.is-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+
+  // Icon and label share the top row; the Deploy button spans the full width
+  // below. `1fr auto` rows keep the button on the same baseline across cards
+  // even when a label wraps.
+  .admin-deploy-target {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    align-items: center;
+    // Taller card: roomier padding plus a deliberate 2rem gap between the
+    // heading row and the button.
+    row-gap: 2rem;
+    padding: var(--space-lg);
+  }
+
+  .admin-deploy-target__info {
+    position: absolute;
+    top: var(--space-lg);
+    right: var(--space-lg);
+    margin-top: 0;
+  }
+
+  // The grid card's icon is corner-pinned higher than the row card's, so the
+  // bubble opens correspondingly higher; it also tracks this card's wider
+  // padding.
+  .admin-deploy-target__info-tip {
+    top: 41px;
+    left: var(--space-lg);
+    right: var(--space-lg);
+  }
+
+  // Clear the corner-pinned info icon so a long label can't slide under it.
+  .admin-deploy-target__text {
+    padding-right: 20px;
+  }
+
+  .admin-deploy-target .btn {
+    // Escaped: less-loader runs with `math: always`, which evaluates a bare
+    // `1 / -1` as division and emits `grid-column: -1` — placing the button in
+    // an implicit column beside the label instead of on its own row.
+    grid-column: ~"1 / -1";
+  }
+}
+
 .admin-deploy-targets__empty {
   font-size: 13px;
   color: var(--color-fg-muted);
@@ -1697,6 +1818,8 @@
 }
 
 .admin-deploy-target {
+  // Anchors the grid layout's corner-pinned info trigger.
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--space-md);
@@ -1704,6 +1827,59 @@
   border-radius: var(--radius-md);
   background: var(--color-card);
   padding: var(--space-md);
+}
+
+// Info trigger: the description and exact argv live in its tooltip so the card
+// face stays label + action. In the row layout it sits beside the Deploy
+// button; the grid layout pins it to the card corner instead.
+.admin-deploy-target__info {
+  color: var(--color-fg-subtle);
+  // Optically level with the 36px Deploy button next to it in the row layout.
+  margin-top: 10px;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-fg-muted);
+  }
+}
+
+// The bubble is a sibling of the trigger, anchored to the card's padding box
+// (left+right) rather than centred on the tiny icon — a 300px+ bubble hanging
+// off a corner icon crossed the section edge and got clipped. It keeps
+// `.tooltip-bubble` for the dark palette and hidden state, but owns its own
+// geometry, so the base rule's icon-centred `left: 50%` metrics are reset.
+.admin-deploy-target__info-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  // Just below the row card's info icon (12px padding + 10px nudge + icon).
+  top: 46px;
+  left: var(--space-md);
+  right: var(--space-md);
+  margin-top: 0;
+  width: auto;
+  max-width: none;
+  transform: translateY(-2px);
+  white-space: normal;
+  line-height: 1.5;
+  text-align: left;
+
+  // Always dark regardless of theme, so the command line gets the terminal
+  // palette rather than a themed `code` chip.
+  code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #d4d4d8;
+  }
+}
+
+// `.tooltip-wrap:hover .tooltip-bubble` no longer matches — the bubble is a
+// sibling, so the reveal rides the adjacent-sibling selector instead.
+.admin-deploy-target__info:hover + .admin-deploy-target__info-tip,
+.admin-deploy-target__info:focus-visible + .admin-deploy-target__info-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 // The live target reads as the heavier action through colour, not weight: the
@@ -1785,13 +1961,16 @@
 }
 
 .admin-deploy-target__label {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
 }
 
-.admin-deploy-target__desc {
-  font-size: 12px;
-  color: var(--color-fg-muted);
+// Pin the page to the viewport like the build detail page: `.app-content`
+// provides the definite height, the runs+log row takes the leftover space and
+// the log scrolls inside it instead of growing the page.
+.admin-deploy-page {
+  height: 100%;
+  min-height: 0;
 }
 
 // Both columns are cards of the same height — `align-items: start` used to let
@@ -1802,6 +1981,9 @@
   grid-template-columns: 260px minmax(0, 1fr);
   gap: var(--space-md);
   align-items: stretch;
+  flex: 1;
+  // Floor, not a fixed size: when the viewport is short the page falls back to
+  // scrolling in .app-content rather than crushing the panel.
   min-height: 420px;
 }
 
@@ -1947,15 +2129,60 @@
   font-weight: 600;
 }
 
-// Grows with the card and scrolls internally, so the log bottom lines up with
-// the runs list rather than pushing the page taller than the viewport. Same
-// terminal treatment as the build page's log (`.build-logs__pre`) — LogView
-// emits `.build-logs__line` children either way, and they are styled for a dark
+.admin-deploy-log__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+// Same affordance as `.build-logs__copy`, but themed for the card header
+// rather than the terminal surface.
+.admin-deploy-log__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  transition: color 120ms ease, background 120ms ease;
+
+  // `.tooltip-wrap` (also on this button) sets `cursor: help` at equal
+  // specificity, so qualify ours to win regardless of stylesheet order.
+  &.tooltip-wrap {
+    cursor: default;
+  }
+
+  &:hover:not(:disabled) {
+    color: var(--color-fg);
+    background: var(--color-bg-subtle);
+  }
+
+  &.tooltip-wrap:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.admin-deploy-log__count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+}
+
+// Fills the card and scrolls internally — the page is pinned to the viewport
+// (`.admin-deploy-page`), so this gets exactly the leftover space, like the
+// build page's `.build-logs__pre`. Same terminal treatment too — LogView emits
+// `.build-logs__line` children either way, and they are styled for a dark
 // surface, so anything lighter here would wash the level colours out.
 .admin-deploy-log__body {
   flex: 1;
+  // Floor for the stacked (narrow) layout where the card is content-sized;
+  // on desktop flex hands it more than this anyway.
   min-height: 320px;
-  max-height: 60vh;
   overflow: auto;
   margin: 0;
   padding: var(--space-md);
@@ -1982,6 +2209,20 @@
   .admin-db-browser,
   .admin-deploy-layout {
     grid-template-columns: 1fr;
+  }
+
+  // Stacked: give up the pinned viewport height (like the build page does) and
+  // let the page scroll; the log keeps a sane band via its own min/max.
+  .admin-deploy-page {
+    height: auto;
+  }
+
+  .admin-deploy-layout {
+    flex: 0 0 auto;
+  }
+
+  .admin-deploy-log__body {
+    max-height: 60vh;
   }
 
   // Stacked: the table list becomes a short scrolling strip above the rows so

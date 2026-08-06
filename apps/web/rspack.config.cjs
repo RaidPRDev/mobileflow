@@ -5,6 +5,14 @@ const ReactRefreshPlugin = require("@rspack/plugin-react-refresh");
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// The ROOT package.json is the single source of truth for the app's
+// version/build identity (version + buildNumber/buildDate/buildType, bumped
+// by infra/scripts/bump-build.mjs on each deploy). Embedded into the bundle
+// as the __APP_BUILD__ global (declared in src/globals.d.ts).
+const rootPkg = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")
+);
+
 function isWsl() {
   if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
   try {
@@ -79,6 +87,14 @@ module.exports = {
     ],
   },
   plugins: [
+    new rspack.DefinePlugin({
+      __APP_BUILD__: JSON.stringify({
+        version: rootPkg.version ?? "0.0.0",
+        number: rootPkg.buildNumber ?? 0,
+        date: rootPkg.buildDate ?? "",
+        type: rootPkg.buildType ?? "beta",
+      }),
+    }),
     new rspack.HtmlRspackPlugin({
       template: "./public/index.html",
       title: "MobileFlow",

@@ -65,6 +65,25 @@ function safeParse(text: string): unknown {
   }
 }
 
+/**
+ * GET a binary response as a Blob. `request()` always parses the body as
+ * text/JSON, which would corrupt a ZIP; errors still come back as JSON and are
+ * surfaced the same way.
+ */
+async function requestBlob(path: string): Promise<Blob> {
+  const res = await fetch(`/api${path}`, { credentials: "include" });
+  if (!res.ok) {
+    const text = await res.text();
+    const body = text ? safeParse(text) : null;
+    const message =
+      body && typeof body === "object" && "message" in body
+        ? String((body as { message: unknown }).message)
+        : null;
+    throw new ApiError(res.status, body, message ?? `HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
 import type { Runtime } from "@mobileflow/shared";
 export type { Runtime };
 export type GitProvider = "github" | "gitlab" | "bitbucket";
@@ -417,6 +436,12 @@ export interface AdminDbRows {
   offset: number;
   orderBy: string;
   dir: "asc" | "desc";
+}
+
+/** Whole-database snapshot: { exportedAt, tables: { <table>: [rows] } }. */
+export interface AdminDbExport {
+  exportedAt: string;
+  tables: Record<string, Record<string, unknown>[]>;
 }
 
 // ─── Admin: local deploy ─────────────────────────────────────────────────────
@@ -1006,6 +1031,18 @@ export const api = {
       request<{ deleted: number }>(`/admin/db/tables/${encodeURIComponent(table)}/rows`, {
         method: "DELETE",
         body: JSON.stringify({ pk }),
+      }),
+    dbExport: () => request<AdminDbExport>("/admin/db/export"),
+    dbExportPackage: () => requestBlob("/admin/db/export-package"),
+    dbImport: (tables: Record<string, Record<string, unknown>[]>) =>
+      request<{ ok: true; inserted: number }>("/admin/db/import", {
+        method: "POST",
+        body: JSON.stringify({ tables }),
+      }),
+    dbImportPackage: (zipBase64: string) =>
+      request<{ ok: true; inserted: number }>("/admin/db/import-package", {
+        method: "POST",
+        body: JSON.stringify({ zipBase64 }),
       }),
 
     // ─── Local deploy ───────────────────────────────────────────────────────

@@ -16,9 +16,12 @@ import {
   Loading,
 } from "@mobileflow/ui";
 import {
+  Check,
   CircleCheck,
   CircleX,
+  Copy,
   Globe,
+  Info,
   Loader2,
   Play,
   Server,
@@ -199,6 +202,7 @@ export function AdminDeployPage() {
             busy={!!runningId}
             pendingId={run.isPending ? run.variables?.id ?? null : null}
             onRun={startTarget}
+            grid
           />
         </TabsContent>
       </Tabs>
@@ -286,6 +290,7 @@ function TargetList({
   busy,
   pendingId,
   onRun,
+  grid = false,
 }: {
   targets: DeployTargetRow[];
   emptyLabel: string;
@@ -293,12 +298,15 @@ function TargetList({
   busy: boolean;
   pendingId: string | null;
   onRun: (target: DeployTargetRow) => void;
+  // Side-by-side cards (tooling) instead of the stacked full-width rows the
+  // production target keeps.
+  grid?: boolean;
 }) {
   if (targets.length === 0) {
     return <p className="admin-deploy-targets__empty">{emptyLabel}</p>;
   }
   return (
-    <div className="admin-deploy-targets">
+    <div className={cn("admin-deploy-targets", grid && "is-grid")}>
       {targets.map((t) => (
         <TargetCard
           key={t.id}
@@ -337,27 +345,39 @@ function TargetCard({
           {target.label}
           {isProduction && <span className="admin-deploy-target__tag">production</span>}
         </div>
-        <div className="admin-deploy-target__desc">{target.description}</div>
-        {/* One muted line of identity: where it lands, then the exact argv —
-            sized to its content rather than stretched across the card, which is
-            what made a list of these read as a wall of grey bars. */}
-        <div className="admin-deploy-target__meta">
-          {target.stack && (
-            <span>
-              stack <code>{target.stack}</code>
-            </span>
-          )}
-          {target.url && (
-            <a href={target.url} target="_blank" rel="noreferrer">
-              {target.url}
-            </a>
-          )}
-          <code className="admin-deploy-target__cmd">{target.command}</code>
-        </div>
+        {/* Description and exact argv live in the info tooltip; the card face
+            keeps only what identifies the destination. */}
+        {(target.stack || target.url) && (
+          <div className="admin-deploy-target__meta">
+            {target.stack && (
+              <span>
+                stack <code>{target.stack}</code>
+              </span>
+            )}
+            {target.url && (
+              <a href={target.url} target="_blank" rel="noreferrer">
+                {target.url}
+              </a>
+            )}
+          </div>
+        )}
         {!target.available && (
           <p className="text-error">Script not found in this checkout — nothing to run.</p>
         )}
       </div>
+      {/* The bubble is a sibling anchored to the card (not the icon) so it
+          spans the card's width and never spills past the section edge. */}
+      <span
+        className="admin-deploy-target__info tooltip-wrap"
+        tabIndex={0}
+        aria-label={`About ${target.label}`}
+      >
+        <Info size={18} aria-hidden />
+      </span>
+      <span className="tooltip-bubble admin-deploy-target__info-tip" role="tooltip">
+        {target.description}
+        <code>{target.command}</code>
+      </span>
       <Button
         onClick={onRun}
         loading={pending}
@@ -525,6 +545,50 @@ function JobPanel({
     [lines],
   );
 
+  // Auto-scroll to the bottom as output streams in, unless the user has
+  // scrolled away — same behaviour (and same tolerances) as the build page.
+  const logRef = useRef<HTMLDivElement>(null);
+  const stuckToBottomRef = useRef(true);
+  // True for the brief window between our programmatic scrollTop write and the
+  // resulting scroll event — keeps the user-scroll detector from mistakenly
+  // disengaging auto-scroll on our own writes.
+  const programmaticScrollRef = useRef(false);
+  useEffect(() => {
+    stuckToBottomRef.current = true;
+  }, [jobId]);
+  useEffect(() => {
+    if (!stuckToBottomRef.current) return;
+    // rAF so the scroll happens after layout has settled with the new content.
+    const raf = requestAnimationFrame(() => {
+      const el = logRef.current;
+      if (!el) return;
+      programmaticScrollRef.current = true;
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [raw]);
+  const onLogScroll = () => {
+    if (programmaticScrollRef.current) {
+      programmaticScrollRef.current = false;
+      return;
+    }
+    const el = logRef.current;
+    if (!el) return;
+    // 24px tolerance covers scrollbar thumb height, partial-line wraps, and
+    // small layout-shift jitter.
+    stuckToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  };
+
+  // Copy-to-clipboard for the log; the tick flips back to the copy icon.
+  const [logCopied, setLogCopied] = useState(false);
+  const copyLog = () => {
+    if (!raw) return;
+    void navigator.clipboard.writeText(raw).then(() => {
+      setLogCopied(true);
+      setTimeout(() => setLogCopied(false), 1500);
+    });
+  };
+
   if (!job) {
     return (
       <div className="admin-deploy-log__placeholder">
@@ -548,6 +612,23 @@ function JobPanel({
               : "polling"
             : `${job.state}${job.exitCode != null ? ` · exit ${job.exitCode}` : ""}`}
         </span>
+        <div className="admin-deploy-log__tools">
+          <button
+            type="button"
+            className="admin-deploy-log__copy tooltip-wrap"
+            onClick={copyLog}
+            disabled={!raw}
+            aria-label={logCopied ? "Log copied" : "Copy log"}
+          >
+            {logCopied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+            <span className="tooltip-bubble" role="tooltip">
+              {logCopied ? "Copied" : "Copy log"}
+            </span>
+          </button>
+          <span className="admin-deploy-log__count">
+            {raw ? `${raw.length.toLocaleString()} chars` : ""}
+          </span>
+        </div>
         {job.state === "running" && (
           <Button variant="outline" className="btn-danger-outline" onClick={onCancel} loading={canceling}>
             <StopCircle size={14} aria-hidden />
@@ -564,7 +645,9 @@ function JobPanel({
 
       {/* app-scroll matches the build page's log scrollbar on the dark surface. */}
       <LogView
+        ref={logRef}
         raw={raw}
+        onScroll={onLogScroll}
         className="admin-deploy-log__body app-scroll"
         empty="Waiting for output…"
       />

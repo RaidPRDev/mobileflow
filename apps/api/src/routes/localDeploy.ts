@@ -85,7 +85,7 @@ const TARGETS: DeployTarget[] = [
   {
     id: "build-tools-ios",
     kind: "tooling",
-    label: "iOS build tooling",
+    label: "iOS build tools",
     description:
       "Pushes infra/tools/RaidX/Tools/ios to the Mac build host, then installs any missing build tooling (CocoaPods, xcbeautify) via Homebrew.",
     command: ["node", "infra/scripts/deploy-build-scripts.mjs", "--ios"],
@@ -94,7 +94,7 @@ const TARGETS: DeployTarget[] = [
   {
     id: "build-tools-android",
     kind: "tooling",
-    label: "Android build tooling",
+    label: "Android build tools",
     description:
       "Pushes infra/tools/RaidX/Tools/android to the Linux build host, and rebuilds the Docker builder image when its Dockerfile changed.",
     command: ["node", "infra/scripts/deploy-build-scripts.mjs", "--android"],
@@ -103,7 +103,7 @@ const TARGETS: DeployTarget[] = [
   {
     id: "build-tools-all",
     kind: "tooling",
-    label: "All build tooling",
+    label: "All build tools",
     description: "Both platforms in one run: iOS to the Mac host, Android to the Linux host.",
     command: ["node", "infra/scripts/deploy-build-scripts.mjs"],
     cwd: repoRoot,

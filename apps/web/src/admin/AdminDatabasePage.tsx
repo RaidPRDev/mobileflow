@@ -8,6 +8,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   IconButton,
   Input,
   Label,
@@ -17,12 +21,17 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  Check,
+  ChevronDown,
   Database,
+  Download,
   Eye,
+  Loader2,
   Pencil,
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -35,6 +44,34 @@ import { ListFooter } from "../components/ListFooter";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog";
 
 const PAGE_SIZE = 25;
+
+// ─── Export / import progress ────────────────────────────────────────────────
+
+type StepStatus = "pending" | "active" | "done" | "error";
+
+interface ProgressStep {
+  key: string;
+  label: string;
+  status: StepStatus;
+  detail?: string;
+}
+
+interface ProgressState {
+  title: string;
+  steps: ProgressStep[];
+  finished: boolean;
+  error: string | null;
+  /** Imports truncate `sessions`, so the Done button reloads the page. */
+  reloadOnDone?: boolean;
+}
+
+const IMPORT_RELOAD_NOTE =
+  "The database was replaced, so your current sign-in may no longer be valid. " +
+  "The page will reload when you click Done — sign in again if prompted.";
+
+const ENC_KEY_NOTE =
+  "Encrypted columns (git tokens, certificates, processor credentials) only decrypt if this " +
+  "server uses the same TOKEN_ENC_KEY as the export's source.";
 
 export function AdminDatabasePage() {
   const qc = useQueryClient();
@@ -112,6 +149,162 @@ export function AdminDatabasePage() {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Could not delete row"),
   });
 
+  // ─── Export / import ───────────────────────────────────────────────────────
+
+  const jsonFileRef = useRef<HTMLInputElement>(null);
+  const packageFileRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState<ProgressState | null>(null);
+  const [importJson, setImportJson] = useState<Record<string, Record<string, unknown>[]> | null>(null);
+  const [importPackageFile, setImportPackageFile] = useState<File | null>(null);
+
+  const patchStep = (key: string, patch: Partial<ProgressStep>) =>
+    setProgress((p) => p && { ...p, steps: p.steps.map((s) => (s.key === key ? { ...s, ...patch } : s)) });
+  const finishOk = () => setProgress((p) => p && { ...p, finished: true });
+  const failRun = (message: string) =>
+    setProgress(
+      (p) =>
+        p && {
+          ...p,
+          finished: true,
+          error: message,
+          steps: p.steps.map((s) => (s.status === "active" ? { ...s, status: "error" as const } : s)),
+        },
+    );
+
+  async function runExportJson() {
+    setProgress({
+      title: "Export database (JSON)",
+      finished: false,
+      error: null,
+      steps: [
+        { key: "fetch", label: "Fetching database snapshot", status: "active" },
+        { key: "build", label: "Building JSON file", status: "pending" },
+        { key: "save", label: "Saving file", status: "pending" },
+      ],
+    });
+    try {
+      const data = await api.admin.dbExport();
+      const tableCount = Object.keys(data.tables).length;
+      const rowCount = Object.values(data.tables).reduce((n, r) => n + r.length, 0);
+      patchStep("fetch", { status: "done", detail: `${tableCount} tables · ${rowCount.toLocaleString()} rows` });
+      patchStep("build", { status: "active" });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      patchStep("build", { status: "done", detail: formatBytes(blob.size) });
+      patchStep("save", { status: "active" });
+      downloadBlob(blob, `mobileflow-db-${data.exportedAt.slice(0, 10)}.json`);
+      patchStep("save", { status: "done" });
+      finishOk();
+    } catch (e) {
+      failRun(e instanceof ApiError ? e.message : "Export failed");
+    }
+  }
+
+  async function runExportPackage() {
+    setProgress({
+      title: "Export package",
+      finished: false,
+      error: null,
+      steps: [
+        { key: "build", label: "Building package on the server", status: "active" },
+        { key: "save", label: "Saving archive", status: "pending" },
+      ],
+    });
+    try {
+      const blob = await api.admin.dbExportPackage();
+      patchStep("build", { status: "done", detail: formatBytes(blob.size) });
+      patchStep("save", { status: "active" });
+      downloadBlob(blob, `mobileflow-package-${new Date().toISOString().slice(0, 10)}.zip`);
+      patchStep("save", { status: "done" });
+      finishOk();
+    } catch (e) {
+      failRun(e instanceof ApiError ? e.message : "Export failed");
+    }
+  }
+
+  const onJsonFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setError(null);
+    file
+      .text()
+      .then((txt) => {
+        const parsed = JSON.parse(txt) as { tables?: unknown };
+        const tables = parsed && typeof parsed === "object" ? parsed.tables : null;
+        if (!tables || typeof tables !== "object" || Array.isArray(tables)) {
+          throw new Error("Not a valid export file");
+        }
+        setImportJson(tables as Record<string, Record<string, unknown>[]>);
+      })
+      .catch(() => setError("Could not read this file as a database export"));
+  };
+
+  const onPackageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setImportPackageFile(file);
+  };
+
+  async function runImportJson() {
+    if (!importJson) return;
+    const tables = importJson;
+    setImportJson(null);
+    const tableCount = Object.keys(tables).length;
+    const rowCount = Object.values(tables).reduce((n, r) => n + r.length, 0);
+    setProgress({
+      title: "Import database (JSON)",
+      finished: false,
+      error: null,
+      reloadOnDone: true,
+      steps: [
+        {
+          key: "read",
+          label: "Read import file",
+          status: "done",
+          detail: `${tableCount} tables · ${rowCount.toLocaleString()} rows`,
+        },
+        { key: "restore", label: "Replacing database", status: "active" },
+      ],
+    });
+    try {
+      const res = await api.admin.dbImport(tables);
+      patchStep("restore", { status: "done", detail: `${res.inserted.toLocaleString()} rows restored` });
+      invalidate();
+      finishOk();
+    } catch (e) {
+      failRun(e instanceof ApiError ? e.message : "Import failed");
+    }
+  }
+
+  async function runImportPackage() {
+    if (!importPackageFile) return;
+    const file = importPackageFile;
+    setImportPackageFile(null);
+    setProgress({
+      title: "Import package",
+      finished: false,
+      error: null,
+      reloadOnDone: true,
+      steps: [
+        { key: "read", label: "Reading package file", status: "active", detail: formatBytes(file.size) },
+        { key: "restore", label: "Uploading & replacing database", status: "pending" },
+      ],
+    });
+    try {
+      const zipBase64 = await fileToBase64(file);
+      patchStep("read", { status: "done" });
+      patchStep("restore", { status: "active" });
+      const res = await api.admin.dbImportPackage(zipBase64);
+      patchStep("restore", { status: "done", detail: `${res.inserted.toLocaleString()} rows restored` });
+      invalidate();
+      finishOk();
+    } catch (e) {
+      failRun(e instanceof ApiError ? e.message : "Package import failed");
+    }
+  }
+
   const data = rowsQ.data;
   const pageCount = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const grid = useDragScroll<HTMLDivElement>();
@@ -125,6 +318,48 @@ export function AdminDatabasePage() {
             Every table in the schema. Credential columns are never read from the database, so they
             can't be viewed or edited here.
           </p>
+        </div>
+        <div className="page-actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download size={14} aria-hidden />
+                Export
+                <ChevronDown size={14} aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void runExportJson()}>Export DB JSON</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void runExportPackage()}>Export Package</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Upload size={14} aria-hidden />
+                Import
+                <ChevronDown size={14} aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => jsonFileRef.current?.click()}>Import DB JSON</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => packageFileRef.current?.click()}>Import Package</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <input
+            ref={jsonFileRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={onJsonFile}
+          />
+          <input
+            ref={packageFileRef}
+            type="file"
+            accept="application/zip,.zip"
+            hidden
+            onChange={onPackageFile}
+          />
         </div>
       </div>
 
@@ -409,7 +644,126 @@ export function AdminDatabasePage() {
           onConfirm={() => remove.mutate(pkOf(data.primaryKey, deleting))}
         />
       )}
+
+      {importJson && (
+        <ImportConfirmDialog
+          title="Import database (JSON)"
+          confirmLabel="Replace data"
+          onCancel={() => setImportJson(null)}
+          onConfirm={() => void runImportJson()}
+        >
+          <p>
+            <strong>
+              {Object.values(importJson)
+                .reduce((n, r) => n + r.length, 0)
+                .toLocaleString()}{" "}
+              rows
+            </strong>{" "}
+            across <strong>{Object.keys(importJson).length} tables</strong> will be restored.
+            Existing rows in those tables are deleted first. This cannot be undone.
+          </p>
+          <p className="text-help">{ENC_KEY_NOTE}</p>
+        </ImportConfirmDialog>
+      )}
+
+      {importPackageFile && (
+        <ImportConfirmDialog
+          title="Import package"
+          confirmLabel="Replace everything"
+          onCancel={() => setImportPackageFile(null)}
+          onConfirm={() => void runImportPackage()}
+        >
+          <p>
+            <strong>{importPackageFile.name}</strong> will replace every table in the database.
+            Existing data is deleted first. This cannot be undone.
+          </p>
+          <p className="text-help">{ENC_KEY_NOTE}</p>
+        </ImportConfirmDialog>
+      )}
+
+      {progress && <ProgressDialog state={progress} onClose={() => setProgress(null)} />}
     </div>
+  );
+}
+
+// ─── Export / import dialogs ─────────────────────────────────────────────────
+
+function ImportConfirmDialog({
+  title,
+  confirmLabel,
+  children,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  confirmLabel: string;
+  children: React.ReactNode;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>{children}</DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProgressDialog({ state, onClose }: { state: ProgressState; onClose: () => void }) {
+  // Reload only on a clean finish: after an error the DB may be half-replaced,
+  // and closing without reloading would leave the UI showing pre-import data.
+  const reload = state.finished && !state.error && !!state.reloadOnDone;
+  const dismissable = state.finished && !reload;
+  return (
+    <Dialog open onOpenChange={(o) => !o && dismissable && onClose()}>
+      <DialogContent
+        className="admin-db-dialog"
+        aria-describedby={undefined}
+        hideCloseButton={!dismissable}
+        onEscapeKeyDown={(e) => {
+          if (!dismissable) e.preventDefault();
+        }}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>{state.title}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <ul className="admin-db-progress">
+            {state.steps.map((s) => (
+              <li key={s.key} className={cn("admin-db-progress__step", `is-${s.status}`)}>
+                <span className="admin-db-progress__icon" aria-hidden>
+                  {s.status === "done" && <Check size={13} />}
+                  {s.status === "error" && <X size={13} />}
+                  {s.status === "active" && <Loader2 size={13} className="is-spinning" />}
+                </span>
+                <span className="admin-db-progress__label">{s.label}</span>
+                {s.detail && <span className="admin-db-progress__detail">{s.detail}</span>}
+              </li>
+            ))}
+          </ul>
+          {state.error && <p className="text-error">{state.error}</p>}
+          {state.reloadOnDone && !state.error && <p className="text-help">{IMPORT_RELOAD_NOTE}</p>}
+        </DialogBody>
+        {state.finished && (
+          <DialogFooter>
+            <Button onClick={() => (reload ? window.location.reload() : onClose())}>Done</Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -717,3 +1071,38 @@ const isJsonType = (t: string) => /json/i.test(t);
 const isBoolType = (t: string) => /^bool/i.test(t);
 const isNumericType = (t: string) =>
   /^(smallint|integer|int|bigint|numeric|decimal|real|double)/i.test(t);
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+}
+
+/** Base64 of a file's bytes. FileReader handles large files without the call-stack limits of btoa loops. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result ?? "");
+      const comma = url.indexOf(",");
+      resolve(comma >= 0 ? url.slice(comma + 1) : url);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}

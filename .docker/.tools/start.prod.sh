@@ -113,6 +113,20 @@ if [[ ! -f ".env.production" ]]; then
   exit 1
 fi
 
+# ---------- STEP 0: Bump build number ----------
+# Increment buildNumber / refresh buildDate in the root package.json BEFORE
+# zipping, so the uploaded workspace (and the web image rspack builds from it)
+# carries this deploy's build identity. The bumped file stays in the local
+# working tree — the next deploy increments from it again.
+new_line
+echo "⚙️  [0/5] Bumping build number in package.json..."
+if ! command -v node >/dev/null 2>&1; then
+  echo "❌ node not found on PATH — required to bump the build number"
+  echo "   (infra/scripts/bump-build.mjs)."
+  exit 1
+fi
+node infra/scripts/bump-build.mjs
+
 # ---------- STEP 1: Create ZIP ----------
 new_line
 echo "⚙️  [1/5] Creating ZIP: $ZIP_NAME $LOCAL_ZIP_PATH"

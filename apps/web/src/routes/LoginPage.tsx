@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button, Input, Label } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
+import { appBuildLabel } from "../build";
 import { ShaderBackground } from "./login/ShaderBackground";
 import { ParticleLetter } from "./login/ParticleLetter";
 import googleIcon from "../../../../assets/icons/google-icon.svg";
@@ -301,6 +302,7 @@ export function LoginPage() {
             {signupMode ? "Already have an account? Log in" : "New here? Create an account"}
           </button>
         </form>
+        <div className="login-build">{appBuildLabel}</div>
     </div>
   );
 

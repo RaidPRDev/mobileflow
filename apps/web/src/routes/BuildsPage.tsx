@@ -109,6 +109,8 @@ export function BuildsPage() {
         stackId: b.stackId,
         buildType: b.buildType ?? undefined,
         environmentId: b.environmentId ?? undefined,
+        certificateId: b.certificateId ?? undefined,
+        autoDeployDestinationId: b.autoDeployDestinationId ?? undefined,
       }),
     onSuccess: (b) => {
       qc.invalidateQueries({ queryKey: ["builds", appId] });

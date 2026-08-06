@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@mobileflow/ui";
 import { useAuth } from "../auth/AuthProvider";
+import { appBuildLabel } from "../build";
 
 export function UserMenu() {
   const navigate = useNavigate();
@@ -47,6 +48,8 @@ export function UserMenu() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void signOut()}>Sign Out</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <div className="user-menu-build">{appBuildLabel}</div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
