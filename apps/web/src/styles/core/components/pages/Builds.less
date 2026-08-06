@@ -355,6 +355,18 @@
   font-weight: 500;
   white-space: nowrap;
   max-width: 100%;
+  // Without these the label can't shrink, so `max-width` is powerless and long
+  // target names spill out of the cell and over the Build column.
+  min-width: 0;
+  overflow: hidden;
+}
+
+// Truncates with an ellipsis as the Target column narrows.
+.deployments-row__target-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .deployments-row__target-icon {
@@ -366,6 +378,19 @@
   justify-content: center;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.18);
+}
+
+// Past this width the Target track is pinned at its 180px floor and an
+// ellipsis leaves too little text to be useful, so collapse the pill to just
+// the platform icon. The full target is still on the pill's title tooltip.
+@media (max-width: 1000px) {
+  .deployments-row__target-label {
+    display: none;
+  }
+
+  .deployments-row__target-pill {
+    padding: 4px;
+  }
 }
 
 .deployments-row__build {

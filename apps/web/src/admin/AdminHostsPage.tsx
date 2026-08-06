@@ -13,17 +13,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
   Input,
   Label,
   Loading,
 } from "@mobileflow/ui";
 import { CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
 import { ApiError, api } from "../api/client";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 import { HostTerminalPanel } from "./HostTerminalPanel";
 
 type Kind = "linux_docker" | "mac";
@@ -138,6 +135,7 @@ function HostRowItem({ host }: { host: HostRow }) {
   const [pushKeyOpen, setPushKeyOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const setOnline = useMutation({
     mutationFn: (online: boolean) => api.admin.patchHost(host.id, { online }),
@@ -157,110 +155,123 @@ function HostRowItem({ host }: { host: HostRow }) {
     test.mutate();
   };
 
+  // One list feeds both the ⋮ button and the right-click menu so they can't
+  // drift apart. Env-defined rows live in env vars, so editing/deleting them
+  // here would be a no-op — the items stay visible but disabled to explain why.
+  const actions: RowAction[] = [
+    {
+      label: "Edit…",
+      disabled: isEnv,
+      title: isEnv ? "Env-defined hosts are read-only — change the *_BUILD_* env vars" : undefined,
+      onSelect: () => setEditOpen(true),
+    },
+    { label: "Test connection", disabled: test.isPending, onSelect: openTest },
+    ...(host.kind === "mac" && !isEnv
+      ? [
+          {
+            label: host.hasArtifactKey ? "Re-push artifact key…" : "Push artifact key…",
+            onSelect: () => setPushKeyOpen(true),
+          },
+        ]
+      : []),
+    { label: "Clean up orphans…", onSelect: () => setCleanupOpen(true) },
+    { label: "Terminal", onSelect: () => setTerminalOpen(true) },
+    {
+      label: host.online ? "Mark offline" : "Mark online",
+      disabled: isEnv || setOnline.isPending,
+      title: isEnv ? "Env hosts are always available when configured" : undefined,
+      onSelect: () => setOnline.mutate(!host.online),
+    },
+    ...(isEnv
+      ? []
+      : [
+          {
+            label: "Delete",
+            destructive: true,
+            disabled: remove.isPending,
+            onSelect: () => {
+              if (confirm(`Delete host "${host.name}"?`)) remove.mutate();
+            },
+          },
+        ]),
+  ];
+
   return (
-    <div className="data-grid__row builds-row" role="row">
-      <div role="cell">
-        <span className="builds-row__triggered-name">{host.name}</span>
-      </div>
-      <div role="cell">
-        <code className="plan-card__id">{KIND_LABEL[host.kind]}</code>
-      </div>
-      <div role="cell" className="admin-hosts-row__addr">
-        {host.sshUser}@{host.hostname}:{host.port}
-      </div>
-      <div role="cell" className="admin-plans-row__num">{host.capacity}</div>
-      <div role="cell">
-        <span className={`admin-hosts-row__source admin-hosts-row__source--${host.source}`}>
-          {host.source.toUpperCase()}
-        </span>
-      </div>
-      <div role="cell" className="builds-row__status">
-        {host.online ? (
-          <span className="tooltip-wrap" tabIndex={0}>
-            <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
-            <span className="tooltip-bubble" role="tooltip">Online</span>
+    <RowContextMenu actions={actions}>
+      <div
+        className="data-grid__row builds-row"
+        role="row"
+        onDoubleClick={(e) => {
+          if (isEnv || isInteractiveTarget(e.target)) return;
+          clearTextSelection();
+          setEditOpen(true);
+        }}
+      >
+        <div role="cell">
+          <span className="builds-row__triggered-name">{host.name}</span>
+        </div>
+        <div role="cell">
+          <code className="plan-card__id">{KIND_LABEL[host.kind]}</code>
+        </div>
+        <div role="cell" className="admin-hosts-row__addr">
+          {host.sshUser}@{host.hostname}:{host.port}
+        </div>
+        <div role="cell" className="admin-plans-row__num">{host.capacity}</div>
+        <div role="cell">
+          <span className={`admin-hosts-row__source admin-hosts-row__source--${host.source}`}>
+            {host.source.toUpperCase()}
           </span>
-        ) : (
-          <span className="tooltip-wrap" tabIndex={0}>
-            <XCircle size={18} className="status-icon is-failed" aria-hidden />
-            <span className="tooltip-bubble" role="tooltip">Offline</span>
-          </span>
+        </div>
+        <div role="cell" className="builds-row__status">
+          {host.online ? (
+            <span className="tooltip-wrap" tabIndex={0}>
+              <CheckCircle2 size={18} className="status-icon is-success" aria-hidden />
+              <span className="tooltip-bubble" role="tooltip">Online</span>
+            </span>
+          ) : (
+            <span className="tooltip-wrap" tabIndex={0}>
+              <XCircle size={18} className="status-icon is-failed" aria-hidden />
+              <span className="tooltip-bubble" role="tooltip">Offline</span>
+            </span>
+          )}
+        </div>
+        <div role="cell" className="builds-row__menu">
+          <RowActionsButton actions={actions} ariaLabel={`Actions for ${host.name}`} />
+        </div>
+        <TestConnectionDialog
+          open={testOpen}
+          onOpenChange={setTestOpen}
+          hostName={host.name}
+          isPending={test.isPending}
+          error={test.error as Error | null}
+          result={test.data ?? null}
+        />
+        {!isEnv && editOpen && (
+          <EditHostDialog host={host} onClose={() => setEditOpen(false)} />
         )}
-      </div>
-      <div role="cell" className="builds-row__menu">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label={`Actions for ${host.name}`} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              disabled={test.isPending}
-              onSelect={openTest}
-            >
-              Test connection
-            </DropdownMenuItem>
-            {host.kind === "mac" && !isEnv && (
-              <DropdownMenuItem onSelect={() => setPushKeyOpen(true)}>
-                {host.hasArtifactKey ? "Re-push artifact key…" : "Push artifact key…"}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={() => setCleanupOpen(true)}>
-              Clean up orphans…
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setTerminalOpen(true)}>
-              Terminal
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={isEnv || setOnline.isPending}
-              title={isEnv ? "Env hosts are always available when configured" : undefined}
-              onSelect={() => setOnline.mutate(!host.online)}
-            >
-              {host.online ? "Mark offline" : "Mark online"}
-            </DropdownMenuItem>
-            {!isEnv && (
-              <DropdownMenuItem
-                destructive
-                disabled={remove.isPending}
-                onSelect={() => {
-                  if (confirm(`Delete host "${host.name}"?`)) remove.mutate();
-                }}
-              >
-                Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <TestConnectionDialog
-        open={testOpen}
-        onOpenChange={setTestOpen}
-        hostName={host.name}
-        isPending={test.isPending}
-        error={test.error as Error | null}
-        result={test.data ?? null}
-      />
-      {host.kind === "mac" && !isEnv && (
-        <PushArtifactKeyDialog
-          open={pushKeyOpen}
-          onOpenChange={setPushKeyOpen}
+        {host.kind === "mac" && !isEnv && (
+          <PushArtifactKeyDialog
+            open={pushKeyOpen}
+            onOpenChange={setPushKeyOpen}
+            hostId={host.id}
+            hostName={host.name}
+            hasExistingKey={host.hasArtifactKey}
+          />
+        )}
+        <CleanupOrphansDialog
+          open={cleanupOpen}
+          onOpenChange={setCleanupOpen}
           hostId={host.id}
           hostName={host.name}
-          hasExistingKey={host.hasArtifactKey}
         />
-      )}
-      <CleanupOrphansDialog
-        open={cleanupOpen}
-        onOpenChange={setCleanupOpen}
-        hostId={host.id}
-        hostName={host.name}
-      />
-      <HostTerminalPanel
-        open={terminalOpen}
-        onClose={() => setTerminalOpen(false)}
-        hostId={host.id}
-        hostName={host.name}
-      />
-    </div>
+        <HostTerminalPanel
+          open={terminalOpen}
+          onClose={() => setTerminalOpen(false)}
+          hostId={host.id}
+          hostName={host.name}
+        />
+      </div>
+    </RowContextMenu>
   );
 }
 
@@ -345,10 +356,25 @@ function AnimatedCheck() {
   );
 }
 
+interface HostForm {
+  name: string;
+  hostname: string;
+  port: number;
+  sshUser: string;
+  sshKey: string;
+  artifactKey: string;
+  remoteBase: string;
+  downloadsBase: string;
+  downloadsBaseUrl: string;
+  toolsPath: string;
+  capacity: number;
+  online: boolean;
+}
+
 function NewHostCard({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [kind, setKind] = useState<Kind>("linux_docker");
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<HostForm>({
     name: "",
     hostname: "",
     port: 22,
@@ -391,70 +417,7 @@ function NewHostCard({ onDone }: { onDone: () => void }) {
         <CardTitle className="text-base">New build host</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="plan-card__fields">
-          <Field label="Kind">
-            <div className="row">
-              <Button
-                size="sm"
-                variant={kind === "linux_docker" ? "default" : "outline"}
-                onClick={() => onKind("linux_docker")}
-              >
-                Linux (Docker)
-              </Button>
-              <Button
-                size="sm"
-                variant={kind === "mac" ? "default" : "outline"}
-                onClick={() => onKind("mac")}
-              >
-                Mac
-              </Button>
-            </div>
-          </Field>
-          <Field label="Display name">
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </Field>
-          <Field label="Hostname / IP">
-            <Input value={form.hostname} onChange={(e) => setForm({ ...form, hostname: e.target.value })} />
-          </Field>
-          <Field label="Port">
-            <Input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
-          </Field>
-          <Field label="SSH user">
-            <Input value={form.sshUser} onChange={(e) => setForm({ ...form, sshUser: e.target.value })} />
-          </Field>
-          <Field label="Capacity">
-            <Input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} />
-          </Field>
-          <Field label="Remote base">
-            <Input value={form.remoteBase} onChange={(e) => setForm({ ...form, remoteBase: e.target.value })} />
-          </Field>
-          <Field label="Downloads base (path)">
-            <Input value={form.downloadsBase} onChange={(e) => setForm({ ...form, downloadsBase: e.target.value })} />
-          </Field>
-          <Field label="Downloads base URL">
-            <Input value={form.downloadsBaseUrl} onChange={(e) => setForm({ ...form, downloadsBaseUrl: e.target.value })} />
-          </Field>
-          <Field label="Tools path (optional)">
-            <Input value={form.toolsPath} onChange={(e) => setForm({ ...form, toolsPath: e.target.value })} />
-          </Field>
-        </div>
-        <Field label="Private SSH key (PEM)">
-          <PemKeyInput
-            value={form.sshKey}
-            onChange={(v) => setForm({ ...form, sshKey: v })}
-          />
-        </Field>
-        {kind === "mac" && (
-          <Field
-            label="Artifact-server SSH key (Mac → Linux)"
-            hint="Required — pushed to the Mac at ~/.ssh/raidx_linux_key so it can scp build artifacts to the Linux downloads host. Without it, iOS builds will succeed locally but fail at the artifact-upload step."
-          >
-            <PemKeyInput
-              value={form.artifactKey}
-              onChange={(v) => setForm({ ...form, artifactKey: v })}
-            />
-          </Field>
-        )}
+        <HostFields mode="create" kind={kind} onKind={onKind} form={form} setForm={setForm} />
         {error && <p className="text-error">{error}</p>}
         <div className="row-end">
           <Button variant="outline" onClick={onDone}>Cancel</Button>
@@ -474,6 +437,177 @@ function NewHostCard({ onDone }: { onDone: () => void }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Edits a DB-backed host. Reached from the row's Edit action or by
+// double-clicking the row. Key material is write-only — the API never returns
+// it, so both key fields start blank and are only sent when the admin pastes a
+// replacement.
+function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [kind, setKind] = useState<Kind>(host.kind);
+  const [form, setForm] = useState<HostForm>({
+    name: host.name,
+    hostname: host.hostname,
+    port: host.port,
+    sshUser: host.sshUser,
+    sshKey: "",
+    artifactKey: "",
+    remoteBase: host.remoteBase,
+    downloadsBase: host.downloadsBase,
+    downloadsBaseUrl: host.downloadsBaseUrl,
+    toolsPath: host.toolsPath ?? "",
+    capacity: host.capacity,
+    online: host.online,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.admin.patchHost(host.id, {
+        name: form.name,
+        kind,
+        hostname: form.hostname,
+        port: form.port,
+        sshUser: form.sshUser,
+        remoteBase: form.remoteBase,
+        downloadsBase: form.downloadsBase,
+        downloadsBaseUrl: form.downloadsBaseUrl,
+        toolsPath: form.toolsPath || null,
+        capacity: form.capacity,
+        // Blank means "keep what's stored". `online` stays out of the patch —
+        // the row menu owns that toggle.
+        ...(form.sshKey ? { sshKey: form.sshKey } : {}),
+        ...(kind === "mac" && form.artifactKey ? { artifactKey: form.artifactKey } : {}),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "hosts"] });
+      onClose();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : (err as Error).message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        className="admin-host-dialog"
+        aria-describedby={undefined}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader>
+          <div>
+            <DialogTitle>Edit build host</DialogTitle>
+          </div>
+        </DialogHeader>
+        <DialogBody>
+          <HostFields mode="edit" kind={kind} onKind={setKind} form={form} setForm={setForm} />
+          {error && <p className="text-error">{error}</p>}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={save.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => save.mutate()}
+            loading={save.isPending}
+            disabled={!form.name || !form.hostname || !form.sshUser}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// The host field set, shared by the "New build host" card and the edit dialog.
+// In edit mode the kind buttons only switch the kind — they don't re-apply the
+// path defaults, which would clobber whatever the host is actually configured
+// with — and the key fields become optional.
+function HostFields({
+  mode,
+  kind,
+  onKind,
+  form,
+  setForm,
+}: {
+  mode: "create" | "edit";
+  kind: Kind;
+  onKind: (kind: Kind) => void;
+  form: HostForm;
+  setForm: (form: HostForm) => void;
+}) {
+  const editing = mode === "edit";
+  return (
+    <>
+      <div className="plan-card__fields">
+        <Field label="Kind">
+          <div className="row">
+            <Button
+              size="sm"
+              variant={kind === "linux_docker" ? "default" : "outline"}
+              onClick={() => onKind("linux_docker")}
+            >
+              Linux (Docker)
+            </Button>
+            <Button
+              size="sm"
+              variant={kind === "mac" ? "default" : "outline"}
+              onClick={() => onKind("mac")}
+            >
+              Mac
+            </Button>
+          </div>
+        </Field>
+        <Field label="Display name">
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </Field>
+        <Field label="Hostname / IP">
+          <Input value={form.hostname} onChange={(e) => setForm({ ...form, hostname: e.target.value })} />
+        </Field>
+        <Field label="Port">
+          <Input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
+        </Field>
+        <Field label="SSH user">
+          <Input value={form.sshUser} onChange={(e) => setForm({ ...form, sshUser: e.target.value })} />
+        </Field>
+        <Field label="Capacity">
+          <Input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} />
+        </Field>
+        <Field label="Remote base">
+          <Input value={form.remoteBase} onChange={(e) => setForm({ ...form, remoteBase: e.target.value })} />
+        </Field>
+        <Field label="Downloads base (path)">
+          <Input value={form.downloadsBase} onChange={(e) => setForm({ ...form, downloadsBase: e.target.value })} />
+        </Field>
+        <Field label="Downloads base URL">
+          <Input value={form.downloadsBaseUrl} onChange={(e) => setForm({ ...form, downloadsBaseUrl: e.target.value })} />
+        </Field>
+        <Field label="Tools path (optional)">
+          <Input value={form.toolsPath} onChange={(e) => setForm({ ...form, toolsPath: e.target.value })} />
+        </Field>
+      </div>
+      <Field
+        label="Private SSH key (PEM)"
+        hint={editing ? "Leave blank to keep the stored key." : undefined}
+      >
+        <PemKeyInput value={form.sshKey} onChange={(v) => setForm({ ...form, sshKey: v })} />
+      </Field>
+      {kind === "mac" && (
+        <Field
+          label="Artifact-server SSH key (Mac → Linux)"
+          hint={
+            editing
+              ? "Leave blank to keep the stored key. Replacing it here only updates the stored copy — use “Re-push artifact key” to write it to the Mac."
+              : "Required — pushed to the Mac at ~/.ssh/raidx_linux_key so it can scp build artifacts to the Linux downloads host. Without it, iOS builds will succeed locally but fail at the artifact-upload step."
+          }
+        >
+          <PemKeyInput value={form.artifactKey} onChange={(v) => setForm({ ...form, artifactKey: v })} />
+        </Field>
+      )}
+    </>
   );
 }
 

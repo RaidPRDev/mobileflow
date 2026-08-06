@@ -1,12 +1,34 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Badge, Input, Loading } from "@mobileflow/ui";
+import { Badge, Combobox, type ComboboxOption, Input, Loading } from "@mobileflow/ui";
 import { Download } from "lucide-react";
 import { api, type AdminPaymentRow } from "../api/client";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { allowNativeContextMenu } from "../lib/rowInteractions";
 
 // Cross-org payments ledger for superadmins. Read-only — the PDF downloads
 // reuse the per-org endpoints (those let superadmins through automatically).
+
+type ProviderFilter = "all" | "stripe" | "paypal" | "connectpay";
+type StatusFilter = "all" | "paid" | "failed" | "open" | "void" | "uncollectible" | "draft";
+
+const PROVIDER_OPTIONS: ComboboxOption<ProviderFilter>[] = [
+  { value: "all", label: "All" },
+  { value: "stripe", label: "Stripe" },
+  { value: "paypal", label: "PayPal" },
+  { value: "connectpay", label: "ConnectPay" },
+];
+
+const STATUS_OPTIONS: ComboboxOption<StatusFilter>[] = [
+  { value: "all", label: "All" },
+  { value: "paid", label: "Paid" },
+  { value: "failed", label: "Failed" },
+  { value: "open", label: "Open" },
+  { value: "void", label: "Void" },
+  { value: "uncollectible", label: "Uncollectible" },
+  { value: "draft", label: "Draft" },
+];
 
 export function AdminPaymentsPage() {
   const q = useQuery({
@@ -15,8 +37,8 @@ export function AdminPaymentsPage() {
   });
 
   const [search, setSearch] = useState("");
-  const [provider, setProvider] = useState<string>("all");
-  const [status, setStatus] = useState<string>("all");
+  const [provider, setProvider] = useState<ProviderFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
 
   const rows = useMemo(() => {
     const data = q.data ?? [];
@@ -57,34 +79,29 @@ export function AdminPaymentsPage() {
               placeholder="Org, customer, invoice / receipt #"
             />
           </div>
-          <div className="settings-field">
-            <label className="settings-field__label">Provider</label>
-            <select
-              className="settings-select"
+          <div className="settings-field" style={{ minWidth: 160 }}>
+            <label className="settings-field__label" htmlFor="payments-filter-provider">
+              Provider
+            </label>
+            <Combobox<ProviderFilter>
+              id="payments-filter-provider"
               value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-            >
-              <option value="all">All</option>
-              <option value="stripe">Stripe</option>
-              <option value="paypal">PayPal</option>
-              <option value="connectpay">ConnectPay</option>
-            </select>
+              onChange={setProvider}
+              options={PROVIDER_OPTIONS}
+              ariaLabel="Filter by provider"
+            />
           </div>
-          <div className="settings-field">
-            <label className="settings-field__label">Status</label>
-            <select
-              className="settings-select"
+          <div className="settings-field" style={{ minWidth: 160 }}>
+            <label className="settings-field__label" htmlFor="payments-filter-status">
+              Status
+            </label>
+            <Combobox<StatusFilter>
+              id="payments-filter-status"
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="all">All</option>
-              <option value="paid">Paid</option>
-              <option value="failed">Failed</option>
-              <option value="open">Open</option>
-              <option value="void">Void</option>
-              <option value="uncollectible">Uncollectible</option>
-              <option value="draft">Draft</option>
-            </select>
+              onChange={setStatus}
+              options={STATUS_OPTIONS}
+              ariaLabel="Filter by status"
+            />
           </div>
           <div className="text-help" style={{ marginLeft: "auto" }}>
             {rows.length} {rows.length === 1 ? "row" : "rows"} · {formatMoney(totalCents, "USD")} paid
@@ -119,52 +136,44 @@ export function AdminPaymentsPage() {
                 </tr>
               ) : (
                 rows.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <Link
-                        className="link"
-                        to={`/org/${p.orgId}/settings/subscriptions/invoices/${p.id}`}
-                      >
-                        {formatDate(p.paidAt ?? p.createdAt)}
-                      </Link>
-                    </td>
-                    <td>
-                      <Link className="link" to={`/admin/orgs/${p.orgId}`}>
-                        {p.orgName}
-                      </Link>
-                    </td>
-                    <td>{p.planName ?? "—"}</td>
-                    <td>{formatMoney(p.amountCents, p.currency)}</td>
-                    <td>
-                      <span className={`payments-status is-${p.status}`}>{p.status}</span>
-                    </td>
-                    <td>
-                      <Badge variant="outline">{p.paymentProvider}</Badge>
-                    </td>
-                    <td>{formatPaymentMethod(p)}</td>
-                    <td>{p.receiptNumber ?? "—"}</td>
-                    <td>
-                      <a
-                        className="link"
-                        title="Download invoice PDF"
-                        href={api.invoicePdfUrl(p.orgId, p.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Download size={13} aria-hidden /> Invoice
-                      </a>
-                      {" · "}
-                      <a
-                        className="link"
-                        title="Download receipt PDF"
-                        href={api.receiptPdfUrl(p.orgId, p.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Receipt
-                      </a>
-                    </td>
-                  </tr>
+                  <RowContextMenu key={p.id} actions={rowActions(p)}>
+                    <tr>
+                      <td>
+                        <Link
+                          className="link"
+                          to={`/org/${p.orgId}/settings/subscriptions/invoices/${p.id}`}
+                          onContextMenu={allowNativeContextMenu}
+                        >
+                          {formatDate(p.paidAt ?? p.createdAt)}
+                        </Link>
+                      </td>
+                      <td>
+                        <Link
+                          className="link"
+                          to={`/admin/orgs/${p.orgId}`}
+                          onContextMenu={allowNativeContextMenu}
+                        >
+                          {p.orgName}
+                        </Link>
+                      </td>
+                      <td>{p.planName ?? "—"}</td>
+                      <td>{formatMoney(p.amountCents, p.currency)}</td>
+                      <td>
+                        <span className={`payments-status is-${p.status}`}>{p.status}</span>
+                      </td>
+                      <td>
+                        <Badge variant="outline">{p.paymentProvider}</Badge>
+                      </td>
+                      <td>{formatPaymentMethod(p)}</td>
+                      <td>{p.receiptNumber ?? "—"}</td>
+                      <td className="payments-table__actions">
+                        <RowActionsButton
+                          actions={rowActions(p)}
+                          ariaLabel={`Actions for invoice ${p.processorInvoiceId}`}
+                        />
+                      </td>
+                    </tr>
+                  </RowContextMenu>
                 ))
               )}
             </tbody>
@@ -173,6 +182,29 @@ export function AdminPaymentsPage() {
       </div>
     </div>
   );
+}
+
+// One list feeds the row's ⋮ button and its right-click menu. Both PDFs are
+// plain GETs, so opening them in a new tab is all the "download" needs to be —
+// the endpoints send Content-Disposition: attachment.
+function rowActions(p: AdminPaymentRow): RowAction[] {
+  const icon = <Download size={14} aria-hidden />;
+  return [
+    {
+      label: "Download Invoice",
+      icon,
+      onSelect: () => openPdf(api.invoicePdfUrl(p.orgId, p.id)),
+    },
+    {
+      label: "Download Receipt",
+      icon,
+      onSelect: () => openPdf(api.receiptPdfUrl(p.orgId, p.id)),
+    },
+  ];
+}
+
+function openPdf(url: string): void {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function formatMoney(cents: number, currency: string): string {

@@ -447,6 +447,12 @@
   }
 }
 
+// Edit-host dialog — wider than the default so the two-column field grid and
+// the PEM textareas stay legible.
+.dialog-content.admin-host-dialog {
+  max-width: 720px;
+}
+
 // New-host form ssh key textarea.
 .admin-hosts-form__key {
   width: 100%;
@@ -689,14 +695,66 @@
 
 
 
-// Processor logo in the Payment Processors accordion header. Sized to match
-// the existing svc-icon footprint (24px tall) so the row alignment stays
-// consistent across processors with different wordmark aspect ratios.
-.processor-logo {
-  height: 20px;
+// Credentials row in the Payment Processors panel: fields on the left (capped
+// at 560px by .settings-field), brand tile filling the space on the right.
+.processor-creds {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.processor-creds__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  // 560px matches .settings-field's own cap, so the column doesn't claim space
+  // its inputs can't use. min-width forces the brand tile onto its own line
+  // before the inputs start getting squeezed.
+  flex: 0 1 560px;
+  min-width: 320px;
+}
+
+// Light tile for the processor wordmark. The background is deliberately fixed
+// rather than themed: the Stripe/PayPal/ConnectPay SVGs carry their own dark
+// brand colors, which vanish against the dark card.
+.processor-brand {
+  flex: 0 0 220px;
+  // Soaks up the leftover row space so the tile sits centred in the gap beside
+  // the inputs rather than pinned to the panel's right edge.
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220px;
+  min-height: 104px;
+  padding: var(--space-lg);
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: var(--radius-md);
+  background: #fbfbfd;
+  box-shadow: var(--shadow-sm);
+}
+
+// Bounded on both axes so wordmarks with very different aspect ratios
+// (Stripe 2.4:1, PayPal 3.8:1) land at a similar visual weight.
+.processor-brand__logo {
+  max-width: 168px;
+  max-height: 44px;
   width: auto;
-  display: inline-block;
-  flex-shrink: 0;
+  height: auto;
+  object-fit: contain;
+}
+
+// Shown for a processor with no bundled wordmark.
+.processor-brand__fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 13px;
+  font-weight: 600;
+  // Fixed dark ink to match the fixed light tile.
+  color: #334155;
 }
 
 // Tabs content rendered by Radix gets an explicit top margin so the gap from
@@ -1421,7 +1479,11 @@
   background: color-mix(in oklab, var(--color-accent) 7%, transparent);
 }
 
-.admin-db-grid tbody tr:hover td:not(.admin-db-grid__empty) {
+// The actions cell is excluded because its wash has to be opaque — see below.
+// Without the exclusion this selector also matched it and, carrying one more
+// element in the compound, outranked the opaque rule: the sticky cell went
+// translucent on hover and the row's text showed through the icons.
+.admin-db-grid tbody tr:hover td:not(.admin-db-grid__empty):not(.admin-db-grid__actions) {
   background: color-mix(in oklab, var(--color-accent) 7%, transparent);
   color: var(--color-fg);
 }

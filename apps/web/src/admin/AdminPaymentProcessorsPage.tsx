@@ -144,17 +144,11 @@ function ProcessorCard({
           aria-expanded={open}
         >
           <span className="accordion-trigger-content">
-            {(() => {
-              const icon = PROCESSOR_ICONS[row.provider];
-              return icon ? (
-                <img src={icon} alt="" aria-hidden className="processor-logo" />
-              ) : (
-                <span className="svc-icon" aria-hidden>
-                  <CreditCard size={14} />
-                </span>
-              );
-            })()}
             <span style={{ fontWeight: 500 }}>{row.displayName}</span>
+          </span>
+          {/* Status badge rides with the chevron on the right so the left edge
+              of every row is just the processor name. */}
+          <span className="accordion-trigger-meta">
             {isActive ? (
               <Badge variant="success">Active · {row.mode}</Badge>
             ) : row.updatedAt ? (
@@ -162,158 +156,188 @@ function ProcessorCard({
             ) : (
               <Badge variant="outline">Not configured</Badge>
             )}
+            <ChevronDown size={16} className="accordion-chevron" />
           </span>
-          <ChevronDown size={16} className="accordion-chevron" />
         </button>
       </div>
-      {open && (
-        <div className="accordion-panel is-padded-top stack-sm">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="stack-sm">
-            <div className="row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <TabsList>
-                <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
-                <TabsTrigger value="production">Production</TabsTrigger>
-              </TabsList>
+      {/* Always mounted so the panel's height can animate; the collapse wrapper
+          hides it from view and from the tab order while closed. */}
+      <div className="accordion-collapse">
+        <div className="accordion-collapse__inner">
+          <div className="accordion-panel is-padded-top stack-sm">
+            <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="stack-sm">
+              <div className="row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <TabsList>
+                  <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+                  <TabsTrigger value="production">Production</TabsTrigger>
+                </TabsList>
+                {(() => {
+                  const links = externalLinks(row.provider, mode);
+                  return links ? (
+                    <ExternalAnchor href={links.dashboard}>Open dashboard</ExternalAnchor>
+                  ) : null;
+                })()}
+                <Label
+                  className="is-small"
+                  htmlFor={`active-${row.provider}`}
+                  style={{ marginLeft: "auto" }}
+                >
+                  Set as active
+                </Label>
+                <Switch
+                  id={`active-${row.provider}`}
+                  checked={isActive}
+                  onCheckedChange={(v) => submit({ enabled: v })}
+                  disabled={saving}
+                />
+              </div>
               {(() => {
                 const links = externalLinks(row.provider, mode);
-                return links ? (
-                  <ExternalAnchor href={links.dashboard}>Open dashboard</ExternalAnchor>
-                ) : null;
+                return (
+                  <p className="text-help processor-webhook">
+                    <Info size={12} aria-hidden /> Webhook endpoint:{" "}
+                    <code>{`${apiBaseUrl}/api/billing/webhook/${row.provider}`}</code>
+                    {links && (
+                      <ExternalAnchor href={links.webhooks}>
+                        Configure in {row.displayName}
+                      </ExternalAnchor>
+                    )}
+                  </p>
+                );
               })()}
-              <Label
-                className="is-small"
-                htmlFor={`active-${row.provider}`}
-                style={{ marginLeft: "auto" }}
-              >
-                Set as active
-              </Label>
-              <Switch
-                id={`active-${row.provider}`}
-                checked={isActive}
-                onCheckedChange={(v) => submit({ enabled: v })}
-                disabled={saving}
-              />
-            </div>
-            {(() => {
-              const links = externalLinks(row.provider, mode);
-              return (
-                <p className="text-help processor-webhook">
-                  <Info size={12} aria-hidden /> Webhook endpoint:{" "}
-                  <code>{`${apiBaseUrl}/api/billing/webhook/${row.provider}`}</code>
-                  {links && (
-                    <ExternalAnchor href={links.webhooks}>
-                      Configure in {row.displayName}
-                    </ExternalAnchor>
-                  )}
-                </p>
-              );
-            })()}
-            {(["sandbox", "production"] as const).map((m) => {
-              const links = externalLinks(row.provider, m);
-              return (
-              <TabsContent key={m} value={m} className="tabs-content--padded stack-sm">
-                <fieldset className="billing-address-group">
-                  <legend className="billing-address-group__legend">
-                    Credentials
-                    {links && (
-                      <ExternalAnchor href={links.apiKeys}>API keys</ExternalAnchor>
-                    )}
-                  </legend>
-                  {credFields.map((field) => (
-                    <CredentialInput
-                      key={field.key}
-                      field={field}
-                      mode={m}
-                      value={creds[field.key]?.[m] ?? ""}
-                      isSet={isSecretSet(row, field.key, m)}
-                      onChange={(v) =>
-                        setCreds((s) => ({
-                          ...s,
-                          [field.key]: {
-                            ...(s[field.key] ?? { sandbox: "", production: "" }),
-                            [m]: v,
-                          },
-                        }))
-                      }
-                    />
-                  ))}
-                  {row.provider === "stripe" && m === "sandbox" && (
-                    <StripeListenHint provider={row.provider} />
-                  )}
-                </fieldset>
-
-                <fieldset className="billing-address-group">
-                  <legend className="billing-address-group__legend">
-                    Plan price IDs
-                    {links && (
-                      <ExternalAnchor href={links.products}>Product catalog</ExternalAnchor>
-                    )}
-                  </legend>
-                  {configFields.map((field) => (
-                    <div key={field.key} className="settings-field">
-                      <Label className="is-small">{field.label}</Label>
-                      <div className="row" style={{ gap: 8, alignItems: "stretch" }}>
-                        <div style={{ flex: 1 }}>
-                          <Input
-                            value={config[field.key]?.[m] ?? ""}
-                            placeholder={field.placeholder}
-                            onChange={(e) =>
-                              setConfig((s) => ({
-                                ...s,
-                                [field.key]: {
-                                  ...(s[field.key] ?? { sandbox: "", production: "" }),
-                                  [m]: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        </div>
-                        {row.provider === "paypal" && (
-                          <PayPalCreatePlanButton
-                            fieldKey={field.key}
+              {(["sandbox", "production"] as const).map((m) => {
+                const links = externalLinks(row.provider, m);
+                return (
+                <TabsContent key={m} value={m} className="tabs-content--padded stack-sm">
+                  <fieldset className="billing-address-group">
+                    <legend className="billing-address-group__legend">
+                      Credentials
+                      {links && (
+                        <ExternalAnchor href={links.apiKeys}>API keys</ExternalAnchor>
+                      )}
+                    </legend>
+                    {/* Fields are capped at 560px, so the brand mark fills the
+                        space beside them instead of leaving the row empty. */}
+                    <div className="processor-creds">
+                      <div className="processor-creds__fields">
+                        {credFields.map((field) => (
+                          <CredentialInput
+                            key={field.key}
+                            field={field}
                             mode={m}
-                            onCreated={(planId) =>
-                              setConfig((s) => ({
+                            value={creds[field.key]?.[m] ?? ""}
+                            isSet={isSecretSet(row, field.key, m)}
+                            onChange={(v) =>
+                              setCreds((s) => ({
                                 ...s,
                                 [field.key]: {
                                   ...(s[field.key] ?? { sandbox: "", production: "" }),
-                                  [m]: planId,
+                                  [m]: v,
                                 },
                               }))
                             }
-                            onError={(msg) => setError(msg)}
                           />
-                        )}
+                        ))}
                       </div>
-                      {field.helpText && <p className="text-help">{field.helpText}</p>}
+                      <ProcessorBrand provider={row.provider} displayName={row.displayName} />
                     </div>
-                  ))}
-                </fieldset>
-              </TabsContent>
-              );
-            })}
-          </Tabs>
+                    {row.provider === "stripe" && m === "sandbox" && (
+                      <StripeListenHint provider={row.provider} />
+                    )}
+                  </fieldset>
 
-          {error && <p className="text-error">{error}</p>}
+                  <fieldset className="billing-address-group">
+                    <legend className="billing-address-group__legend">
+                      Plan price IDs
+                      {links && (
+                        <ExternalAnchor href={links.products}>Product catalog</ExternalAnchor>
+                      )}
+                    </legend>
+                    {configFields.map((field) => (
+                      <div key={field.key} className="settings-field">
+                        <Label className="is-small">{field.label}</Label>
+                        <div className="row" style={{ gap: 8, alignItems: "stretch" }}>
+                          <div style={{ flex: 1 }}>
+                            <Input
+                              value={config[field.key]?.[m] ?? ""}
+                              placeholder={field.placeholder}
+                              onChange={(e) =>
+                                setConfig((s) => ({
+                                  ...s,
+                                  [field.key]: {
+                                    ...(s[field.key] ?? { sandbox: "", production: "" }),
+                                    [m]: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                          {row.provider === "paypal" && (
+                            <PayPalCreatePlanButton
+                              fieldKey={field.key}
+                              mode={m}
+                              onCreated={(planId) =>
+                                setConfig((s) => ({
+                                  ...s,
+                                  [field.key]: {
+                                    ...(s[field.key] ?? { sandbox: "", production: "" }),
+                                    [m]: planId,
+                                  },
+                                }))
+                              }
+                              onError={(msg) => setError(msg)}
+                            />
+                          )}
+                        </div>
+                        {field.helpText && <p className="text-help">{field.helpText}</p>}
+                      </div>
+                    ))}
+                  </fieldset>
+                </TabsContent>
+                );
+              })}
+            </Tabs>
 
-          <div className="row-end">
-            {row.updatedAt && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (confirm("Remove this processor's credentials? Existing customers stay in the DB but billing will fail until reconfigured.")) {
-                    onDelete();
-                  }
-                }}
-              >
-                Remove
+            {error && <p className="text-error">{error}</p>}
+
+            <div className="row-end">
+              {row.updatedAt && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (confirm("Remove this processor's credentials? Existing customers stay in the DB but billing will fail until reconfigured.")) {
+                      onDelete();
+                    }
+                  }}
+                >
+                  Remove
+                </Button>
+              )}
+              <Button onClick={() => submit()} disabled={saving}>
+                Save
               </Button>
-            )}
-            <Button onClick={() => submit()} disabled={saving}>
-              Save
-            </Button>
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// The processor's wordmark, on its own light tile. Several of the brand SVGs
+// are dark navy or near-black, which disappears against the dark card — the
+// tile gives them a consistent light surface to sit on in either theme.
+function ProcessorBrand({ provider, displayName }: { provider: string; displayName: string }) {
+  const icon = PROCESSOR_ICONS[provider];
+  return (
+    <div className="processor-brand">
+      {icon ? (
+        <img src={icon} alt={displayName} className="processor-brand__logo" />
+      ) : (
+        <span className="processor-brand__fallback">
+          <CreditCard size={28} aria-hidden />
+          <span>{displayName}</span>
+        </span>
       )}
     </div>
   );

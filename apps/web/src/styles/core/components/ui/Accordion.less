@@ -50,6 +50,15 @@
   min-width: 0;
 }
 
+// Trailing group in the header: status badge + chevron. Sits opposite the
+// title, which the trigger's `space-between` pushes to the left edge.
+.accordion-trigger-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
 .accordion-chevron {
   color: var(--color-fg-muted);
   transition: transform var(--transition-fast);
@@ -70,4 +79,39 @@
 
 .accordion-panel.is-padded-top {
   padding-top: var(--space-md);
+}
+
+// Height animation via grid-template-rows 0fr -> 1fr: the row resolves to the
+// panel's natural height, so nothing has to be measured in JS. Same technique
+// as the sidebar's collapsible nav sections. The panel stays mounted — that's
+// what makes the height interpolatable in both directions.
+.accordion-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--transition-base);
+}
+
+.accordion-item.is-open > .accordion-collapse {
+  grid-template-rows: 1fr;
+}
+
+.accordion-collapse__inner {
+  min-height: 0;
+  overflow: hidden;
+  // Keeps the collapsed panel's fields out of the tab order. Delayed on the
+  // way out so the panel stays painted for the length of the collapse.
+  visibility: hidden;
+  transition: visibility 0s linear var(--duration-base);
+}
+
+.accordion-item.is-open > .accordion-collapse > .accordion-collapse__inner {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accordion-collapse,
+  .accordion-collapse__inner {
+    transition: none;
+  }
 }

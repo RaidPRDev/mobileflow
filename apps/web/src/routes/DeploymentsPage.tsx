@@ -211,9 +211,15 @@ function DeploymentRowItem({ dep, onOpen }: DeploymentRowItemProps) {
         )}
       </div>
       <div role="cell" className="deployments-row__target">
-        <span className="deployments-row__target-pill" style={{ background: targetBg }}>
+        {/* title carries the full target: the label truncates as the column
+            narrows and drops entirely on small screens, leaving the icon. */}
+        <span
+          className="deployments-row__target-pill"
+          style={{ background: targetBg }}
+          title={targetLabel}
+        >
           <span className="deployments-row__target-icon">{platform.icon}</span>
-          <span>{targetLabel}</span>
+          <span className="deployments-row__target-label">{targetLabel}</span>
         </span>
       </div>
       <div role="cell" className="deployments-row__build">

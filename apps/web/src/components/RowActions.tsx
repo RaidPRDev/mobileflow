@@ -21,6 +21,8 @@ export interface RowAction {
   icon?: ReactNode;
   destructive?: boolean;
   disabled?: boolean;
+  /** Native tooltip — handy for explaining why an item is disabled. */
+  title?: string;
 }
 
 /** The ⋮ button that lives in a row's trailing actions cell. */
@@ -43,6 +45,7 @@ export function RowActionsButton({
             icon={a.icon}
             destructive={a.destructive}
             disabled={a.disabled}
+            title={a.title}
             onSelect={a.onSelect}
           >
             {a.label}
@@ -75,6 +78,7 @@ export function RowContextMenu({
             icon={a.icon}
             destructive={a.destructive}
             disabled={a.disabled}
+            title={a.title}
             onSelect={a.onSelect}
           >
             {a.label}

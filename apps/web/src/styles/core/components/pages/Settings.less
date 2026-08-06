@@ -1036,6 +1036,14 @@
   padding: var(--space-xl);
 }
 
+// Trailing ⋮ cell. Shrink-wrapped and right-aligned so the button hugs the
+// table's edge instead of floating in a wide column.
+.payments-table__actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
 .payments-status {
   display: inline-block;
   padding: 2px 8px;
@@ -1084,7 +1092,7 @@
 }
 
 .invoice-card {
-  background: var(--color-bg-surface, #fff);
+  background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 8px);
   padding: var(--space-2xl, 28px);
@@ -1165,7 +1173,9 @@
   padding: 6px 10px;
   border-radius: var(--radius-md, 6px);
   border: 1px solid var(--color-border);
-  background: var(--color-bg-surface, #fff);
+  // Matches Input and the Combobox trigger so native selects sit alongside
+  // them without looking like a different control.
+  background: var(--color-input-bg);
   color: var(--color-fg);
   font-size: 13px;
   height: 32px;
@@ -1194,12 +1204,12 @@
 
   &:hover,
   &:focus-visible {
-    background: var(--color-bg-surface, #fff);
+    background: var(--color-bg-elevated);
     outline: none;
   }
 
   &.is-dragging {
-    background: var(--color-bg-surface, #fff);
+    background: var(--color-bg-elevated);
     border-color: var(--color-accent, #1d4ed8);
   }
 }
@@ -1216,7 +1226,9 @@
   max-height: 100px;
   max-width: 100%;
   object-fit: contain;
-  background: var(--color-bg-surface, #fff);
+  // Deliberately a fixed light backdrop, not a themed one: uploaded logos are
+  // usually dark ink on transparency and would vanish on a dark surface.
+  background: #fff;
   padding: 8px;
   border-radius: var(--radius-md, 6px);
 }

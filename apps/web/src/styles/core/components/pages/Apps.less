@@ -151,10 +151,11 @@
   white-space: nowrap;
 }
 
+// `--color-warning-soft` is the themed companion to `--color-warning`; the old
+// hardcoded cream left bright amber text on a pale background in dark mode.
 .apps-list__badge--warn {
-  color: var(--color-warning, #92400e);
-  background: var(--color-warning-bg, #fef3c7);
-  border-color: var(--color-warning-border, rgba(180, 83, 9, 0.18));
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .apps-list__actions {
