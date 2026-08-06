@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button, Input, Label } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
+import { ShaderBackground } from "./login/ShaderBackground";
+import { ParticleLetter } from "./login/ParticleLetter";
 import googleIcon from "../../../../assets/icons/google-icon.svg";
 import githubIcon from "../../../../assets/icons/github-icon.svg";
 
@@ -108,9 +110,8 @@ export function LoginPage() {
     }
   };
 
-  return (
-    <div className="login-page">
-      <div className="login-card">
+  const card = (
+    <div className="login-card">
         <div className="login-brand">
           <span className="login-brand-mark">MF</span>
           <span className="section-title">MobileFlow</span>
@@ -300,6 +301,17 @@ export function LoginPage() {
             {signupMode ? "Already have an account? Log in" : "New here? Create an account"}
           </button>
         </form>
+    </div>
+  );
+
+  return (
+    <div className="login-page">
+      <ShaderBackground />
+      <div className="login-columns">
+        <div className="login-hero" aria-hidden>
+          <ParticleLetter text="M" />
+        </div>
+        <div className="login-pane">{card}</div>
       </div>
     </div>
   );

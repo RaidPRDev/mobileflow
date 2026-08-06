@@ -1,10 +1,61 @@
+// The login scene is deliberately dark in both themes: a WebGL gradient-wave
+// shader fills the page, the left column holds a volumetric beam + particle
+// glyph, and the card sits centered in the right column.
 .login-page {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+  // Fallback when WebGL is unavailable — approximates the shader's palette.
+  background:
+    radial-gradient(120% 90% at 25% 100%, rgba(37, 60, 130, 0.45), transparent 60%),
+    radial-gradient(100% 80% at 75% 20%, rgba(50, 40, 100, 0.35), transparent 65%),
+    #07080f;
+}
+
+.login-shader {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.login-columns {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.login-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.login-pane {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100%;
   padding: var(--space-xl);
-  background: var(--color-bg);
+}
+
+@media (max-width: 900px) {
+  .login-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .login-hero {
+    display: none;
+  }
 }
 
 .login-card {
@@ -14,7 +65,8 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-2xl);
-  box-shadow: var(--shadow-md);
+  // Extra ambient blue halo so the card feels lit by the scene.
+  box-shadow: var(--shadow-xl), 0 0 90px rgba(80, 120, 255, 0.10);
   display: grid;
   gap: var(--space-lg);
 }
