@@ -1291,8 +1291,9 @@
   color: var(--color-fg-muted);
   font: inherit;
   font-size: 13px;
-  cursor: pointer;
+  cursor: default;
   text-align: left;
+  user-select: none;
 }
 
 .admin-db-table-item > svg {
@@ -1631,11 +1632,53 @@
 
 // ─── Admin → Deploy ──────────────────────────────────────────────────────────
 
+.admin-deploy-tabs {
+  margin-bottom: var(--space-lg);
+}
+
+// The Tabs root is Radix's bare element — it does NOT carry the `.tabs` class,
+// so that rule's column gap never applies here. Space the strip off the panel
+// with a margin on the strip itself instead.
+.admin-deploy-tabs .tabs-list {
+  margin-bottom: 1rem;
+}
+
+// The trigger is a plain button, so its child span sits on the text baseline —
+// with an icon in the line box that pushes the label visibly high. Make the
+// button a centred flex row and drop the inherited line-height so the label,
+// icon and spinner share one optical centre.
+.admin-deploy-tabs .tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  // 36px — the exact height `.btn` gives the Deploy buttons, so the tabs read
+  // as controls of the same size rather than a shorter strip.
+  height: 36px;
+  padding: 0 var(--space-md);
+}
+
+// Icon + label + the running spinner, inside the tab trigger.
+.admin-deploy-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  line-height: 1;
+}
+
 .admin-deploy-targets {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
+}
+
+.admin-deploy-targets__empty {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 0;
+  padding: var(--space-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .admin-deploy-target {
@@ -1646,6 +1689,64 @@
   border-radius: var(--radius-md);
   background: var(--color-card);
   padding: var(--space-md);
+}
+
+// The live target reads as the heavier action through colour, not weight: the
+// same 1px border as every other card on the page, just accent-tinted, plus a
+// tinted icon. A thick left edge made it look like a different component.
+.admin-deploy-target.is-production {
+  border-color: var(--color-accent);
+
+  .admin-deploy-target__icon {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+  }
+}
+
+.admin-deploy-target__tag {
+  margin-left: var(--space-sm);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.admin-deploy-target__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+
+  code {
+    font-size: 11px;
+  }
+
+  a {
+    color: var(--color-accent);
+  }
+}
+
+// Shrink-to-content, unlike the full-width `.plan-card__id` bar this replaced —
+// a stack of those across four cards was most of the page's visual noise.
+.admin-deploy-target__cmd {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-deploy-target__icon {
@@ -1678,24 +1779,53 @@
   color: var(--color-fg-muted);
 }
 
+// Both columns are cards of the same height — `align-items: start` used to let
+// each shrink to its content, which left a short runs box floating beside a
+// centred "no run selected" block instead of one activity panel.
 .admin-deploy-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: var(--space-lg);
-  align-items: start;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-md);
+  align-items: stretch;
   min-height: 420px;
 }
 
 .admin-deploy-runs {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  min-height: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-card);
-  padding: var(--space-sm);
-  max-height: 60vh;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.admin-deploy-runs__title {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-fg-muted);
+}
+
+// The scroll lives on the list, not the card, so the header stays put.
+.admin-deploy-runs__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-xs);
+}
+
+.admin-deploy-runs__empty {
+  margin: 0;
+  padding: var(--space-md) var(--space-sm);
+  font-size: 12px;
+  color: var(--color-fg-muted);
 }
 
 .admin-deploy-run {
@@ -1739,17 +1869,54 @@
   color: var(--color-fg-muted);
 }
 
+// A card like the runs list beside it, so the pair reads as one panel whether
+// or not a run is selected.
 .admin-deploy-log {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
   min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  overflow: hidden;
 }
 
 .admin-deploy-log__header {
   display: flex;
   align-items: center;
   gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+// Fills the card and centres its content, rather than `.empty-state`'s
+// fixed-width block floating in the page flow.
+.admin-deploy-log__placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--color-fg-muted);
+}
+
+.admin-deploy-log__placeholder-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.admin-deploy-log__notice {
+  margin: 0;
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-fg-muted);
 }
 
 .admin-deploy-log__meta {
@@ -1765,9 +1932,25 @@
   font-weight: 600;
 }
 
+// Grows with the card and scrolls internally, so the log bottom lines up with
+// the runs list rather than pushing the page taller than the viewport. Same
+// terminal treatment as the build page's log (`.build-logs__pre`) — LogView
+// emits `.build-logs__line` children either way, and they are styled for a dark
+// surface, so anything lighter here would wash the level colours out.
 .admin-deploy-log__body {
-  min-height: 360px;
+  flex: 1;
+  min-height: 320px;
   max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-md);
+  background: #0c0f13;
+  color: #d4d4d8;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 // Shared spinner for the Loader2 / RefreshCw icons on these two pages.

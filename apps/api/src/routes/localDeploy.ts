@@ -46,18 +46,45 @@ const repoRoot = resolvePath(here, "../../../..");
 type JobState = "running" | "succeeded" | "failed" | "canceled";
 type LineStream = "stdout" | "stderr" | "system";
 
+/**
+ * "tooling" pushes scripts to a build host — cheap, repeatable, no user impact.
+ * "production" ships this workspace to the swarm and rolls the live stack, so
+ * the UI confirms first and the route below demands an explicit acknowledgement.
+ */
+type TargetKind = "tooling" | "production";
+
 interface DeployTarget {
   id: string;
+  kind: TargetKind;
   label: string;
   description: string;
   /** argv — never composed from request data. */
   command: string[];
   cwd: string;
+  /** Swarm stack this target deploys, shown in the UI. Production only. */
+  stack?: string;
+  /** Public URL the deploy lands on, shown in the UI. Production only. */
+  url?: string;
 }
 
 const TARGETS: DeployTarget[] = [
   {
+    id: "live-caimon",
+    kind: "production",
+    label: "Caimón — live",
+    // Kept to one line — the confirm dialog spells out the guarantees (backup,
+    // rolling update, auto-rollback) at the moment they actually matter.
+    description: "Ships this workspace to the swarm host and rolls the live stack.",
+    // start.sh loads .docker/.config.env.tools and exports what the .tools
+    // scripts need, so the whole deploy is one argv with no env plumbing here.
+    command: ["bash", "start.sh", "prod"],
+    cwd: repoRoot,
+    stack: "caimon",
+    url: "https://caimon.raidpr.com",
+  },
+  {
     id: "build-tools-ios",
+    kind: "tooling",
     label: "iOS build tooling",
     description:
       "Pushes infra/tools/RaidX/Tools/ios to the Mac build host, then installs any missing build tooling (CocoaPods, xcbeautify) via Homebrew.",
@@ -66,6 +93,7 @@ const TARGETS: DeployTarget[] = [
   },
   {
     id: "build-tools-android",
+    kind: "tooling",
     label: "Android build tooling",
     description:
       "Pushes infra/tools/RaidX/Tools/android to the Linux build host, and rebuilds the Docker builder image when its Dockerfile changed.",
@@ -74,6 +102,7 @@ const TARGETS: DeployTarget[] = [
   },
   {
     id: "build-tools-all",
+    kind: "tooling",
     label: "All build tooling",
     description: "Both platforms in one run: iOS to the Mac host, Android to the Linux host.",
     command: ["node", "infra/scripts/deploy-build-scripts.mjs"],
@@ -136,8 +165,20 @@ function publicJob(job: Job, opts: { lines?: boolean; sinceSeq?: number } = {}) 
   };
 }
 
+/**
+ * The production pipeline echoes its own environment as it goes, and an
+ * operator's `.env.production` gets sourced along the way. None of the scripts
+ * print a secret deliberately, but a log that streams into a browser and lives
+ * in memory for the next 25 runs shouldn't depend on that staying true.
+ */
+function redact(raw: string): string {
+  const assignment =
+    /\b([A-Z0-9_]*(?:SECRET|PASSWORD|TOKEN|KEY|CREDENTIAL)[A-Z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/g;
+  return raw.replace(assignment, (_m, name: string, sep: string) => `${name}${sep}[redacted]`);
+}
+
 function push(job: Job, stream: LineStream, text: string) {
-  const line: LogLine = { seq: ++job.seq, ts: new Date().toISOString(), stream, text };
+  const line: LogLine = { seq: ++job.seq, ts: new Date().toISOString(), stream, text: redact(text) };
   job.lines.push(line);
   if (job.lines.length > MAX_LINES) {
     job.lines.splice(0, job.lines.length - MAX_LINES);
@@ -287,8 +328,11 @@ export async function localDeployRoutes(server: FastifyInstance) {
     repoRoot,
     targets: TARGETS.map((t) => ({
       id: t.id,
+      kind: t.kind,
       label: t.label,
       description: t.description,
+      stack: t.stack ?? null,
+      url: t.url ?? null,
       command: t.command.join(" "),
       // A checkout that doesn't contain the script (a container image that
       // shipped only dist/, say) can't run it — say so before the click.
@@ -311,26 +355,39 @@ export async function localDeployRoutes(server: FastifyInstance) {
     },
   );
 
-  server.post<{ Params: { targetId: string } }>("/admin/deploy/targets/:targetId/run", async (req, reply) => {
-    const target = TARGETS.find((t) => t.id === req.params.targetId);
-    if (!target) return reply.notFound("Unknown deploy target");
-    // One at a time: these mutate remote hosts, and two concurrent runs against
-    // the same host would interleave scp writes and docker builds.
-    const active = runningJob();
-    if (active) {
-      return reply.conflict(`A deploy is already running (${active.targetLabel}). Wait for it or cancel it first.`);
-    }
-    const scriptPath = resolvePath(target.cwd, target.command[1] ?? "");
-    if (!existsSync(scriptPath)) return reply.failedDependency(`Deploy script not found at ${scriptPath}`);
+  server.post<{ Params: { targetId: string }; Body?: { confirm?: boolean } }>(
+    "/admin/deploy/targets/:targetId/run",
+    async (req, reply) => {
+      const target = TARGETS.find((t) => t.id === req.params.targetId);
+      if (!target) return reply.notFound("Unknown deploy target");
+      // A production run replaces what's serving live traffic. The UI asks
+      // first; this makes the acknowledgement part of the request, so a
+      // replayed or hand-rolled POST can't ship a release by accident.
+      if (target.kind === "production" && req.body?.confirm !== true) {
+        return reply.badRequest(
+          `${target.label} deploys to ${target.url ?? "production"}. Re-send with {"confirm":true} to proceed.`,
+        );
+      }
+      // One at a time: these mutate remote hosts, and two concurrent runs
+      // against the same host would interleave scp writes and docker builds.
+      const active = runningJob();
+      if (active) {
+        return reply.conflict(
+          `A deploy is already running (${active.targetLabel}). Wait for it or cancel it first.`,
+        );
+      }
+      const scriptPath = resolvePath(target.cwd, target.command[1] ?? "");
+      if (!existsSync(scriptPath)) return reply.failedDependency(`Deploy script not found at ${scriptPath}`);
 
-    const job = start(target, req.auth?.userId ?? null);
-    writeAdminLog(
-      "admin_deploy.started",
-      { target: target.id, job_id: job.id, command: target.command.join(" ") },
-      req.auth?.userId,
-    );
-    return reply.code(202).send(publicJob(job, { lines: true }));
-  });
+      const job = start(target, req.auth?.userId ?? null);
+      writeAdminLog(
+        "admin_deploy.started",
+        { target: target.id, job_id: job.id, command: target.command.join(" ") },
+        req.auth?.userId,
+      );
+      return reply.code(202).send(publicJob(job, { lines: true }));
+    },
+  );
 
   server.post<{ Params: { id: string } }>("/admin/deploy/jobs/:id/cancel", async (req, reply) => {
     const job = jobs.get(req.params.id);

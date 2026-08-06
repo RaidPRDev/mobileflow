@@ -1,10 +1,15 @@
 import { Button } from "@mobileflow/ui";
+import { PageIndicator } from "./PageIndicator";
 
 /**
- * Shared "<count> X | Previous / Next" footer used by every paginated listing
- * page (Builds, Commits, Deployments, Store Destinations history). Pair with
- * `useAdaptivePageSize` so the visible page fits the viewport without a
+ * Shared "<count> X | 1 2 … 9 | Previous / Next" footer used by every paginated
+ * listing page (Builds, Commits, Deployments, Store Destinations history). Pair
+ * with `useAdaptivePageSize` so the visible page fits the viewport without a
  * scrollbar.
+ *
+ * The numbered indicator only appears when the caller can jump to an arbitrary
+ * page (`onPage`) and there is more than one — a pager that only knows
+ * prev/next keeps the buttons alone.
  */
 export function ListFooter({
   total,
@@ -14,6 +19,7 @@ export function ListFooter({
   countLabel,
   onPrev,
   onNext,
+  onPage,
   busy,
 }: {
   total?: number;
@@ -25,6 +31,8 @@ export function ListFooter({
   countLabel?: string;
   onPrev: () => void;
   onNext: () => void;
+  /** Jump straight to a page (0-indexed). Omit to hide the numbered indicator. */
+  onPage?: (pageIdx: number) => void;
   /** When true, the pager buttons are disabled regardless of page bounds (e.g. while a fetch is in flight). */
   busy?: boolean;
 }) {
@@ -39,6 +47,17 @@ export function ListFooter({
   return (
     <div className="list-footer">
       <span className="list-footer__count">{label}</span>
+      {onPage && pageCount > 1 ? (
+        <PageIndicator
+          pageIdx={pageIdx}
+          pageCount={pageCount}
+          onPage={onPage}
+          disabled={busy}
+        />
+      ) : (
+        // Keeps the three-column grid intact so the pager stays hard right.
+        <span />
+      )}
       <div className="list-footer__pager">
         <Button variant="outline" size="sm" onClick={onPrev} disabled={!canPrev}>
           Previous

@@ -237,6 +237,12 @@ export interface CommitsPageResponse {
   perPage: number;
   hasNext: boolean;
   totalCount: number | null;
+  /**
+   * `totalCount` is the deepest the API will serve, not the repo's real commit
+   * count (the all-branch merge stops at a fixed depth). The page count derived
+   * from it is still exact — show the count itself as a floor.
+   */
+  totalCapped?: boolean;
   accountLogin: string | null;
   accountAvatarUrl: string | null;
 }
@@ -419,8 +425,14 @@ export type DeployJobState = "running" | "succeeded" | "failed" | "canceled";
 
 export interface DeployTargetRow {
   id: string;
+  /** "production" ships the live stack and needs an explicit confirmation. */
+  kind: "tooling" | "production";
   label: string;
   description: string;
+  /** Swarm stack the target deploys — production targets only. */
+  stack: string | null;
+  /** Public URL the deploy lands on — production targets only. */
+  url: string | null;
   command: string;
   /** False when the script isn't present in this checkout. */
   available: boolean;
@@ -1004,9 +1016,12 @@ export const api = {
       request<DeployJobRow>(
         `/admin/deploy/jobs/${encodeURIComponent(id)}${since ? `?since=${since}` : ""}`,
       ),
-    runDeploy: (targetId: string) =>
+    // `confirm` is required by the API for production targets — the acknowledgement
+    // travels with the request so a stray POST can't ship a release.
+    runDeploy: (targetId: string, confirm = false) =>
       request<DeployJobRow>(`/admin/deploy/targets/${encodeURIComponent(targetId)}/run`, {
         method: "POST",
+        body: JSON.stringify({ confirm }),
       }),
     cancelDeploy: (jobId: string) =>
       request<DeployJobRow>(`/admin/deploy/jobs/${encodeURIComponent(jobId)}/cancel`, {

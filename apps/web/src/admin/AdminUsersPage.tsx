@@ -9,16 +9,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
   Input,
   Loading,
 } from "@mobileflow/ui";
+import { LogOut, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { ApiError, api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
 interface AdminUser {
@@ -113,6 +110,37 @@ function UserRow({ user }: { user: AdminUser }) {
 
   const displayName = user.name?.trim() || user.email;
   const fullDate = formatFullDate(user.createdAt);
+
+  // One source of truth for the ⋮ button and the right-click menu, as on the
+  // other list pages. Acting on yourself is blocked server-side too (the delete
+  // route refuses your own id); disabling here explains it before the click.
+  const actions: RowAction[] = [
+    {
+      label: user.isSuperadmin ? "Demote" : "Make superadmin",
+      icon: user.isSuperadmin ? <ShieldOff size={14} /> : <ShieldCheck size={14} />,
+      disabled: self,
+      title: self ? "You cannot change your own role" : undefined,
+      onSelect: () => setUser.mutate(!user.isSuperadmin),
+    },
+    {
+      label: "Force logout",
+      icon: <LogOut size={14} />,
+      onSelect: () => forceLogout.mutate(),
+    },
+    {
+      label: "Delete",
+      icon: <Trash2 size={14} />,
+      destructive: true,
+      disabled: self,
+      title: self ? "You cannot delete your own account" : undefined,
+      onSelect: () => {
+        setDeleteEmail("");
+        setDeleteError(null);
+        setDeleteOpen(true);
+      },
+    },
+  ];
+
   const membershipSummary =
     user.memberships.length === 0
       ? "—"
@@ -122,109 +150,85 @@ function UserRow({ user }: { user: AdminUser }) {
           .join(", ") + (user.memberships.length > 2 ? ` +${user.memberships.length - 2}` : "");
 
   return (
-    <div className="data-grid__row builds-row" role="row">
-      <div role="cell" className="builds-row__triggered">
-        <UserAvatar user={user} />
-        <div className="builds-row__triggered-meta">
-          <span className="builds-row__triggered-name">{displayName}</span>
-          {user.name && (
-            <span className="builds-row__triggered-date">{user.email}</span>
+    <RowContextMenu actions={actions}>
+      <div className="data-grid__row builds-row" role="row">
+        <div role="cell" className="builds-row__triggered">
+          <UserAvatar user={user} />
+          <div className="builds-row__triggered-meta">
+            <span className="builds-row__triggered-name">{displayName}</span>
+            {user.name && (
+              <span className="builds-row__triggered-date">{user.email}</span>
+            )}
+          </div>
+        </div>
+        <div role="cell">
+          {user.isSuperadmin ? (
+            <span className="apps-list__badge apps-list__badge--warn">superadmin</span>
+          ) : (
+            <span className="builds-row__platform-label">user</span>
           )}
         </div>
-      </div>
-      <div role="cell">
-        {user.isSuperadmin ? (
-          <span className="apps-list__badge apps-list__badge--warn">superadmin</span>
-        ) : (
-          <span className="builds-row__platform-label">user</span>
-        )}
-      </div>
-      <div role="cell" className="admin-users-row__memberships">
-        {membershipSummary}
-      </div>
-      <div role="cell" className="builds-row__commit-sub">
-        <span className="tooltip-wrap" tabIndex={0} aria-label={fullDate}>
-          {relativeTime(user.createdAt)}
-          <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
-        </span>
-      </div>
-      <div role="cell" className="builds-row__menu">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label={`Actions for ${displayName}`} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              disabled={self}
-              onSelect={() => setUser.mutate(!user.isSuperadmin)}
-            >
-              {user.isSuperadmin ? "Demote" : "Make superadmin"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => forceLogout.mutate()}>
-              Force logout
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              destructive
-              disabled={self}
-              onSelect={() => {
-                setDeleteEmail("");
-                setDeleteError(null);
-                setDeleteOpen(true);
-              }}
-            >
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+        <div role="cell" className="admin-users-row__memberships">
+          {membershipSummary}
+        </div>
+        <div role="cell" className="builds-row__commit-sub">
+          <span className="tooltip-wrap" tabIndex={0} aria-label={fullDate}>
+            {relativeTime(user.createdAt)}
+            <span className="tooltip-bubble" role="tooltip">{fullDate}</span>
+          </span>
+        </div>
+        <div role="cell" className="builds-row__menu">
+          <RowActionsButton actions={actions} ariaLabel={`Actions for ${displayName}`} />
+        </div>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete user</DialogTitle>
-          </DialogHeader>
-          <DialogBody>
-            <DialogDescription asChild>
-              <div>
-                <p className="dialog-emphasis">
-                  Permanently delete <strong>{user.email}</strong>?
-                </p>
-                <p>
-                  This cascades to every organization they own (and the apps, builds and
-                  subscriptions inside). Type their email to confirm:
-                </p>
-              </div>
-            </DialogDescription>
-            <form onSubmit={submitDelete} className="settings-field" style={{ marginTop: "var(--space-md)" }}>
-              <Input
-                type="email"
-                placeholder={user.email}
-                value={deleteEmail}
-                onChange={(e) => setDeleteEmail(e.target.value)}
-                autoComplete="off"
-              />
-              {deleteError && <p className="settings-page__error">{deleteError}</p>}
-            </form>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={(e) => submitDelete(e as unknown as React.FormEvent)}
-              disabled={
-                deleteUser.isPending ||
-                deleteEmail.trim().toLowerCase() !== user.email.toLowerCase()
-              }
-              loading={deleteUser.isPending}
-            >
-              Delete user
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete user</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <DialogDescription asChild>
+                <div>
+                  <p className="dialog-emphasis">
+                    Permanently delete <strong>{user.email}</strong>?
+                  </p>
+                  <p>
+                    This cascades to every organization they own (and the apps, builds and
+                    subscriptions inside). Type their email to confirm:
+                  </p>
+                </div>
+              </DialogDescription>
+              <form onSubmit={submitDelete} className="settings-field" style={{ marginTop: "var(--space-md)" }}>
+                <Input
+                  type="email"
+                  placeholder={user.email}
+                  value={deleteEmail}
+                  onChange={(e) => setDeleteEmail(e.target.value)}
+                  autoComplete="off"
+                />
+                {deleteError && <p className="settings-page__error">{deleteError}</p>}
+              </form>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={(e) => submitDelete(e as unknown as React.FormEvent)}
+                disabled={
+                  deleteUser.isPending ||
+                  deleteEmail.trim().toLowerCase() !== user.email.toLowerCase()
+                }
+                loading={deleteUser.isPending}
+              >
+                Delete user
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </RowContextMenu>
   );
 }
 

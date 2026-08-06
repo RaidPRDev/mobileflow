@@ -14,13 +14,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  IconButton,
   Switch,
   Loading,
 } from "@mobileflow/ui";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Settings, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
 import { ApiError, AppRow, api } from "../api/client";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
 export function AppsPage() {
@@ -201,49 +201,57 @@ function AppListItem({ app, onDelete }: { app: AppRow; onDelete: () => void }) {
   const updated = relativeTime(app.createdAt);
   const updatedFull = formatFullDate(app.createdAt);
 
+  // One source of truth for both the ⋮ button and the right-click menu, same as
+  // the other list pages.
+  const actions: RowAction[] = [
+    {
+      label: "View app",
+      icon: <SquareArrowOutUpRight size={14} />,
+      onSelect: () => navigate(`/app/${app.id}/commits`),
+    },
+    {
+      label: "Settings",
+      icon: <Settings size={14} />,
+      onSelect: () => navigate(`/app/${app.id}/settings/general`),
+    },
+    {
+      label: "Delete",
+      icon: <Trash2 size={14} />,
+      destructive: true,
+      onSelect: onDelete,
+    },
+  ];
+
   return (
-    <li className="apps-list__item">
-      <Link to={`/app/${app.id}/commits`} className="apps-list__link">
-        <AppIcon app={app} />
-        <div className="apps-list__meta">
-          <div className="apps-list__name">{app.name}</div>
-          <div className="apps-list__sub">
-            <span>{runtime}</span>
-            <span className="apps-list__dot">·</span>
-            <span className="apps-list__id">{shortId}</span>
-            <span className="apps-list__dot">·</span>
-            {!app.gitRepoFullName && (
-              <>
-                <span className="apps-list__badge apps-list__badge--warn">No repo connected</span>
-                <span className="apps-list__dot">·</span>
-              </>
-            )}
-            <span className="tooltip-wrap" tabIndex={0}>
-              Last updated {updated}
-              <span className="tooltip-bubble" role="tooltip">{updatedFull}</span>
-            </span>
+    <RowContextMenu actions={actions}>
+      <li className="apps-list__item">
+        <Link to={`/app/${app.id}/commits`} className="apps-list__link">
+          <AppIcon app={app} />
+          <div className="apps-list__meta">
+            <div className="apps-list__name">{app.name}</div>
+            <div className="apps-list__sub">
+              <span>{runtime}</span>
+              <span className="apps-list__dot">·</span>
+              <span className="apps-list__id">{shortId}</span>
+              <span className="apps-list__dot">·</span>
+              {!app.gitRepoFullName && (
+                <>
+                  <span className="apps-list__badge apps-list__badge--warn">No repo connected</span>
+                  <span className="apps-list__dot">·</span>
+                </>
+              )}
+              <span className="tooltip-wrap" tabIndex={0}>
+                Last updated {updated}
+                <span className="tooltip-bubble" role="tooltip">{updatedFull}</span>
+              </span>
+            </div>
           </div>
+        </Link>
+        <div className="apps-list__actions">
+          <RowActionsButton actions={actions} ariaLabel={`Actions for ${app.name}`} />
         </div>
-      </Link>
-      <div className="apps-list__actions">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label={`Actions for ${app.name}`} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => navigate(`/app/${app.id}/commits`)}>
-              View app
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => navigate(`/app/${app.id}/settings/general`)}>
-              Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem destructive onSelect={onDelete}>
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </li>
+      </li>
+    </RowContextMenu>
   );
 }
 

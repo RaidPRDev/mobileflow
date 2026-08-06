@@ -1,29 +1,73 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, cn, Loading } from "@mobileflow/ui";
-import { CircleCheck, CircleX, Loader2, Play, Server, StopCircle } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  cn,
+  Loading,
+} from "@mobileflow/ui";
+import {
+  CircleCheck,
+  CircleX,
+  Globe,
+  Loader2,
+  Play,
+  Server,
+  StopCircle,
+  Terminal,
+} from "lucide-react";
 import {
   ApiError,
   api,
   type DeployJobRow,
   type DeployJobState,
   type DeployLogLine,
+  type DeployTargetRow,
 } from "../api/client";
 import { LogView } from "../components/LogView";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
 /**
  * Runs this repo's deploy scripts from the locally-running API and streams the
- * output here, so pushing build tooling to a host doesn't need a terminal.
+ * output here, so shipping a release — or pushing build tooling to a host —
+ * doesn't need a terminal.
+ *
+ * Targets come in two flavours, one per tab. **Server** runs the full release
+ * pipeline (zip → upload → build both images on the swarm → rolling deploy), so
+ * it is confirmed before it starts and the confirmation is re-checked by the
+ * API. **Build tools** pushes the RaidX scripts to the iOS/Android build hosts.
+ *
+ * The run history below the tabs is filtered to the active tab — a tab only
+ * ever shows its own runs — and a spinner on the other tab's trigger keeps a
+ * job running over there visible.
  *
  * Log transport mirrors the build detail page: a WebSocket while a job runs,
  * with a polling fallback that engages only when the socket isn't connected —
  * so a dropped socket degrades to slower updates instead of a frozen log.
  */
+
+type TabKey = "server" | "tooling";
+
+/** Targets are grouped by kind; "production" is what the Server tab deploys. */
+function tabForKind(kind: DeployTargetRow["kind"]): TabKey {
+  return kind === "production" ? "server" : "tooling";
+}
+
 export function AdminDeployPage() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<TabKey>("server");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<DeployTargetRow | null>(null);
 
   const targetsQ = useQuery({
     queryKey: ["admin-deploy-targets"],
@@ -40,17 +84,33 @@ export function AdminDeployPage() {
 
   const jobs = jobsQ.data?.jobs ?? [];
   const runningId = jobsQ.data?.runningId ?? null;
+  const allTargets = targetsQ.data?.targets ?? [];
 
-  // Default the selection to whatever is running, else the newest job.
+  // Runs carry a targetId, not a kind, so map one to the other to split the
+  // history per tab.
+  const tabByTargetId = useMemo(
+    () => new Map(allTargets.map((t) => [t.id, tabForKind(t.kind)])),
+    [allTargets],
+  );
+  const tabOf = (targetId: string): TabKey => tabByTargetId.get(targetId) ?? "tooling";
+  const tabJobs = jobs.filter((j) => tabOf(j.targetId) === tab);
+  const runningJob = runningId ? jobs.find((j) => j.id === runningId) : undefined;
+  const runningTab = runningJob ? tabOf(runningJob.targetId) : null;
+
+  // Default the selection to whatever is running in this tab, else its newest
+  // run. Switching tabs re-runs this and picks that tab's own selection.
   useEffect(() => {
-    if (selectedId && jobs.some((j) => j.id === selectedId)) return;
-    setSelectedId(runningId ?? jobs[0]?.id ?? null);
-  }, [jobs, runningId, selectedId]);
+    if (selectedId && tabJobs.some((j) => j.id === selectedId)) return;
+    const runningHere = runningTab === tab ? runningId : null;
+    setSelectedId(runningHere ?? tabJobs[0]?.id ?? null);
+  }, [tabJobs, runningId, runningTab, tab, selectedId]);
 
   const run = useMutation({
-    mutationFn: (targetId: string) => api.admin.runDeploy(targetId),
+    mutationFn: (target: DeployTargetRow) =>
+      api.admin.runDeploy(target.id, target.kind === "production"),
     onSuccess: (job) => {
       setError(null);
+      setConfirmTarget(null);
       setSelectedId(job.id);
       void qc.invalidateQueries({ queryKey: ["admin-deploy-jobs"] });
     },
@@ -64,6 +124,15 @@ export function AdminDeployPage() {
   });
 
   const disabled = targetsQ.data ? !targetsQ.data.enabled : false;
+  const serverTargets = allTargets.filter((t) => tabForKind(t.kind) === "server");
+  const toolingTargets = allTargets.filter((t) => tabForKind(t.kind) === "tooling");
+
+  function startTarget(target: DeployTargetRow) {
+    // Production asks first; everything else is a script push and goes straight
+    // through.
+    if (target.kind === "production") setConfirmTarget(target);
+    else run.mutate(target);
+  }
 
   return (
     <div className="page admin-deploy-page">
@@ -71,8 +140,8 @@ export function AdminDeployPage() {
         <div className="page-header__main">
           <h1 className="page-title">Deploy</h1>
           <p className="text-help">
-            Runs this checkout's deploy scripts on the machine hosting the API and streams their
-            output. Meant for local development.
+            Runs this checkout's deploy scripts on the machine hosting the API and streams the
+            output below.
           </p>
         </div>
       </div>
@@ -89,64 +158,84 @@ export function AdminDeployPage() {
       )}
 
       {/* ─── Targets ──────────────────────────────────────────────────────── */}
-      <div className="admin-deploy-targets">
-        {targetsQ.data?.targets.map((t) => (
-          <div key={t.id} className="admin-deploy-target">
-            <span className="admin-deploy-target__icon" aria-hidden>
-              <Server size={16} />
-            </span>
-            <div className="admin-deploy-target__text">
-              <div className="admin-deploy-target__label">{t.label}</div>
-              <div className="admin-deploy-target__desc">{t.description}</div>
-              <code className="plan-card__id">{t.command}</code>
-              {!t.available && (
-                <p className="text-error">Script not found in this checkout — nothing to run.</p>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="admin-deploy-tabs">
+        <TabsList>
+          <TabsTrigger value="server">
+            <span className="admin-deploy-tab">
+              <Globe size={14} aria-hidden />
+              Server
+              {runningTab === "server" && (
+                <Loader2 size={12} className="is-spinning" aria-label="Deploy running" />
               )}
-            </div>
-            <Button
-              onClick={() => run.mutate(t.id)}
-              loading={run.isPending && run.variables === t.id}
-              disabled={disabled || !t.available || !!runningId || run.isPending}
-            >
-              <Play size={14} style={{ marginRight: 6 }} aria-hidden />
-              {runningId ? "Busy" : "Deploy"}
-            </Button>
-          </div>
-        ))}
-        {targetsQ.data && targetsQ.data.targets.length === 0 && (
-          <div className="empty-state">
-            <div className="empty-state__title">No deploy targets</div>
-          </div>
-        )}
-      </div>
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="tooling">
+            <span className="admin-deploy-tab">
+              <Server size={14} aria-hidden />
+              Build tools
+              {runningTab === "tooling" && (
+                <Loader2 size={12} className="is-spinning" aria-label="Deploy running" />
+              )}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="server">
+          <TargetList
+            targets={serverTargets}
+            emptyLabel="No server deploy target is configured in this checkout."
+            disabled={disabled}
+            busy={!!runningId}
+            pendingId={run.isPending ? run.variables?.id ?? null : null}
+            onRun={startTarget}
+          />
+        </TabsContent>
+
+        <TabsContent value="tooling">
+          <TargetList
+            targets={toolingTargets}
+            emptyLabel="No build-tooling scripts were found in this checkout."
+            disabled={disabled}
+            busy={!!runningId}
+            pendingId={run.isPending ? run.variables?.id ?? null : null}
+            onRun={startTarget}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* ─── Runs + log ───────────────────────────────────────────────────── */}
       <div className="admin-deploy-layout">
         <aside className="admin-deploy-runs">
-          <div className="app-rail-section-title">Recent runs</div>
-          {jobs.length === 0 && <div className="builds-status">Nothing has run yet.</div>}
-          {jobs.map((j) => (
-            <button
-              key={j.id}
-              type="button"
-              className={cn("admin-deploy-run", selectedId === j.id && "is-active")}
-              onClick={() => setSelectedId(j.id)}
-            >
-              <StateIcon state={j.state} />
-              <span className="admin-deploy-run__main">
-                <span className="admin-deploy-run__label">{j.targetLabel}</span>
-                <span
-                  className="admin-deploy-run__time tooltip-wrap"
-                  aria-label={formatFullDate(j.startedAt)}
-                >
-                  {relativeTime(j.startedAt)}
-                  <span className="tooltip-bubble" role="tooltip">
-                    {formatFullDate(j.startedAt)}
+          <div className="admin-deploy-runs__title">Recent runs</div>
+          <div className="admin-deploy-runs__list">
+            {tabJobs.length === 0 && (
+              <p className="admin-deploy-runs__empty">
+                {tab === "server" ? "No deploys yet." : "Nothing has run yet."}
+              </p>
+            )}
+            {tabJobs.map((j) => (
+              <button
+                key={j.id}
+                type="button"
+                className={cn("admin-deploy-run", selectedId === j.id && "is-active")}
+                onClick={() => setSelectedId(j.id)}
+              >
+                <StateIcon state={j.state} />
+                <span className="admin-deploy-run__main">
+                  <span className="admin-deploy-run__label">{j.targetLabel}</span>
+                  <span
+                    className="admin-deploy-run__time tooltip-wrap"
+                    aria-label={formatFullDate(j.startedAt)}
+                  >
+                    {relativeTime(j.startedAt)}
+                    <span className="tooltip-bubble" role="tooltip">
+                      {formatFullDate(j.startedAt)}
+                    </span>
                   </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            ))}
+          </div>
         </aside>
 
         <section className="admin-deploy-log">
@@ -158,14 +247,177 @@ export function AdminDeployPage() {
               onFinished={() => void qc.invalidateQueries({ queryKey: ["admin-deploy-jobs"] })}
             />
           ) : (
-            <div className="empty-state">
-              <div className="empty-state__title">No run selected</div>
-              <p className="text-help">Start a deploy above to watch it here.</p>
+            // Deliberately not `.empty-state`: that centers a fixed-width block
+            // in the page flow, which left this panel looking like a stray box
+            // next to the runs list. This fills the panel instead.
+            <div className="admin-deploy-log__placeholder">
+              <Terminal size={20} aria-hidden />
+              <p className="admin-deploy-log__placeholder-title">No run selected</p>
+              <p className="text-help">
+                {tab === "server"
+                  ? "Deploy to live above to watch the pipeline here."
+                  : "Start a script push above to watch it here."}
+              </p>
             </div>
           )}
         </section>
       </div>
+
+      {confirmTarget && (
+        <ConfirmDeployDialog
+          target={confirmTarget}
+          pending={run.isPending}
+          onCancel={() => {
+            if (!run.isPending) setConfirmTarget(null);
+          }}
+          onConfirm={() => run.mutate(confirmTarget)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Targets ─────────────────────────────────────────────────────────────────
+
+function TargetList({
+  targets,
+  emptyLabel,
+  disabled,
+  busy,
+  pendingId,
+  onRun,
+}: {
+  targets: DeployTargetRow[];
+  emptyLabel: string;
+  disabled: boolean;
+  busy: boolean;
+  pendingId: string | null;
+  onRun: (target: DeployTargetRow) => void;
+}) {
+  if (targets.length === 0) {
+    return <p className="admin-deploy-targets__empty">{emptyLabel}</p>;
+  }
+  return (
+    <div className="admin-deploy-targets">
+      {targets.map((t) => (
+        <TargetCard
+          key={t.id}
+          target={t}
+          busy={busy}
+          pending={pendingId === t.id}
+          disabled={disabled || !t.available || busy || pendingId !== null}
+          onRun={() => onRun(t)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TargetCard({
+  target,
+  busy,
+  pending,
+  disabled,
+  onRun,
+}: {
+  target: DeployTargetRow;
+  busy: boolean;
+  pending: boolean;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  const isProduction = target.kind === "production";
+  return (
+    <div className={cn("admin-deploy-target", isProduction && "is-production")}>
+      <span className="admin-deploy-target__icon" aria-hidden>
+        {isProduction ? <Globe size={16} /> : <Server size={16} />}
+      </span>
+      <div className="admin-deploy-target__text">
+        <div className="admin-deploy-target__label">
+          {target.label}
+          {isProduction && <span className="admin-deploy-target__tag">production</span>}
+        </div>
+        <div className="admin-deploy-target__desc">{target.description}</div>
+        {/* One muted line of identity: where it lands, then the exact argv —
+            sized to its content rather than stretched across the card, which is
+            what made a list of these read as a wall of grey bars. */}
+        <div className="admin-deploy-target__meta">
+          {target.stack && (
+            <span>
+              stack <code>{target.stack}</code>
+            </span>
+          )}
+          {target.url && (
+            <a href={target.url} target="_blank" rel="noreferrer">
+              {target.url}
+            </a>
+          )}
+          <code className="admin-deploy-target__cmd">{target.command}</code>
+        </div>
+        {!target.available && (
+          <p className="text-error">Script not found in this checkout — nothing to run.</p>
+        )}
+      </div>
+      <Button
+        onClick={onRun}
+        loading={pending}
+        disabled={disabled}
+        variant={isProduction ? "default" : "outline"}
+      >
+        {/* No inline margin: `.btn` already sets its own icon/label gap, and
+            the two stacked left a visible hole between them. */}
+        <Play size={14} aria-hidden />
+        {busy && !pending ? "Busy" : isProduction ? "Deploy to live" : "Deploy"}
+      </Button>
+    </div>
+  );
+}
+
+function ConfirmDeployDialog({
+  target,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  target: DeployTargetRow;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o && !pending) onCancel();
+      }}
+    >
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Deploy to {target.url ?? "production"}?</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <p>
+            This uploads the current state of your working copy — including uncommitted changes —
+            builds it on the swarm host and rolls the{" "}
+            <strong>{target.stack ?? "production"}</strong> stack.
+          </p>
+          <ul className="delete-app-list with-bullets">
+            <li>Postgres is dumped before anything is applied.</li>
+            <li>Web and API roll one at a time; the old task only stops once the new one is healthy.</li>
+            <li>An API that never reports healthy rolls back to the previous image automatically.</li>
+            <li>Expect several minutes — the images are built from scratch on the host.</li>
+          </ul>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} loading={pending}>
+            Deploy
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -273,7 +525,13 @@ function JobPanel({
     [lines],
   );
 
-  if (!job) return <div className="builds-status"><Loading>Loading run…</Loading></div>;
+  if (!job) {
+    return (
+      <div className="admin-deploy-log__placeholder">
+        <Loading>Loading run…</Loading>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -281,7 +539,7 @@ function JobPanel({
         <StateIcon state={job.state} />
         <div className="admin-deploy-log__meta">
           <span className="admin-deploy-log__title">{job.targetLabel}</span>
-          <code className="plan-card__id">{job.command}</code>
+          <code className="admin-deploy-target__cmd">{job.command}</code>
         </div>
         <span className="text-help">
           {job.state === "running"
@@ -292,19 +550,24 @@ function JobPanel({
         </span>
         {job.state === "running" && (
           <Button variant="outline" className="btn-danger-outline" onClick={onCancel} loading={canceling}>
-            <StopCircle size={14} style={{ marginRight: 6 }} aria-hidden />
+            <StopCircle size={14} aria-hidden />
             Cancel
           </Button>
         )}
       </div>
 
       {job.truncated && (
-        <p className="text-help">
+        <p className="admin-deploy-log__notice">
           Output was long — only the most recent lines are kept.
         </p>
       )}
 
-      <LogView raw={raw} className="admin-deploy-log__body" empty="Waiting for output…" />
+      {/* app-scroll matches the build page's log scrollbar on the dark surface. */}
+      <LogView
+        raw={raw}
+        className="admin-deploy-log__body app-scroll"
+        empty="Waiting for output…"
+      />
     </>
   );
 }

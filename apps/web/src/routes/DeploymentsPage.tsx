@@ -146,6 +146,7 @@ export function DeploymentsPage() {
             unit="deployment"
             onPrev={() => setPage((p) => Math.max(0, p - 1))}
             onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            onPage={setPage}
           />
         </>
       )}

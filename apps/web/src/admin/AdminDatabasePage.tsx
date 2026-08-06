@@ -360,6 +360,7 @@ export function AdminDatabasePage() {
                       busy={rowsQ.isFetching}
                       onPrev={() => setPage((p) => Math.max(0, p - 1))}
                       onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                      onPage={setPage}
                     />
                     {data.primaryKey.length === 0 && (
                       <p className="text-help">

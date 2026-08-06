@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
+    "db:push:prod": "drizzle-kit push --config drizzle.config.prod.ts",
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {

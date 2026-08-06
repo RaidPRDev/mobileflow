@@ -1,0 +1,173 @@
+# 3.8: required for update_config.order / rollback_config / failure_action and
+# healthcheck.start_period below (Swarm silently ignores them on 3.3).
+version: "3.8"
+services:
+  web:
+    image: ${DOCKER_IMAGE_WEB}
+    networks:
+      - traefik-public
+      - caimon-network
+    healthcheck:
+      # 127.0.0.1, NOT localhost: this image's /etc/hosts lists "::1 localhost"
+      # first and nginx here is IPv4-only on 0.0.0.0:80, so BusyBox wget to
+      # "localhost" hits ::1 → refused → false-unhealthy → rollback.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      restart_policy:
+        condition: on-failure
+      # Rolling update: the new task must be healthy before the old one stops
+      # (zero downtime), and a task that never goes healthy rolls back.
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+
+        - traefik.http.routers.${APP_ROUTER}-http.rule=Host(`caimon.raidpr.com`)
+        - traefik.http.routers.${APP_ROUTER}-http.entrypoints=http
+        - traefik.http.routers.${APP_ROUTER}-http.middlewares=https-redirect
+
+        - traefik.http.routers.${APP_ROUTER}-https.rule=Host(`caimon.raidpr.com`)
+        - traefik.http.routers.${APP_ROUTER}-https.entrypoints=https
+        - traefik.http.routers.${APP_ROUTER}-https.tls=true
+        - traefik.http.routers.${APP_ROUTER}-https.tls.certresolver=le
+
+        - traefik.http.services.${APP_ROUTER}.loadbalancer.server.port=80
+
+  api:
+    image: ${DOCKER_IMAGE_API}
+    networks:
+      - caimon-network
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=4000
+      - DATABASE_URL=postgres://caimon:${CAIMON_DB_PASSWORD}@db:5432/caimon
+      - COOKIE_SECRET=${CAIMON_COOKIE_SECRET}
+      - TOKEN_ENC_KEY=${CAIMON_TOKEN_ENC_KEY}
+      # The SPA is served same-origin by nginx, so the only browser origin that
+      # ever calls this API is the public site itself.
+      - WEB_ORIGIN=https://caimon.raidpr.com
+      # Traefik → web(nginx) → api: the hop we trust for X-Forwarded-* is the
+      # nginx container, which is not loopback from the API's point of view.
+      # `true` is rejected at boot by env.ts, so name the overlay subnet.
+      - TRUST_PROXY=${CAIMON_TRUST_PROXY}
+      - API_BASE_URL=https://caimon.raidpr.com
+      - WEB_BASE_URL=https://caimon.raidpr.com
+      # Absolute, on a named volume — admin activity logs must survive a rolling
+      # update (LOG_DIR relative would resolve inside the container's /app).
+      - LOG_DIR=/data/logs
+      # Deploy-from-the-admin stays OFF in production: it shells out to these
+      # very scripts, and the API container has no ssh key, no repo, no docker.
+      - ADMIN_LOCAL_DEPLOY=false
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+      - TESTERCLIENT_EMAIL=${TESTERCLIENT_EMAIL}
+      - TESTERCLIENT_PASSWORD=${TESTERCLIENT_PASSWORD}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_GIT_CLIENT_ID=${GITHUB_GIT_CLIENT_ID}
+      - GITHUB_GIT_CLIENT_SECRET=${GITHUB_GIT_CLIENT_SECRET}
+      # Build hosts. The private keys are NOT baked into the image — they are
+      # read from /keys, a read-only bind of ${CAIMON_KEYS_DIR} on the host.
+      - LINUX_BUILD_HOST=${LINUX_BUILD_HOST}
+      - LINUX_BUILD_PORT=${LINUX_BUILD_PORT}
+      - LINUX_BUILD_USER=${LINUX_BUILD_USER}
+      - LINUX_BUILD_SSH_KEY_PATH=${LINUX_BUILD_SSH_KEY_PATH}
+      - LINUX_BUILD_REMOTE_BASE=${LINUX_BUILD_REMOTE_BASE}
+      - LINUX_BUILD_DOWNLOADS_BASE=${LINUX_BUILD_DOWNLOADS_BASE}
+      - LINUX_BUILD_DOWNLOADS_BASE_URL=${LINUX_BUILD_DOWNLOADS_BASE_URL}
+      - LINUX_BUILD_ANDROID_IMAGE=${LINUX_BUILD_ANDROID_IMAGE}
+      - LINUX_BUILD_ANDROID_TOOLS=${LINUX_BUILD_ANDROID_TOOLS}
+      - MAC_BUILD_HOST=${MAC_BUILD_HOST}
+      - MAC_BUILD_PORT=${MAC_BUILD_PORT}
+      - MAC_BUILD_USER=${MAC_BUILD_USER}
+      - MAC_BUILD_SSH_KEY_PATH=${MAC_BUILD_SSH_KEY_PATH}
+      - MAC_BUILD_REMOTE_BASE=${MAC_BUILD_REMOTE_BASE}
+      - MAC_BUILD_DOWNLOADS_BASE=${MAC_BUILD_DOWNLOADS_BASE}
+      - MAC_BUILD_DOWNLOADS_BASE_URL=${MAC_BUILD_DOWNLOADS_BASE_URL}
+      - MAC_BUILD_TOOLS=${MAC_BUILD_TOOLS}
+    volumes:
+      - caimon_logs:/data/logs
+      # Build-host SSH keys, mounted read-only from the cloud host.
+      - ${CAIMON_KEYS_DIR}:/keys:ro
+    healthcheck:
+      # Node 20 has global fetch; /health answers once Fastify is listening,
+      # which only happens after schema push + seed succeed.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Generous: the new task runs the schema push + seed before answering.
+      start_period: 90s
+    deploy:
+      restart_policy:
+        condition: on-failure
+      # The new api task must pass /health (schema applied, seed done, Fastify
+      # serving) before Swarm stops the old one; if it never does, roll back to
+      # the previous image — the pre-deploy pg_dump is the data safety net.
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+        monitor: 120s
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      # Pinned to a manager so the local logs volume and the /keys bind stay
+      # with the task.
+      placement:
+        constraints:
+          - node.role == manager
+
+  db:
+    image: postgres:16-alpine
+    networks:
+      - caimon-network
+    environment:
+      - POSTGRES_USER=caimon
+      - POSTGRES_PASSWORD=${CAIMON_DB_PASSWORD}
+      - POSTGRES_DB=caimon
+    volumes:
+      - caimon_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caimon -d caimon"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      # This service spec is identical across deploys, so `docker stack deploy`
+      # leaves the running task alone — Postgres is never recreated on a routine
+      # redeploy. The named volume below holds the data regardless.
+      restart_policy:
+        condition: on-failure
+      # Never run two Postgres tasks against the same volume during an update.
+      update_config:
+        order: stop-first
+        parallelism: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+networks:
+  traefik-public:
+    external: true
+  caimon-network:
+
+volumes:
+  caimon_db:
+  caimon_logs:

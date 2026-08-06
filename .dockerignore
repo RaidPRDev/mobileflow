@@ -1,0 +1,24 @@
+# Build context is the repo root. Everything the two Dockerfiles need is COPYed
+# explicitly, so this mostly keeps heavy, host-specific junk out of the context
+# transfer — with one exception that matters for correctness:
+#
+# `COPY apps/api apps/api` would otherwise bake the developer's own
+# apps/api/.env into the production image. env.ts fills in any variable the
+# stack file did NOT set from that file, so a local Stripe key or build-host
+# credential would silently become production config. The `**/` prefix is
+# required — a bare `.env` pattern matches only the context root. (The image
+# also sets SKIP_DOTENV, so this is the first of two locks on the same door.)
+**/.env
+**/.env.local
+**/.env.*.local
+
+node_modules
+**/node_modules
+**/dist
+.git
+.tmp
+logs
+References
+infra/seed
+apps/desktop/src-tauri
+**/*.log

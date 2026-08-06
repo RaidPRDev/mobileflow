@@ -194,6 +194,24 @@
   box-shadow: var(--shadow-md);
 }
 
+// `.tooltip-bubble` is also the class the Radix tooltip in ui/Tooltip.less
+// styles, and that rule caps the bubble at `max-width: 240px`. Combined with the
+// `nowrap` above, anything longer — a full 40-char commit SHA — kept its single
+// line but drew the background only 240px wide, so the text spilled out past the
+// bubble. Scoping to `.tooltip-wrap` outranks both bare `.tooltip-bubble` rules
+// regardless of which stylesheet lands last, so this tooltip owns its own width.
+.tooltip-wrap .tooltip-bubble {
+  // `width: max-content` is what makes this work. An absolutely positioned box
+  // shrink-to-fits against its containing block — here the tiny `.tooltip-wrap`
+  // anchor — so a wrappable bubble collapsed to one character per line. Sizing
+  // to the content instead, then capping with max-width, gives one line for
+  // normal content and a wrap only when it would leave the viewport.
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tooltip-wrap:hover .tooltip-bubble,
 .tooltip-wrap:focus-visible .tooltip-bubble {
   opacity: 1;

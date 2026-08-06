@@ -113,10 +113,13 @@
 
 // ─── Shared list footer (count + pager) ──────────────────────────────────────
 
+// Three columns rather than `space-between`, so the page indicator sits at the
+// true centre of the footer no matter how wide the count label happens to be.
 .list-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-md);
   padding-top: var(--space-md);
   color: var(--color-fg-muted);
   font-size: 13px;
@@ -124,7 +127,64 @@
 
 .list-footer__pager {
   display: flex;
+  justify-content: flex-end;
   gap: var(--space-sm);
+}
+
+// ── Numbered page indicator ──────────────────────────────────────────────────
+
+.list-footer__pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.list-footer__page {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+  // Digits keep the same advance width, so the row never jitters as the numbers
+  // change under the cursor.
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.list-footer__page:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  color: var(--color-fg);
+}
+
+// The active page is a disabled button — style it before the disabled rule so
+// it reads as selected rather than unavailable.
+.list-footer__page.is-active,
+.list-footer__page.is-active:disabled {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  opacity: 1;
+}
+
+.list-footer__page:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+// Matches the page-button footprint so a gap swapping to or from a number never
+// shifts the row horizontally.
+.list-footer__page-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  color: var(--color-fg-subtle);
+  user-select: none;
 }
 
 // ─── Detail page ─────────────────────────────────────────────────────────────

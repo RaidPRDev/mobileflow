@@ -65,6 +65,16 @@
   gap: var(--space-md);
   padding: 14px var(--space-sm);
   border-bottom: 1px solid var(--color-border);
+  position: relative;
+}
+
+// `.fade-in` settles on a transform (`animation-fill-mode: both`), which makes
+// every row its own stacking context — so the SHA tooltip painted *under* the
+// rows below it however high its own z-index went. Lift whichever row the
+// pointer or keyboard is on above its siblings while its tooltip is open.
+.commit-row:hover,
+.commit-row:focus-within {
+  z-index: 20;
 }
 
 .commit-row__avatar {

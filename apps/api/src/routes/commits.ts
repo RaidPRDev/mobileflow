@@ -24,6 +24,14 @@ interface CommitsPage {
   perPage: number;
   hasNext: boolean;
   totalCount: number | null;
+  /**
+   * True when `totalCount` is the deepest this endpoint will serve rather than
+   * the repository's real commit count — the all-branch merge stops at
+   * MAX_POOL_DEPTH. The page count derived from it is still exact (you cannot
+   * page past it), so the UI can show a stable last page; it just labels the
+   * count as a floor ("1,530+ commits").
+   */
+  totalCapped?: boolean;
   accountLogin: string | null;
   accountAvatarUrl: string | null;
 }
@@ -365,7 +373,14 @@ export async function commitsRoutes(server: FastifyInstance) {
           return out;
         }
         const end = page * perPage;
-        const need = Math.min(MAX_POOL_DEPTH, end + 1);
+        // Fill to the cap no matter which page was asked for. Growing the pool
+        // lazily (`need = end + 1`) meant the merged length — and therefore the
+        // page count — stayed unknown until you happened to page deep enough to
+        // hit the cap, so the pager had to infer "one more page exists" and
+        // could never show a stable last page. The pool is cached per repo for
+        // POOL_TTL_MS and reused for every page inside that window, so this is
+        // one deeper fan-out per 30s, not per request.
+        const need = MAX_POOL_DEPTH;
         const pool = await loadCommitPool(
           `${conn.id}:${row.gitRepoFullName}`,
           provider,
@@ -374,14 +389,20 @@ export async function commitsRoutes(server: FastifyInstance) {
           need,
           (b, err) => server.log.warn({ err, provider, branch: b }, "fetch branch commits failed"),
         );
+        // The pool is filled to the cap above, so its length is everything this
+        // endpoint will ever hand back: the page count derived from it is exact
+        // and stays put as you page around. `complete` — every branch read to
+        // its root, no branch skipped — is the narrower case where the number is
+        // also the repository's true commit count rather than our servable
+        // ceiling; anything else is reported as a floor ("1,530+ commits").
         const complete = !pool.hasMore && !pool.branchesTruncated;
         const out: CommitsPage = {
           items: pool.items.slice((page - 1) * perPage, end),
           page,
           perPage,
-          hasNext: end < pool.items.length || (pool.hasMore && need < MAX_POOL_DEPTH),
-          // Only exact once every branch has been read to its root.
-          totalCount: complete ? pool.items.length : null,
+          hasNext: end < pool.items.length,
+          totalCount: pool.items.length,
+          totalCapped: !complete,
           ...account,
         };
         return out;

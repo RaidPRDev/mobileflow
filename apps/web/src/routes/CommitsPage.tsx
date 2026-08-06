@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Button, Loading } from "@mobileflow/ui";
-import { ExternalLink, GitBranch, Search } from "lucide-react";
+import { ExternalLink, GitBranch, Rocket, Search } from "lucide-react";
 import { ApiError, api, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
@@ -81,6 +81,9 @@ export function CommitsPage() {
 
   const totalCount = commitsQ.data?.totalCount;
   const hasNext = commitsQ.data?.hasNext ?? false;
+  // A capped count is exact for paging (nothing lives past it) but is a floor
+  // for the repo — label it "1,530+ commits" rather than claiming the total.
+  const totalCapped = commitsQ.data?.totalCapped ?? false;
   const startBuild = (c: CommitRow) => {
     const qs = new URLSearchParams({ commitId: c.sha });
     if (c.branch) qs.set("branch", c.branch);
@@ -141,10 +144,18 @@ export function CommitsPage() {
         }
         total={totalCount ?? undefined}
         unit="commit"
-        countLabel={totalCount == null ? "" : undefined}
+        countLabel={
+          totalCount == null
+            ? ""
+            : totalCapped
+              ? `${totalCount.toLocaleString()}+ commits`
+              : undefined
+        }
         busy={commitsQ.isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => p + 1)}
+        // ListFooter speaks 0-indexed pages; this page's state is 1-indexed.
+        onPage={(i) => setPage(i + 1)}
       />
     </div>
   );
@@ -166,7 +177,20 @@ function CommitRowItem({ commit, accountAvatarUrl, accountLogin, onStartBuild }:
   const fullDate = formatFullDate(commit.date);
 
   return (
-    <RowContextMenu actions={[{ label: "Start build", onSelect: onStartBuild }]}>
+    <RowContextMenu
+      actions={[
+        { label: "Start build", icon: <Rocket size={14} />, onSelect: onStartBuild },
+        {
+          label: "View commit",
+          icon: <ExternalLink size={14} />,
+          // Straight to the provider's commit page. noopener: the opened tab
+          // must not get a handle on this window.
+          onSelect: () => window.open(commit.url, "_blank", "noopener,noreferrer"),
+          disabled: !commit.url,
+          title: commit.url ? commit.url : "No commit URL from the provider",
+        },
+      ]}
+    >
       <div className="commit-row fade-in">
         <div className="commit-row__avatar">
           {avatarSrc ? (
@@ -221,6 +245,9 @@ function CommitRowItem({ commit, accountAvatarUrl, accountLogin, onStartBuild }:
         <div className="commit-row__action">
           <Button variant="outline" size="sm" onClick={onStartBuild}>
             Start build
+            {/* Trailing, not leading: the icon reads as the outcome of the
+                action ("ship it"), and `.btn` already spaces it from the label. */}
+            <Rocket size={14} aria-hidden />
           </Button>
         </div>
       </div>

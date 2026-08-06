@@ -1,0 +1,55 @@
+# Caimón API (Fastify + Drizzle + ssh2). Built from the monorepo root as the
+# build context. glibc (not alpine) because @node-rs/argon2 ships prebuilt
+# N-API binaries that assume glibc — musl would fall back to a source build.
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# openssh-client: the build runners shell out to ssh/scp for the Mac + Linux
+# build hosts. ca-certificates: outbound HTTPS (OAuth, Stripe, git providers).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-client ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# pnpm via corepack, pinned to the workspace's packageManager.
+RUN corepack enable && corepack prepare pnpm@8.15.6 --activate
+
+# Every workspace manifest is needed for the lockfile check, even the ones this
+# image doesn't install — pnpm validates the whole workspace graph against
+# pnpm-lock.yaml before a filtered install narrows what gets fetched.
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/
+COPY packages/ui/package.json packages/ui/
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/docs/package.json apps/docs/
+COPY apps/desktop/package.json apps/desktop/
+
+# `--filter @mobileflow/api...` installs the API and what it depends on
+# (packages/shared) and skips rspack/tauri entirely.
+# `--prod=false` keeps devDependencies: the API has no build step — it runs
+# through `tsx` at runtime, and drizzle-kit applies the schema on boot. Both are
+# devDependencies, so a production-only install could not boot the container.
+RUN pnpm install --frozen-lockfile --prod=false --filter @mobileflow/api...
+
+# Sources. The API runs via tsx (no separate emit step) to avoid rootDir/outDir
+# ambiguity across the workspace; type validation happens in CI.
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+
+ENV NODE_ENV=production
+# env.ts falls back to a .env file next to the app for anything the environment
+# didn't set. In production that fallback is a foot-gun — a stray .env in the
+# image would quietly supply a developer's Stripe key or build-host credentials
+# for every variable the stack file happens to omit. .dockerignore keeps such a
+# file out; this makes the loader ignore one even if it gets in.
+ENV SKIP_DOTENV=1
+# Admin activity logs go to a named volume (see the stack file), not the image.
+ENV LOG_DIR=/data/logs
+EXPOSE 4000
+
+# Swarm ignores depends_on, so wait for Postgres ourselves, then apply the
+# schema and seed before serving. /health only answers after all three succeed,
+# which is exactly what the healthcheck (and therefore the rolling update)
+# gates on.
+CMD ["sh", "-lc", "node apps/api/scripts/wait-for-db.mjs && pnpm --filter @mobileflow/api db:push:prod && pnpm --filter @mobileflow/api db:seed && pnpm --filter @mobileflow/api start"]
