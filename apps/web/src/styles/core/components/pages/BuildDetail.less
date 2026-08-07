@@ -400,6 +400,43 @@
   font-style: italic;
 }
 
+// Centered "waiting for a free build slot" panel shown in place of the log
+// while a queued build is blocked on host capacity.
+.build-logs__waiting {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--space-xl);
+  text-align: center;
+  color: #9ca3af;
+
+  svg {
+    color: #6b7280;
+    margin-bottom: var(--space-sm);
+  }
+}
+
+.build-logs__waiting-title {
+  margin: 0;
+  font-size: 15px;
+  color: #d1d5db;
+
+  strong {
+    color: #f9fafb;
+    font-weight: 600;
+  }
+}
+
+.build-logs__waiting-sub {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
 .build-logs__error {
   padding: var(--space-md) var(--space-lg);
   background: rgba(220, 38, 38, 0.12);

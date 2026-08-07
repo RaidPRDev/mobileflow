@@ -9,6 +9,7 @@ import {
   Copy,
   Download,
   GitBranch,
+  Hourglass,
   Loader2,
   MinusCircle,
 } from "lucide-react";
@@ -43,7 +44,8 @@ interface StatusEvent {
   finishedAt?: string | null;
 }
 interface ArtifactsEvent { type: "artifacts"; artifacts: { kind: string; url: string }[] }
-type StreamEvent = SnapshotEvent | LogEvent | StepEvent | StatusEvent | ArtifactsEvent | { type: "error"; message: string };
+interface QueueEvent { type: "queue"; waiting: boolean; hostName: string; capacity: number; running: number }
+type StreamEvent = SnapshotEvent | LogEvent | StepEvent | StatusEvent | ArtifactsEvent | QueueEvent | { type: "error"; message: string };
 
 const PLATFORM_META: Record<BuildTarget, { label: string; iconBg: string; icon: JSX.Element }> = {
   ios: { label: "iOS", iconBg: "#0a0a0a", icon: <AppleIcon /> },
@@ -160,6 +162,20 @@ export function BuildPage() {
                 // snapshot pre-dated the claim (startedAt was still null).
                 startedAt: evt.startedAt ?? s.startedAt,
                 finishedAt: evt.finishedAt ?? s.finishedAt,
+                // Any status transition means the build is no longer parked
+                // behind host capacity.
+                queue: evt.status === "queued" ? s.queue : null,
+              }
+            : s,
+        );
+      } else if (evt.type === "queue") {
+        setSnapshot((s) =>
+          s
+            ? {
+                ...s,
+                queue: evt.waiting
+                  ? { hostName: evt.hostName, capacity: evt.capacity, running: evt.running }
+                  : null,
               }
             : s,
         );
@@ -405,13 +421,29 @@ export function BuildPage() {
               <span className="build-logs__count">{logBuf ? `${logBuf.length.toLocaleString()} chars` : ""}</span>
             </div>
           </header>
-          <LogView
-            ref={logRef}
-            raw={logBuf}
-            onScroll={onLogScroll}
-            className="build-logs__pre app-scroll"
-            empty={<span className="build-logs__empty">(no output yet)</span>}
-          />
+          {b.status === "queued" && b.queue ? (
+            <div className="build-logs__waiting" role="status">
+              <Hourglass size={26} aria-hidden />
+              <p className="build-logs__waiting-title">
+                Build host <strong>{b.queue.hostName}</strong> is at its limit of{" "}
+                <strong>
+                  {b.queue.capacity} concurrent build{b.queue.capacity === 1 ? "" : "s"}
+                </strong>
+                .
+              </p>
+              <p className="build-logs__waiting-sub">
+                This build will start automatically when a running build completes.
+              </p>
+            </div>
+          ) : (
+            <LogView
+              ref={logRef}
+              raw={logBuf}
+              onScroll={onLogScroll}
+              className="build-logs__pre app-scroll"
+              empty={<span className="build-logs__empty">(no output yet)</span>}
+            />
+          )}
           {b.errorMessage && (
             <div className="build-logs__error">
               <span className="build-logs__error-label">Error</span>

@@ -9,7 +9,9 @@ type Event =
   | { type: "log"; line: string; offset: number }
   | { type: "step"; name: string; status: string; exitCode?: number }
   | { type: "status"; status: string; errorMessage?: string | null; startedAt?: string | null; finishedAt?: string | null }
-  | { type: "artifacts"; artifacts: { kind: string; url: string }[] };
+  | { type: "artifacts"; artifacts: { kind: string; url: string }[] }
+  // Emitted each worker tick while a queued build is blocked on host capacity.
+  | { type: "queue"; waiting: boolean; hostName: string; capacity: number; running: number };
 
 class BuildBus {
   private emitter = new EventEmitter();

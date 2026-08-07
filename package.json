@@ -1,8 +1,8 @@
 {
   "name": "mobileflow",
   "version": "0.0.0",
-  "buildNumber": 5,
-  "buildDate": "2026-08-07T05:24:58.745Z",
+  "buildNumber": 6,
+  "buildDate": "2026-08-07T06:38:02.880Z",
   "buildType": "beta",
   "private": true,
   "packageManager": "pnpm@8.15.6",

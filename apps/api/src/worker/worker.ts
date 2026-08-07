@@ -1,18 +1,36 @@
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { apps, buildSteps, builds, deployments, storeDestinations, type Build } from "../db/schema.js";
 import type { RunnerContext } from "./runner.js";
 import { pickRunner } from "./runners/selector.js";
 import { buildBus } from "./events.js";
+import { hostSlotForBuild, lowestFreeSlot, runningSlotsOnHost, type HostSlot } from "./hostCapacity.js";
 import { sweepMacBuildSandboxes } from "./maintenance.js";
 import { maskLogLine } from "../lib/maskLog.js";
 
 let timer: NodeJS.Timeout | null = null;
 let inFlight = 0;
-const MAX_CONCURRENCY = 2;
+// Process-level safety valve only — the real limiter is each host's capacity
+// (build_hosts.capacity / LINUX_BUILD_CAPACITY / MAC_BUILD_CAPACITY), checked
+// per queued build in tick(). Kept above the sum of typical host capacities so
+// a saturated Linux host can't starve free Mac slots.
+const MAX_CONCURRENCY = 8;
 
 export function startWorker(intervalMs = 1500) {
   if (timer) return;
+  // Builds execute in-process, so a row still 'running' at boot was orphaned
+  // by a crash/restart and will never finish — left alone it would also pin
+  // one of its host's capacity slots forever. Fail such rows up front.
+  // (Assumes a single API instance, same as the in-process buildBus.)
+  void db
+    .update(builds)
+    .set({ status: "failed", finishedAt: new Date(), errorMessage: "Build was interrupted by an API restart" })
+    .where(eq(builds.status, "running"))
+    .then((r) => {
+      const n = (r as unknown as { rowCount?: number }).rowCount ?? 0;
+      if (n > 0) console.log(`[worker] failed ${n} build(s) orphaned by the previous run`);
+    })
+    .catch((err) => console.error("[worker] orphaned-build sweep failed:", err));
   // Fire-and-forget sweep of orphan Mac build dirs. Runs in the background
   // while the polling loop starts — failures here must not delay the worker.
   void sweepMacBuildSandboxes();
@@ -27,23 +45,70 @@ export function stopWorker() {
 
 async function tick() {
   if (inFlight >= MAX_CONCURRENCY) return;
-  // Atomically claim one queued build.
-  const claimed = await db.execute<{ id: string }>(sql`
-    UPDATE builds
-    SET status = 'running', started_at = now()
-    WHERE id = (
-      SELECT id FROM builds WHERE status = 'queued'
-      ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1
-    )
-    RETURNING id
-  `);
-  const claimedRows = (claimed as unknown as { id: string }[]) ?? [];
-  const row = claimedRows[0];
-  if (!row) return;
-  inFlight++;
-  void runOne(row.id).finally(() => {
-    inFlight--;
+  // Oldest-first scan of the queue. A build whose host is at capacity stays
+  // queued but must not block builds bound for other hosts (a waiting Android
+  // build shouldn't starve a free Mac slot), so we walk past it.
+  const queued = await db
+    .select({ id: builds.id, target: builds.target, stackId: builds.stackId })
+    .from(builds)
+    .where(eq(builds.status, "queued"))
+    .orderBy(asc(builds.createdAt))
+    .limit(20);
+  for (const q of queued) {
+    const slot = await hostSlotForBuild(q);
+    let slotIndex: number | null = null;
+    if (slot) {
+      const usedSlots = await runningSlotsOnHost(slot.selector);
+      if (usedSlots.length >= slot.capacity) {
+        await notifyWaitingForSlot(q.id, slot, usedSlots.length);
+        continue;
+      }
+      slotIndex = lowestFreeSlot(usedSlots, slot.capacity);
+    }
+    // Atomically claim it, stamping the resolved host + concurrency slot so
+    // capacity counting sees this build immediately and runners get a slot
+    // no concurrent build shares. The status guard loses gracefully if
+    // another API instance (or a cancel) got there first.
+    const claimed = await db.execute<{ id: string }>(sql`
+      UPDATE builds
+      SET status = 'running', started_at = now(),
+          host_id = ${slot?.selector ?? null}, host_slot = ${slotIndex}
+      WHERE id = ${q.id} AND status = 'queued'
+      RETURNING id
+    `);
+    const claimedRows = (claimed as unknown as { id: string }[]) ?? [];
+    if (!claimedRows[0]) continue;
+    waitingNotified.delete(q.id);
+    inFlight++;
+    void runOne(q.id).finally(() => {
+      inFlight--;
+    });
+    return; // one claim per tick, as before
+  }
+}
+
+// Build ids that already got their "waiting for a free slot" log line, so the
+// 1.5s tick doesn't spam the stored log. Entries for builds cancelled while
+// queued linger until restart — harmless, bounded by builds per process life.
+const waitingNotified = new Set<string>();
+
+async function notifyWaitingForSlot(buildId: string, slot: HostSlot, running: number) {
+  // The bus event fires every tick so an open build page tracks the live
+  // running/capacity numbers; the log line is written once as the durable
+  // record of why the build sat in the queue.
+  buildBus.emit(buildId, {
+    type: "queue",
+    waiting: true,
+    hostName: slot.name,
+    capacity: slot.capacity,
+    running,
   });
+  if (waitingNotified.has(buildId)) return;
+  waitingNotified.add(buildId);
+  await appendLog(
+    buildId,
+    `Build host "${slot.name}" is at its limit of ${slot.capacity} concurrent build${slot.capacity === 1 ? "" : "s"} — waiting for a free slot. The build starts automatically when a running build completes.`,
+  );
 }
 
 async function runOne(buildId: string) {

@@ -129,11 +129,20 @@ export class LinuxDockerAndroidRunner implements Runner {
         throw e;
       }
       const dockerEnv = await collectEnvFlags(ctx);
+      // Gradle's cross-process cache locks assume one machine: the waiter pings
+      // the lock owner over a localhost socket, which never crosses container
+      // network namespaces, so two containers sharing a volume kill the second
+      // build with "Timeout waiting to lock artifact cache". Each concurrent
+      // build therefore mounts the volume of its host slot (assigned by the
+      // worker at claim time, unique among running builds on this host) —
+      // raidx-gradle-cache-slot0…N-1, each keeping a warm dependency cache.
+      const gradleVolume = `raidx-gradle-cache-slot${ctx.build.hostSlot ?? 0}`;
+      await ctx.log(`Gradle cache volume: ${gradleVolume}`);
       const dockerCmd = [
         `docker run --rm`,
         `-v ${shq(`${remoteDir}:/workspace`)}`,
         `-v ${shq(`${androidTools}:/tools`)}`,
-        `-v raidx-gradle-cache:/root/.gradle`,
+        `-v ${shq(`${gradleVolume}:/root/.gradle`)}`,
         `-e BUILD_ID=${shq(buildId)}`,
         `-e CLIENT_ID=${shq(orgId)}`,
         `-e MODE=build`,

@@ -314,9 +314,17 @@ export interface BuildStepRow {
   exitCode: number | null;
 }
 
+/** Present while a queued build is blocked because its host is at capacity. */
+export interface BuildQueueInfo {
+  hostName: string;
+  capacity: number;
+  running: number;
+}
+
 export interface BuildDetail extends Omit<BuildRow, never> {
   steps: BuildStepRow[];
   log: { offset: number; length: number; tail: string };
+  queue?: BuildQueueInfo | null;
 }
 
 export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "cancelled";

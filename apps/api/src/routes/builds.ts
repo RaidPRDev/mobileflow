@@ -6,6 +6,7 @@ import { apps, buildStacks, builds, buildSteps, certificates, deployments, store
 import { requireOrgMember, requireUser } from "../auth/middleware.js";
 import { assertCanStartBuild } from "../plans/gate.js";
 import { buildBus } from "../worker/events.js";
+import { queueInfoFor } from "../worker/hostCapacity.js";
 import { SESSION_COOKIE, getSession } from "../auth/session.js";
 import { maskLogLine } from "../lib/maskLog.js";
 
@@ -186,12 +187,16 @@ export async function buildsRoutes(app: FastifyInstance) {
         .limit(1);
       certificateLabel = cert?.label ?? null;
     }
+    // Non-null only while the build is queued *because* its host is at
+    // capacity — drives the "waiting for a free build slot" banner.
+    const queue = b.status === "queued" ? await queueInfoFor(b) : null;
     return {
       ...b,
       logText: undefined,
       triggeredByName: row.triggeredByName,
       triggeredByEmail: row.triggeredByEmail,
       certificateLabel,
+      queue,
       steps,
       // `length` is the raw DB length and stays the client's cursor; the tail
       // is masked on the way out so logs written before masking existed are
@@ -263,6 +268,8 @@ export async function buildsRoutes(app: FastifyInstance) {
             triggeredByName: row.triggeredByName,
             triggeredByEmail: row.triggeredByEmail,
             certificateLabel,
+            // Live updates arrive as "queue" bus events from the worker tick.
+            queue: b.status === "queued" ? await queueInfoFor(b) : null,
           },
           steps,
           log: maskLogLine(b.logText),

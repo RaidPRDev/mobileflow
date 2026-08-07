@@ -492,6 +492,11 @@ export const builds = pgTable("builds", {
   certificateId: uuid("certificate_id").references(() => certificates.id, { onDelete: "set null" }),
   status: buildStatus("status").notNull().default("queued"),
   hostId: text("host_id"),
+  // Concurrency slot on the host (0..capacity-1), assigned by the worker at
+  // claim time and freed when the build leaves "running". Runners use it to
+  // pick per-slot resources that must never be shared by two concurrent
+  // builds (e.g. the Gradle cache volume — see linuxDocker.ts).
+  hostSlot: integer("host_slot"),
   logText: text("log_text").notNull().default(""),
   errorMessage: text("error_message"),
   artifacts: jsonb("artifacts").$type<{ kind: string; url: string; sizeBytes?: number }[]>().default(sql`'[]'::jsonb`),

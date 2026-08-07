@@ -80,6 +80,10 @@ const Schema = z.object({
   LINUX_BUILD_DOWNLOADS_BASE_URL: z.string().default("https://xbuilds.raidpr.com"),
   LINUX_BUILD_ANDROID_IMAGE: z.string().default("raidx-android-builder:latest"),
   LINUX_BUILD_ANDROID_TOOLS: z.string().default("/root/RaidX/Tools/android"),
+  // Max concurrent builds on the env-defined hosts (DB hosts carry their own
+  // capacity column). The worker leaves builds queued once this many are
+  // running on the host.
+  LINUX_BUILD_CAPACITY: z.coerce.number().int().positive().default(2),
   MAC_BUILD_HOST: z.string().optional(),
   MAC_BUILD_PORT: z.coerce.number().int().positive().default(22),
   MAC_BUILD_USER: z.string().optional(),
@@ -89,6 +93,7 @@ const Schema = z.object({
   MAC_BUILD_DOWNLOADS_BASE: z.string().default("/Users/build/RaidX/downloads"),
   MAC_BUILD_DOWNLOADS_BASE_URL: z.string().default("https://xbuilds.raidpr.com"),
   MAC_BUILD_TOOLS: z.string().default("/Users/build/RaidX/Tools"),
+  MAC_BUILD_CAPACITY: z.coerce.number().int().positive().default(2),
   LINUX_BUILD_WEB_IMAGE: z.string().default("node:20-alpine"),
   LINUX_BUILD_WEB_COMMAND: z.string().default("npm ci && npm run build"),
   LINUX_BUILD_WEB_DIST_DIR: z.string().default("dist"),
