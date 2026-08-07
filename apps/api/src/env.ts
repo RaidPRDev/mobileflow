@@ -92,6 +92,22 @@ const Schema = z.object({
   LINUX_BUILD_WEB_IMAGE: z.string().default("node:20-alpine"),
   LINUX_BUILD_WEB_COMMAND: z.string().default("npm ci && npm run build"),
   LINUX_BUILD_WEB_DIST_DIR: z.string().default("dist"),
+  // ---- Mac build-host provisioning (Admin → Build hosts → Server setup) ----
+  // Drives the WireGuard steps of routes/hostSetup.ts. All optional: without
+  // VPN_SERVER_ENDPOINT + VPN_SERVER_PUBLIC_KEY + VPN_MAC_IP the VPN steps show
+  // manual instructions instead of a Run button. VPN_VPS_* additionally lets
+  // the API register/remove the Mac's peer on the WireGuard server itself;
+  // without them the setup log prints the exact commands to run there by hand.
+  VPN_SERVER_ENDPOINT: z.string().optional(), // host:port, e.g. "207.244.254.105:51820"
+  VPN_SERVER_PUBLIC_KEY: z.string().optional(),
+  VPN_SUBNET: z.string().default("10.90.90.0/24"),
+  VPN_GATEWAY_IP: z.string().default("10.90.90.2"),
+  VPN_MAC_IP: z.string().optional(), // tunnel address to assign the Mac, e.g. "10.90.90.3"
+  VPN_PROD_IP: z.string().default("10.90.90.4"), // tunnel address for the production (caimon) host
+  VPN_VPS_HOST: z.string().optional(),
+  VPN_VPS_PORT: z.coerce.number().int().positive().default(22),
+  VPN_VPS_USER: z.string().default("root"),
+  VPN_VPS_SSH_KEY_PATH: z.string().optional(),
   // Stripe / payment-processor credentials live in the `payment_processors`
   // DB table now, configured through the Admin → Payment Processors page.
   // No payment-related env vars are read at runtime.

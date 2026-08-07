@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -23,6 +23,9 @@ import { Check, ChevronDown, CircleMinus, GitBranch, Plus, Search } from "lucide
 import { ApiError, api, type BuildTarget, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { stacksByTarget, useStacks } from "../lib/stacks";
+import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { ListFooter } from "../components/ListFooter";
+import { TableFillerRows, fillerCount } from "../components/TableFillerRows";
 import { PageBackLink } from "../components/PageBackLink";
 import { AndroidIcon } from "../components/AndroidIcon";
 
@@ -45,8 +48,6 @@ const BUILD_TYPES: Record<BuildTarget, { id: string; label: string }[] | null> =
   ],
   web: null,
 };
-
-const PER_PAGE = 10;
 
 export function NewBuildPage() {
   const { appId } = useParams();
@@ -76,10 +77,21 @@ function SelectCommit({ appId }: { appId: string }) {
     enabled: !!appId,
   });
 
+  // Commit row is ~72 px (avatar + two lines of meta). Anchor on the list
+  // container so we measure space from its top down to the viewport.
+  const listRef = useRef<HTMLDivElement>(null);
+  const perPage = useAdaptivePageSize({
+    rowHeight: 72,
+    anchorRef: listRef,
+    reserve: 90,
+    min: 5,
+    max: 30,
+  });
+
   // No branch filter: the API merges every branch and labels each commit.
   const commitsQ = useQuery({
-    queryKey: ["commits", appId, page, PER_PAGE],
-    queryFn: () => api.listCommits(appId, { page, perPage: PER_PAGE }),
+    queryKey: ["commits", appId, page, perPage],
+    queryFn: () => api.listCommits(appId, { page, perPage }),
     enabled: !!appQ.data?.gitRepoFullName,
     placeholderData: keepPreviousData,
   });
@@ -104,6 +116,19 @@ function SelectCommit({ appId }: { appId: string }) {
     navigate(`/app/${appId}/build/builds/new?${qs}`);
   };
 
+  const totalCount = commitsQ.data?.totalCount;
+  const hasNext = commitsQ.data?.hasNext ?? false;
+  // A capped count is exact for paging (nothing lives past it) but is a floor
+  // for the repo — label it "1,530+ commits" rather than claiming the total.
+  const totalCapped = commitsQ.data?.totalCapped ?? false;
+  // `page` is 1-indexed; `pageCount` derives from totalCount when known,
+  // otherwise we infer one more page exists whenever the API says `hasNext`
+  // so the Next button stays clickable through unknown depths.
+  const pageCount =
+    totalCount != null
+      ? Math.max(1, Math.ceil(totalCount / perPage))
+      : page + (hasNext ? 1 : 0);
+
   return (
     <div className="new-build-page">
       <PageBackLink onClick={() => navigate(-1)} />
@@ -126,7 +151,7 @@ function SelectCommit({ appId }: { appId: string }) {
           </div>
         </div>
 
-        <div className="commits-list">
+        <div className="commits-list" ref={listRef}>
           {commitsQ.isLoading && (
             <div className="commits-page__status">
               <Loading>Loading commits…</Loading>
@@ -151,35 +176,33 @@ function SelectCommit({ appId }: { appId: string }) {
               onPick={() => pickCommit(c)}
             />
           ))}
+          <TableFillerRows
+            gridRef={listRef}
+            rowSelector=".commit-row"
+            count={fillerCount(perPage, visible.length, pageCount)}
+            columns={1}
+            measure="row"
+          />
         </div>
 
-        {commitsQ.data && (
-          <div className="commits-footer">
-            <span className="commits-footer__count">
-              {commitsQ.data.totalCount != null
-                ? `${commitsQ.data.totalCount.toLocaleString()} commit${commitsQ.data.totalCount === 1 ? "" : "s"}`
-                : ""}
-            </span>
-            <div className="commits-footer__pager">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1 || commitsQ.isFetching}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={!commitsQ.data.hasNext || commitsQ.isFetching}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <ListFooter
+          pageIdx={page - 1}
+          pageCount={pageCount}
+          total={totalCount ?? undefined}
+          unit="commit"
+          countLabel={
+            totalCount == null
+              ? ""
+              : totalCapped
+                ? `${totalCount.toLocaleString()}+ commits`
+                : undefined
+          }
+          busy={commitsQ.isFetching}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => p + 1)}
+          // ListFooter speaks 0-indexed pages; this page's state is 1-indexed.
+          onPage={(i) => setPage(i + 1)}
+        />
       </div>
     </div>
   );

@@ -413,20 +413,8 @@
   color: var(--color-fg-muted);
 }
 
-.pem-key-input__upload {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  cursor: default;
-  color: var(--color-accent);
-
-  input[type="file"] {
-    display: none;
-  }
-
-  &:hover span {
-    text-decoration: underline;
-  }
+.pem-key-input__file {
+  display: none;
 }
 
 .pem-key-input__filename {
@@ -465,6 +453,456 @@
   border-radius: var(--radius-md);
   background: var(--color-bg-elevated);
   resize: vertical;
+}
+
+// Height-animated show/hide (components/Collapse). The grid 0fr → 1fr trick
+// animates to the content's intrinsic height — no max-height guessing.
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease, margin-top 220ms ease;
+
+  &.is-open {
+    grid-template-rows: 1fr;
+  }
+}
+
+.collapse__inner {
+  overflow: hidden;
+  min-height: 0;
+  // Keep clipped content out of tab order / text selection while closed.
+  visibility: hidden;
+  transition: visibility 0s linear 220ms;
+
+  .collapse.is-open & {
+    visibility: visible;
+    transition-delay: 0s;
+  }
+}
+
+// Grid parents with a gap render an extra gap slot around the (zero-height)
+// closed collapse; a matching negative margin cancels it and animates back.
+.collapse--field-gap:not(.is-open) {
+  margin-top: -6px; // .plan-card__field gap
+}
+
+.collapse--step-gap:not(.is-open) {
+  margin-top: -2px; // .host-setup-step__main gap
+}
+
+// Test Connect / Server Setup live on the footer's left, away from Cancel/Save.
+.admin-host-dialog__tools {
+  display: flex;
+  gap: var(--space-sm);
+  margin-right: auto;
+}
+
+// Label row with a right-aligned "Info" toggle (key-creation instructions).
+.plan-card__field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.field-info-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: var(--color-accent);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    background: var(--color-bg-subtle);
+  }
+}
+
+.field-info-box {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  line-height: 1.5;
+
+  p {
+    margin: 0;
+  }
+
+  pre {
+    margin: 0;
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-fg);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+}
+
+// ─── Server setup dialog (Mac host provisioning) ────────────────────────────
+
+.dialog-content.host-setup-dialog {
+  max-width: 720px;
+  max-height: 75%;
+}
+
+// Keep wheel momentum inside the checklist instead of chaining to the page.
+// Flex column so the step list owns the leftover height and scrolls itself
+// (with the app's custom scrollbar via the `scrollbar` utility class) while
+// the summary/sudo/log sections stay put.
+.host-setup-dialog .dialog-body {
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+}
+
+.host-setup__heading {
+  display: grid;
+  gap: 4px;
+}
+
+.host-setup__loading {
+  padding: var(--space-xl) 0;
+  display: flex;
+  justify-content: center;
+}
+
+.host-setup__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.host-setup__summary-count {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.host-setup__spin {
+  animation: host-setup-spin 1s linear infinite;
+}
+
+@keyframes host-setup-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.host-setup__banner {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-sm);
+
+  &.is-error {
+    border-color: var(--color-danger);
+    color: var(--color-fg);
+  }
+
+  &.is-success {
+    border-color: var(--color-success, #2e9960);
+    color: var(--color-fg);
+  }
+}
+
+.host-setup__banner-hint {
+  margin-top: var(--space-xs);
+  color: var(--color-fg-muted);
+}
+
+.host-setup__banner-action {
+  margin-top: var(--space-sm);
+}
+
+.host-setup__sudo {
+  display: grid;
+  gap: 4px;
+  margin-bottom: var(--space-md);
+}
+
+.host-setup__sudo-label {
+  font-size: 12px;
+}
+
+.host-setup__sudo-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+// VPN server access panel — key dropzone + one-time password bootstrap.
+.vps-access {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  margin-bottom: var(--space-md);
+  flex-shrink: 0;
+}
+
+.vps-access__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  font-weight: 600;
+
+  code {
+    font-size: 11px;
+  }
+}
+
+.vps-access__detail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-fg-muted);
+
+  &.is-added {
+    color: var(--color-success, #2e9960);
+    font-weight: 600;
+  }
+}
+
+.vps-access__file {
+  display: none;
+}
+
+.vps-access__drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg-muted);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+
+  &:hover,
+  &.is-over {
+    border-color: var(--color-accent);
+    color: var(--color-fg);
+  }
+}
+
+.vps-access__auth {
+  display: flex;
+  gap: var(--space-sm);
+
+  input {
+    flex: 1;
+  }
+}
+
+.vps-access__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.host-setup__steps {
+  display: grid;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 160px;
+  // Grid rows must not stretch to fill leftover height when the list is
+  // shorter than its flex slot.
+  align-content: start;
+}
+
+.host-setup-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+
+  & + & {
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+.host-setup-step__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+
+  .status-icon.is-muted {
+    color: var(--color-fg-muted);
+  }
+}
+
+.host-setup-step__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.host-setup-step__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.host-setup-step__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.host-setup-step__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.host-setup-step__detail {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-setup-step__description {
+  margin: var(--space-xs) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-fg-muted);
+}
+
+.host-setup-step__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.host-setup-step__info {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    color: var(--color-fg);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.host-setup__log {
+  margin-top: var(--space-md);
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.host-setup__log-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.host-setup__log-close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    color: var(--color-fg);
+    background: var(--color-bg-subtle);
+  }
+}
+
+.host-setup__log-pane {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.host-setup__history {
+  margin-top: var(--space-md);
+}
+
+.host-setup__history-toggle {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-accent);
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.host-setup__history-log {
+  margin: var(--space-xs) 0 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
 }
 
 // ─── Plan edit page ──────────────────────────────────────────────────────────

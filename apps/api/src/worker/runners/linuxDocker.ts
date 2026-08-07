@@ -5,7 +5,7 @@ import { apps, buildStacks, certificates, environmentVars, gitConnections } from
 import { decryptString } from "../../lib/crypto.js";
 import { safeBasename } from "../../lib/safePath.js";
 import { env } from "../../env.js";
-import { exec, execDrained, resolveLinuxHost, uploadBase64, withSsh } from "../ssh.js";
+import { exec, execDrained, resolveLinuxHost, resolvePinnedHost, uploadBase64, withSsh } from "../ssh.js";
 import { runInlinePublish } from "../inlinePublish.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
@@ -29,7 +29,13 @@ import type { Runner, RunnerContext } from "../runner.js";
 export class LinuxDockerAndroidRunner implements Runner {
   async run(ctx: RunnerContext): Promise<{ artifacts: { kind: string; url: string; sizeBytes?: number }[] }> {
     if (ctx.build.target !== "android") throw new Error("LinuxDockerAndroidRunner only handles target=android");
-    const host = await resolveLinuxHost();
+    // Stack loaded before host resolution so a pinned stack runs on its host.
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const host = stack?.buildHostId
+      ? await resolvePinnedHost(stack.buildHostId, "linux_docker")
+      : await resolveLinuxHost();
     if (!host) throw new Error("Linux build host is not configured (no DB row and no LINUX_BUILD_* env)");
     await ctx.log(`Linux host (${host.source}): ${host.host}`);
 
@@ -52,9 +58,6 @@ export class LinuxDockerAndroidRunner implements Runner {
     // env default if the stack has no image set (or if the build references
     // a stack that no longer exists — historical builds shouldn't fail just
     // because an admin renamed a stack).
-    const [stack] = ctx.build.stackId
-      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
-      : [];
     const dockerImage = stack?.image ?? env.LINUX_BUILD_ANDROID_IMAGE;
     const cloneUrl = cloneUrlFor(conn.provider as "github" | "gitlab" | "bitbucket", a.gitRepoFullName, token);
     const safeAppName = a.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "app";

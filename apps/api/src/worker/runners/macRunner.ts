@@ -5,7 +5,7 @@ import { apps, buildStacks, builds, certificates, environmentVars, gitConnection
 import { decryptString } from "../../lib/crypto.js";
 import { safeBasename } from "../../lib/safePath.js";
 import { env } from "../../env.js";
-import { exec, execDrained, resolveLinuxHost, resolveMacHost, uploadBase64, withSsh } from "../ssh.js";
+import { exec, execDrained, resolveLinuxHost, resolveMacHost, resolvePinnedHost, uploadBase64, withSsh } from "../ssh.js";
 import { runInlinePublish } from "../inlinePublish.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
@@ -37,7 +37,15 @@ const VERBOSE_BUILD_LOGS = process.env.MF_VERBOSE_BUILD_LOGS === "1";
 export class MacRunner implements Runner {
   async run(ctx: RunnerContext): Promise<{ artifacts: { kind: string; url: string; sizeBytes?: number }[] }> {
     if (ctx.build.target !== "ios") throw new Error("MacRunner only handles target=ios");
-    const host = await resolveMacHost();
+    // Stack is loaded before host resolution: a stack pinned to a specific
+    // host (build_stacks.build_host_id) must run there, never on whichever
+    // Mac happens to be first in the table.
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const host = stack?.buildHostId
+      ? await resolvePinnedHost(stack.buildHostId, "mac")
+      : await resolveMacHost();
     if (!host) throw new Error("Mac build host is not configured");
     // Deliberately not logged for users: it exposes the Mac's user@host:port
     // and tells them nothing they can act on. "Using runner: MacRunner" (from
@@ -65,9 +73,6 @@ export class MacRunner implements Runner {
     // xcrun / pod pick up the right toolchain. We export DEVELOPER_DIR rather
     // than running `sudo xcode-select -s` so the switch is scoped to this
     // build process and doesn't require passwordless sudo on the Mac.
-    const [stack] = ctx.build.stackId
-      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
-      : [];
     const developerDir = stack?.image ? xcodeDeveloperDir(stack.image) : null;
     if (developerDir) {
       await ctx.log(`Xcode (stack ${ctx.build.stackId}): DEVELOPER_DIR=${developerDir}`);

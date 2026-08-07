@@ -20,9 +20,11 @@ import {
 import { CircleCheckBig, Info, Loader2, XCircle } from "lucide-react";
 import { ApiError, api } from "../api/client";
 import { CircleXBig } from "../components/CircleXBig";
+import { Collapse } from "../components/Collapse";
 import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
 import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 import { HostTerminalPanel } from "./HostTerminalPanel";
+import { ServerSetupDialog } from "./ServerSetupDialog";
 
 type Kind = "linux_docker" | "mac";
 
@@ -448,6 +450,14 @@ function NewHostCard({ onDone }: { onDone: () => void }) {
 function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void }) {
   const qc = useQueryClient();
   const [kind, setKind] = useState<Kind>(host.kind);
+  const [testOpen, setTestOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const test = useMutation({ mutationFn: () => api.admin.testHost(host.id) });
+  const openTest = () => {
+    test.reset();
+    setTestOpen(true);
+    test.mutate();
+  };
   const [form, setForm] = useState<HostForm>({
     name: host.name,
     hostname: host.hostname,
@@ -507,6 +517,16 @@ function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void 
           {error && <p className="text-error">{error}</p>}
         </DialogBody>
         <DialogFooter>
+          <div className="admin-host-dialog__tools">
+            <Button variant="outline" onClick={openTest} disabled={test.isPending}>
+              Test Connect
+            </Button>
+            {kind === "mac" && (
+              <Button variant="outline" onClick={() => setSetupOpen(true)}>
+                Server Setup
+              </Button>
+            )}
+          </div>
           <Button variant="outline" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
@@ -518,6 +538,21 @@ function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void 
             Save
           </Button>
         </DialogFooter>
+        <TestConnectionDialog
+          open={testOpen}
+          onOpenChange={setTestOpen}
+          hostName={host.name}
+          isPending={test.isPending}
+          error={test.error as Error | null}
+          result={test.data ?? null}
+        />
+        {setupOpen && (
+          <ServerSetupDialog
+            hostId={host.id}
+            hostName={host.name}
+            onClose={() => setSetupOpen(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -593,12 +628,14 @@ function HostFields({
       <Field
         label="Private SSH key (PEM)"
         hint={editing ? "Leave blank to keep the stored key." : undefined}
+        info={<SshKeyInfo />}
       >
         <PemKeyInput value={form.sshKey} onChange={(v) => setForm({ ...form, sshKey: v })} />
       </Field>
       {kind === "mac" && (
         <Field
           label="Artifact-server SSH key (Mac → Linux)"
+          info={<ArtifactKeyInfo />}
           hint={
             editing
               ? "Leave blank to keep the stored key. Replacing it here only updates the stored copy — use “Re-push artifact key” to write it to the Mac."
@@ -615,18 +652,86 @@ function HostFields({
 function Field({
   label,
   hint,
+  info,
   children,
 }: {
   label: string;
   hint?: React.ReactNode;
+  /** Optional "how do I create this?" panel, toggled by a right-aligned Info button. */
+  info?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const [showInfo, setShowInfo] = useState(false);
   return (
     <div className="plan-card__field">
-      <Label className="plan-card__field-label">{label}</Label>
-      {children}
+      {info ? (
+        <div className="plan-card__field-label-row">
+          <Label className="plan-card__field-label">{label}</Label>
+          <button
+            type="button"
+            className="field-info-btn"
+            onClick={() => setShowInfo((v) => !v)}
+            aria-expanded={showInfo}
+            aria-label={`How to create: ${label}`}
+          >
+            <Info size={13} aria-hidden />
+            Info
+          </button>
+        </div>
+      ) : (
+        <Label className="plan-card__field-label">{label}</Label>
+      )}
       {hint && <p className="plan-card__field-hint">{hint}</p>}
+      {info && (
+        <Collapse open={showInfo} className="collapse--field-gap">
+          <div className="field-info-box">{info}</div>
+        </Collapse>
+      )}
+      {children}
     </div>
+  );
+}
+
+// "How do I create one?" panels for the two key fields. Kept as components so
+// the instructions live next to the fields they explain.
+function SshKeyInfo() {
+  return (
+    <>
+      <p>
+        MobileFlow uses this <strong>private</strong> key to SSH into the build host. Create a
+        dedicated key pair on any machine:
+      </p>
+      <pre>{`ssh-keygen -t ed25519 -N "" -C "mobileflow-build" -f mobileflow_build`}</pre>
+      <p>Authorize the public half on the build host (run on the host):</p>
+      <pre>{`mkdir -p ~/.ssh && chmod 700 ~/.ssh
+cat mobileflow_build.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys`}</pre>
+      <p>
+        Then paste the contents of the private file (<code>mobileflow_build</code> — the one
+        without <code>.pub</code>) here. It is stored encrypted and never displayed again.
+      </p>
+    </>
+  );
+}
+
+function ArtifactKeyInfo() {
+  return (
+    <>
+      <p>
+        The Mac uses this key to <code>scp</code> finished build artifacts to the Linux downloads
+        host. Create a separate pair:
+      </p>
+      <pre>{`ssh-keygen -t ed25519 -N "" -C "raidx-artifacts" -f raidx_linux_key`}</pre>
+      <p>
+        Authorize the public half on the <strong>Linux</strong> host, as the user the Mac connects
+        as (usually root):
+      </p>
+      <pre>{`cat raidx_linux_key.pub >> ~/.ssh/authorized_keys`}</pre>
+      <p>
+        Paste the private file here — it's stored encrypted. Then use <em>Push artifact key</em> in
+        the host row menu to write it to the Mac at <code>~/.ssh/raidx_linux_key</code>.
+      </p>
+    </>
   );
 }
 
@@ -636,6 +741,7 @@ function Field({
 // (most private keys have no extension), so we don't filter by accept.
 function PemKeyInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [fileName, setFileName] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const onPick = (file: File | undefined) => {
     if (!file) return;
     setFileName(file.name);
@@ -659,13 +765,19 @@ function PemKeyInput({ value, onChange }: { value: string; onChange: (v: string)
         spellCheck={false}
       />
       <div className="pem-key-input__actions">
-        <label className="pem-key-input__upload">
-          <input
-            type="file"
-            onChange={(e) => onPick(e.target.files?.[0])}
-          />
-          <span>Upload key file</span>
-        </label>
+        <input
+          ref={fileRef}
+          type="file"
+          className="pem-key-input__file"
+          onChange={(e) => {
+            onPick(e.target.files?.[0]);
+            // Allow re-picking the same file.
+            e.target.value = "";
+          }}
+        />
+        <Button size="sm" variant="outline" type="button" onClick={() => fileRef.current?.click()}>
+          Upload key file
+        </Button>
         {fileName && <span className="pem-key-input__filename">{fileName}</span>}
         {!fileName && value && (
           <button

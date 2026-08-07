@@ -1,8 +1,8 @@
 import { Client } from "ssh2";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import { certificates } from "../../db/schema.js";
-import { exec, resolveMacHost, withSsh } from "../ssh.js";
+import { buildStacks, certificates } from "../../db/schema.js";
+import { exec, resolveMacHost, resolvePinnedHost, withSsh } from "../ssh.js";
 import { artifactByKind, fileNameFromUrl, type DeployContext, type DeployRunner } from "../deployRunner.js";
 
 /**
@@ -20,7 +20,14 @@ import { artifactByKind, fileNameFromUrl, type DeployContext, type DeployRunner 
  */
 export class AppStoreUploadRunner implements DeployRunner {
   async run(ctx: DeployContext): Promise<void> {
-    const target = await resolveMacHost();
+    // Upload from the same Mac the build's stack is pinned to (if any) — the
+    // publish host must share the build host's network path and tooling.
+    const [stack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const target = stack?.buildHostId
+      ? await resolvePinnedHost(stack.buildHostId, "mac")
+      : await resolveMacHost();
     if (!target) throw new Error("Mac build host is not configured (needed for App Store upload)");
 
     const ipa = artifactByKind(ctx.build, ["ipa"]);

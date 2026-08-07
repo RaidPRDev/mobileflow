@@ -17,6 +17,7 @@ import { certificateRoutes } from "./routes/certificates.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminDbRoutes } from "./routes/adminDb.js";
 import { localDeployRoutes } from "./routes/localDeploy.js";
+import { hostSetupRoutes } from "./routes/hostSetup.js";
 import { stackRoutes } from "./routes/stacks.js";
 import { billingRoutes, billingWebhookRoutes } from "./routes/billing.js";
 import { startWorker } from "./worker/worker.js";
@@ -85,6 +86,7 @@ export async function buildServer() {
     await api.register(adminRoutes);
     await api.register(adminDbRoutes);
     await api.register(localDeployRoutes);
+    await api.register(hostSetupRoutes);
     await api.register(billingRoutes);
     await api.register(deploymentRoutes);
   }, { prefix: "/api" });

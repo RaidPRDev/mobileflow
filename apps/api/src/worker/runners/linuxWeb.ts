@@ -3,7 +3,7 @@ import { db } from "../../db/client.js";
 import { apps, buildStacks, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
 import { env } from "../../env.js";
-import { exec, resolveLinuxHost, withSsh } from "../ssh.js";
+import { exec, resolveLinuxHost, resolvePinnedHost, withSsh } from "../ssh.js";
 import { cloneUrlFor } from "../gitClone.js";
 import type { Runner, RunnerContext } from "../runner.js";
 
@@ -14,7 +14,13 @@ import type { Runner, RunnerContext } from "../runner.js";
 export class LinuxDockerWebRunner implements Runner {
   async run(ctx: RunnerContext): Promise<{ artifacts: { kind: string; url: string; sizeBytes?: number }[] }> {
     if (ctx.build.target !== "web") throw new Error("LinuxDockerWebRunner only handles target=web");
-    const host = await resolveLinuxHost();
+    // Honor a stack pinned to a specific host (build_stacks.build_host_id).
+    const [pinStack] = ctx.build.stackId
+      ? await db.select().from(buildStacks).where(eq(buildStacks.id, ctx.build.stackId)).limit(1)
+      : [];
+    const host = pinStack?.buildHostId
+      ? await resolvePinnedHost(pinStack.buildHostId, "linux_docker")
+      : await resolveLinuxHost();
     if (!host) throw new Error("Linux build host is not configured");
     await ctx.log(`Linux host (${host.source}): ${host.host}`);
 

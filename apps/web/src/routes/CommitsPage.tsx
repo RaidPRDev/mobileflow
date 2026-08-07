@@ -7,6 +7,7 @@ import { ApiError, api, type CommitRow } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
 import { ListFooter } from "../components/ListFooter";
+import { TableFillerRows, fillerCount } from "../components/TableFillerRows";
 import { RowContextMenu } from "../components/RowActions";
 import { allowNativeContextMenu } from "../lib/rowInteractions";
 
@@ -84,6 +85,13 @@ export function CommitsPage() {
   // A capped count is exact for paging (nothing lives past it) but is a floor
   // for the repo — label it "1,530+ commits" rather than claiming the total.
   const totalCapped = commitsQ.data?.totalCapped ?? false;
+  // `page` is 1-indexed; `pageCount` derives from totalCount when known,
+  // otherwise we infer one more page exists whenever the API says `hasNext`
+  // so the Next button stays clickable through unknown depths.
+  const pageCount =
+    totalCount != null
+      ? Math.max(1, Math.ceil(totalCount / perPage))
+      : page + (hasNext ? 1 : 0);
   const startBuild = (c: CommitRow) => {
     const qs = new URLSearchParams({ commitId: c.sha });
     if (c.branch) qs.set("branch", c.branch);
@@ -130,18 +138,18 @@ export function CommitsPage() {
             onStartBuild={() => startBuild(c)}
           />
         ))}
+        <TableFillerRows
+          gridRef={listRef}
+          rowSelector=".commit-row"
+          count={fillerCount(perPage, visibleCommits.length, pageCount)}
+          columns={1}
+          measure="row"
+        />
       </div>
 
       <ListFooter
-        // `page` is 1-indexed; `pageCount` derives from totalCount when known,
-        // otherwise we infer one more page exists whenever the API says
-        // `hasNext` so the Next button stays clickable through unknown depths.
         pageIdx={page - 1}
-        pageCount={
-          totalCount != null
-            ? Math.max(1, Math.ceil(totalCount / perPage))
-            : page + (hasNext ? 1 : 0)
-        }
+        pageCount={pageCount}
         total={totalCount ?? undefined}
         unit="commit"
         countLabel={

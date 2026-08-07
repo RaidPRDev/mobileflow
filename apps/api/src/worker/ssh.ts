@@ -49,6 +49,57 @@ async function dbHostFor(kind: "linux_docker" | "mac"): Promise<ResolvedHost | n
 export async function resolveLinuxHost(): Promise<ResolvedHost | null> {
   const fromDb = await dbHostFor("linux_docker");
   if (fromDb) return fromDb;
+  return envLinuxHost();
+}
+
+export async function resolveMacHost(): Promise<ResolvedHost | null> {
+  const fromDb = await dbHostFor("mac");
+  if (fromDb) return fromDb;
+  return envMacHost();
+}
+
+/**
+ * Resolve a host explicitly pinned on a build stack (`build_stacks.build_host_id`).
+ * Accepts a build_hosts.id or "env:mac" / "env:linux_docker". Throws with an
+ * actionable message when the pin can't be honored — a pinned stack must never
+ * silently fall back to a different machine (signing certs, tooling, and network
+ * paths are host-specific).
+ */
+export async function resolvePinnedHost(
+  selector: string,
+  expectedKind: "linux_docker" | "mac",
+): Promise<ResolvedHost> {
+  if (selector === "env:mac" || selector === "env:linux_docker") {
+    const kind = selector === "env:mac" ? "mac" : "linux_docker";
+    if (kind !== expectedKind) {
+      throw new Error(`Stack is pinned to ${selector}, but this build needs a ${expectedKind} host`);
+    }
+    const resolved = kind === "mac" ? await envMacHost() : await envLinuxHost();
+    if (!resolved) throw new Error(`Stack is pinned to ${selector}, but the ${kind.toUpperCase()}_BUILD_* env vars are not configured`);
+    return resolved;
+  }
+  const [row] = await db.select().from(buildHosts).where(eq(buildHosts.id, selector)).limit(1);
+  if (!row) throw new Error(`Stack is pinned to a build host that no longer exists (${selector}) — fix it in Admin → Stacks`);
+  if (row.kind !== expectedKind) {
+    throw new Error(`Stack is pinned to "${row.name}" (${row.kind}), but this build needs a ${expectedKind} host`);
+  }
+  if (!row.online) {
+    throw new Error(`Stack is pinned to "${row.name}", which is marked offline — mark it online or unpin the stack`);
+  }
+  return {
+    host: row.hostname,
+    port: row.port,
+    username: row.sshUser,
+    privateKey: Buffer.from(decryptString(row.sshKeyEnc), "utf8"),
+    remoteBase: row.remoteBase,
+    downloadsBase: row.downloadsBase,
+    downloadsBaseUrl: row.downloadsBaseUrl,
+    toolsPath: row.toolsPath,
+    source: "db",
+  };
+}
+
+function envLinuxHost(): ResolvedHost | null {
   if (!env.LINUX_BUILD_HOST) return null;
   const key = readKey(env.LINUX_BUILD_SSH_KEY, env.LINUX_BUILD_SSH_KEY_PATH);
   if (!key) return null;
@@ -65,9 +116,7 @@ export async function resolveLinuxHost(): Promise<ResolvedHost | null> {
   };
 }
 
-export async function resolveMacHost(): Promise<ResolvedHost | null> {
-  const fromDb = await dbHostFor("mac");
-  if (fromDb) return fromDb;
+function envMacHost(): ResolvedHost | null {
   if (!env.MAC_BUILD_HOST || !env.MAC_BUILD_USER) return null;
   const key = readKey(env.MAC_BUILD_SSH_KEY, env.MAC_BUILD_SSH_KEY_PATH);
   if (!key) return null;

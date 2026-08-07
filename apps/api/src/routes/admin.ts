@@ -796,10 +796,34 @@ export async function adminRoutes(server: FastifyInstance) {
     image: z.string().min(1).max(200).nullable().optional(),
     isDefault: z.boolean().default(false),
     sortOrder: z.number().int().default(0),
+    // Pin builds on this stack to one host: build_hosts.id or "env:mac" /
+    // "env:linux_docker". Null/absent = automatic (first online of the kind).
+    buildHostId: z.string().min(1).max(80).nullable().optional(),
   });
+
+  // A pinned host must exist and match the stack's platform (ios → mac,
+  // android/web → linux_docker) — catching that at save time beats a build
+  // failing at run time.
+  async function validateStackHostPin(
+    platform: "ios" | "android" | "web",
+    buildHostId: string | null | undefined,
+  ): Promise<string | null> {
+    if (!buildHostId) return null;
+    const expectedKind = platform === "ios" ? "mac" : "linux_docker";
+    if (buildHostId === "env:mac" || buildHostId === "env:linux_docker") {
+      const kind = buildHostId === "env:mac" ? "mac" : "linux_docker";
+      return kind === expectedKind ? null : `An ${platform} stack needs a ${expectedKind} host, not ${buildHostId}`;
+    }
+    const [row] = await db.select().from(buildHosts).where(eq(buildHosts.id, buildHostId)).limit(1);
+    if (!row) return "Unknown build host";
+    if (row.kind !== expectedKind) return `"${row.name}" is a ${row.kind} host, but an ${platform} stack needs ${expectedKind}`;
+    return null;
+  }
 
   server.post("/admin/stacks", async (req, reply) => {
     const body = StackBody.parse(req.body);
+    const pinError = await validateStackHostPin(body.platform, body.buildHostId);
+    if (pinError) return reply.badRequest(pinError);
     const [created] = await db
       .insert(buildStacks)
       .values({
@@ -809,6 +833,7 @@ export async function adminRoutes(server: FastifyInstance) {
         image: body.image ?? null,
         isDefault: body.isDefault,
         sortOrder: body.sortOrder,
+        buildHostId: body.buildHostId ?? null,
       })
       .returning();
     if (!created) return reply.internalServerError();
@@ -818,6 +843,12 @@ export async function adminRoutes(server: FastifyInstance) {
   server.patch<{ Params: { id: string } }>("/admin/stacks/:id", async (req, reply) => {
     const PatchStack = StackBody.partial().omit({ id: true });
     const body = PatchStack.parse(req.body);
+    if (body.buildHostId !== undefined) {
+      const [existing] = await db.select().from(buildStacks).where(eq(buildStacks.id, req.params.id)).limit(1);
+      if (!existing) return reply.notFound();
+      const pinError = await validateStackHostPin(body.platform ?? existing.platform, body.buildHostId);
+      if (pinError) return reply.badRequest(pinError);
+    }
     const [updated] = await db
       .update(buildStacks)
       .set(body)

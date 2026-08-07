@@ -386,6 +386,52 @@ export interface AdminLogScope {
   modified: number;
 }
 
+export interface HostSetupStep {
+  id: string;
+  title: string;
+  description: string;
+  kind: "auto" | "manual";
+  runNeedsSudo: boolean;
+  revertNeedsSudo: boolean;
+  needsVpn: boolean;
+  canRun: boolean;
+  canRevert: boolean;
+  status: "ok" | "missing" | "unknown" | "error";
+  detail: string;
+}
+
+export interface HostSetupStatus {
+  enabled: boolean;
+  reachable: boolean;
+  connectError: string | null;
+  hostname: string;
+  vpn: {
+    configured: boolean;
+    autoRegister: boolean;
+    serverAccess: "unconfigured" | "no-key" | "ok" | "denied" | "unreachable";
+    vpsHost: string | null;
+    vpsUser: string;
+    endpoint: string | null;
+    subnet: string;
+    gatewayIp: string;
+    macIp: string | null;
+  };
+  steps: HostSetupStep[];
+  history: string[];
+  runningJobId: string | null;
+}
+
+export interface HostSetupJob {
+  id: string;
+  stepId: string;
+  revert: boolean;
+  state: "running" | "succeeded" | "failed";
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+  lines: { seq: number; text: string }[];
+}
+
 export interface AdminLogFolder {
   name: string;
   path: string;
@@ -537,6 +583,7 @@ export const api = {
       image: string | null;
       isDefault: boolean;
       sortOrder: number;
+      buildHostId: string | null;
     }[]>("/stacks"),
 
   getOrg: (orgId: string) => request<OrgRow>(`/orgs/${orgId}`),
@@ -836,6 +883,7 @@ export const api = {
       image?: string | null;
       isDefault?: boolean;
       sortOrder?: number;
+      buildHostId?: string | null;
     }) => request<unknown>("/admin/stacks", { method: "POST", body: JSON.stringify(body) }),
     patchStack: (
       id: string,
@@ -845,6 +893,7 @@ export const api = {
         image: string | null;
         isDefault: boolean;
         sortOrder: number;
+        buildHostId: string | null;
       }>,
     ) => request<unknown>(`/admin/stacks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteStack: (id: string) => request<void>(`/admin/stacks/${id}`, { method: "DELETE" }),
@@ -893,6 +942,27 @@ export const api = {
       request<{ ok: boolean; output?: string; error?: string }>(
         `/admin/hosts/${id}/push-artifact-key`,
         { method: "POST", body: JSON.stringify(body ?? {}) },
+      ),
+    hostSetup: (id: string) =>
+      request<HostSetupStatus>(`/admin/hosts/${id}/setup`),
+    runHostSetupStep: (id: string, body: { stepId: string; revert?: boolean; sudoPassword?: string }) =>
+      request<{ jobId: string }>(`/admin/hosts/${id}/setup/run`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    hostSetupJob: (id: string, jobId: string, since?: number) =>
+      request<HostSetupJob>(
+        `/admin/hosts/${id}/setup/jobs/${jobId}${since ? `?since=${since}` : ""}`,
+      ),
+    uploadVpsKey: (id: string, body: { key: string }) =>
+      request<{ stored: boolean; access: HostSetupStatus["vpn"]["serverAccess"] }>(
+        `/admin/hosts/${id}/setup/vps-key`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    authorizeVps: (id: string, body: { password: string }) =>
+      request<{ ok: boolean; access: HostSetupStatus["vpn"]["serverAccess"]; error?: string }>(
+        `/admin/hosts/${id}/setup/vps-authorize`,
+        { method: "POST", body: JSON.stringify(body) },
       ),
     cleanupOrphans: (id: string, body?: { dryRun?: boolean }) =>
       request<{

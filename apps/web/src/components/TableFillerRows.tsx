@@ -12,13 +12,15 @@ import { useLayoutEffect, useState, type RefObject } from "react";
  *
  * Grid rows are `display: contents`, so a row element has no box of its own —
  * the cells are the grid items. Both the measurement and the applied height
- * therefore target a cell, not the row.
+ * therefore target a cell, not the row — unless `measure="row"`, for flex
+ * lists whose rows do own their box (e.g. the commit lists).
  */
 export function TableFillerRows({
   gridRef,
   rowSelector,
   count,
   columns,
+  measure = "cell",
 }: {
   /** The grid container holding the rows. */
   gridRef: RefObject<HTMLElement>;
@@ -28,6 +30,9 @@ export function TableFillerRows({
   count: number;
   /** Cells per row — must match the grid's column count or the layout shifts. */
   columns: number;
+  /** What carries the row's height: its first cell (grid rows, the default) or
+   *  the row element itself (flex lists). */
+  measure?: "cell" | "row";
 }) {
   const [cellHeight, setCellHeight] = useState<number | null>(null);
 
@@ -39,16 +44,17 @@ export function TableFillerRows({
     const grid = gridRef.current;
     if (!grid) return;
 
-    const measure = () => {
-      const cell = grid.querySelector<HTMLElement>(rowSelector)?.firstElementChild;
-      if (cell) setCellHeight(cell.getBoundingClientRect().height);
+    const measureRow = () => {
+      const row = grid.querySelector<HTMLElement>(rowSelector);
+      const target = measure === "row" ? row : row?.firstElementChild;
+      if (target) setCellHeight(target.getBoundingClientRect().height);
     };
-    measure();
+    measureRow();
 
     if (typeof ResizeObserver === "undefined") return;
     // Also catches column reflow, which changes row height whenever a cell's
     // text starts or stops wrapping.
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(measureRow);
     ro.observe(grid);
     return () => ro.disconnect();
   });

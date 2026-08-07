@@ -29,6 +29,8 @@ interface StackEdit {
   image: string;
   isDefault: boolean;
   sortOrder: number;
+  /** "" = automatic (first online host of the kind); else a host id or "env:*". */
+  buildHostId: string;
 }
 
 const UNSAVED_MESSAGE = "You have unsaved changes. Leave this page anyway?";
@@ -40,6 +42,7 @@ const EMPTY: StackEdit = {
   image: "",
   isDefault: false,
   sortOrder: 0,
+  buildHostId: "",
 };
 
 export function AdminStackEditPage() {
@@ -50,6 +53,7 @@ export function AdminStackEditPage() {
 
   const q = useQuery({ queryKey: ["stacks"], queryFn: () => api.listStacks(), enabled: !isNew });
   const stack = !isNew ? q.data?.find((s) => s.id === stackId) : null;
+  const hostsQ = useQuery({ queryKey: ["admin", "hosts"], queryFn: () => api.admin.hosts() });
 
   const [edit, setEdit] = useState<StackEdit | null>(isNew ? { ...EMPTY } : null);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +68,7 @@ export function AdminStackEditPage() {
         image: stack.image ?? "",
         isDefault: stack.isDefault,
         sortOrder: stack.sortOrder,
+        buildHostId: stack.buildHostId ?? "",
       };
       setEdit(seed);
       originalRef.current = seed;
@@ -100,6 +105,7 @@ export function AdminStackEditPage() {
         image: edit.image || null,
         isDefault: edit.isDefault,
         sortOrder: edit.sortOrder,
+        buildHostId: edit.buildHostId || null,
       };
       if (isNew) {
         return api.admin.createStack({ id: edit.id, ...payload });
@@ -170,7 +176,9 @@ export function AdminStackEditPage() {
             <Field label="Platform">
               <Combobox
                 value={edit.platform}
-                onChange={(v) => setEdit({ ...edit, platform: v as BuildTarget })}
+                // Changing platform changes the required host kind, so any
+                // pinned host is cleared rather than left invalid.
+                onChange={(v) => setEdit({ ...edit, platform: v as BuildTarget, buildHostId: "" })}
                 options={PLATFORM_OPTIONS}
                 ariaLabel="Platform"
               />
@@ -188,6 +196,29 @@ export function AdminStackEditPage() {
               <Input
                 value={edit.image}
                 onChange={(e) => setEdit({ ...edit, image: e.target.value })}
+              />
+            </Field>
+            <Field
+              label="Build host"
+              hint={
+                edit.buildHostId
+                  ? "Builds on this stack always run on this host; they fail loudly if it's offline."
+                  : "Automatic: the first online host of the matching kind runs the build."
+              }
+            >
+              <Combobox
+                value={edit.buildHostId}
+                onChange={(v) => setEdit({ ...edit, buildHostId: v })}
+                options={[
+                  { value: "", label: "Automatic (first online host)" },
+                  ...(hostsQ.data ?? [])
+                    .filter((h) => h.kind === (edit.platform === "ios" ? "mac" : "linux_docker"))
+                    .map((h) => ({
+                      value: h.id,
+                      label: `${h.name} — ${h.hostname}${h.online ? "" : " (offline)"}`,
+                    })),
+                ]}
+                ariaLabel="Build host"
               />
             </Field>
             <Field label="Sort order">

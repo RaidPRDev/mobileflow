@@ -448,6 +448,12 @@ export const buildStacks = pgTable("build_stacks", {
   image: text("image"),
   isDefault: boolean("is_default").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
+  // Pins builds on this stack to a specific build host: a build_hosts.id, or
+  // "env:mac" / "env:linux_docker" for the env-defined hosts. Null = automatic
+  // (first online host of the right kind). Plain text (not an FK) so env hosts
+  // fit and a deleted host degrades to a clear runner error instead of
+  // cascading into the stacks table.
+  buildHostId: text("build_host_id"),
 });
 
 export const environments = pgTable("environments", {
