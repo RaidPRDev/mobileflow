@@ -34,7 +34,7 @@ cp .docker/.env.production.example .env.production   # fill in secrets (gitignor
 ./start.sh prod
 ```
 
-2. **Admin → Deploy → “Caimón — live” → Deploy to live.** The API spawns
+2. **Admin → Deploy → “Caimón” → Deploy to live.** The API spawns
    `bash start.sh prod` and streams stdout/stderr into the page over a
    WebSocket. Superadmin only, and refused entirely when the API itself runs
    with `NODE_ENV=production` (a production API has no business shelling out to

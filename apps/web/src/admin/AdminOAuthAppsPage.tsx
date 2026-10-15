@@ -201,44 +201,48 @@ function ProviderCard({
           </div>
         )}
       </div>
-      {open && (
-        <div className="accordion-panel is-padded-top">
-          <p className="text-help">
-            Set the redirect URI in the provider console to{" "}
-            <code>{`<API_BASE_URL>${slot.redirect}`}</code>.
-          </p>
-          <div className="field-group">
-            <Label className="is-small">Client ID</Label>
-            <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
-          </div>
-          <div className="field-group">
-            <Label className="is-small">
-              Client secret {existing && "(leave blank to keep)"}
-            </Label>
-            <SecretInput
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-            />
-          </div>
-          <div className="field-group">
-            <Label className="is-small">Scopes (optional, falls back to defaults)</Label>
-            <Input
-              value={scopes}
-              onChange={(e) => setScopes(e.target.value)}
-              placeholder={slot.kind === "git" ? "repo" : "read:user user:email"}
-            />
-          </div>
-          {error && <p className="text-error">{error}</p>}
-          <div className="row-end">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={!clientId || (!existing && !clientSecret)}>
-              Save
-            </Button>
+      {/* Always mounted so the panel's height can animate; the collapse wrapper
+          hides it. Matches the payment-processors accordions. */}
+      <div className="accordion-collapse">
+        <div className="accordion-collapse__inner">
+          <div className="accordion-panel is-padded-top">
+            <p className="text-help">
+              Set the redirect URI in the provider console to{" "}
+              <code>{`<API_BASE_URL>${slot.redirect}`}</code>.
+            </p>
+            <div className="field-group">
+              <Label className="is-small">Client ID</Label>
+              <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            </div>
+            <div className="field-group">
+              <Label className="is-small">
+                Client secret {existing && "(leave blank to keep)"}
+              </Label>
+              <SecretInput
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+              />
+            </div>
+            <div className="field-group">
+              <Label className="is-small">Scopes (optional, falls back to defaults)</Label>
+              <Input
+                value={scopes}
+                onChange={(e) => setScopes(e.target.value)}
+                placeholder={slot.kind === "git" ? "repo" : "read:user user:email"}
+              />
+            </div>
+            {error && <p className="text-error">{error}</p>}
+            <div className="row-end">
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={!clientId || (!existing && !clientSecret)}>
+                Save
+              </Button>
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

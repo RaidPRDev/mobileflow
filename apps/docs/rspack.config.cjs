@@ -4,6 +4,9 @@ const ReactRefreshPlugin = require("@rspack/plugin-react-refresh");
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// Product display name — single source of truth for branding.
+const { productName } = require("../../packages/shared/brand.json");
+
 /** @type {import('@rspack/cli').Configuration} */
 module.exports = {
   entry: { main: "./src/main.tsx" },
@@ -15,6 +18,10 @@ module.exports = {
   },
   resolve: {
     extensions: ["...", ".ts", ".tsx"],
+    extensionAlias: {
+      ".js": [".ts", ".tsx", ".js"],
+      ".mjs": [".mts", ".mjs"],
+    },
     alias: { "@": path.resolve(__dirname, "src") },
   },
   module: {
@@ -60,7 +67,7 @@ module.exports = {
   plugins: [
     new rspack.HtmlRspackPlugin({
       template: "./public/index.html",
-      title: "MobileFlow Documentation",
+      title: `${productName} Documentation`,
     }),
     isDev && new ReactRefreshPlugin(),
   ].filter(Boolean),

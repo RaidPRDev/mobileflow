@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Button,
   Dialog,
@@ -9,11 +9,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconButton,
   Input,
   Label,
   Loading,
+  Tooltip,
 } from "@mobileflow/ui";
-import { CircleCheckBig, CircleHelp, Loader2, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { CircleHelp, Play, RefreshCw, RotateCcw, ShieldAlert } from "lucide-react";
+import { CheckIcon } from "../components/CheckIcon";
 import { api, type HostSetupJob, type HostSetupStatus, type HostSetupStep } from "../api/client";
 import { CircleXBig } from "../components/CircleXBig";
 import { Collapse } from "../components/Collapse";
@@ -33,9 +36,7 @@ export function ServerSetupDialog({
   hostName: string;
   onClose: () => void;
 }) {
-  const qc = useQueryClient();
   const [sudoPassword, setSudoPassword] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
 
   const status = useQuery({
     queryKey: ["admin", "host-setup", hostId],
@@ -48,7 +49,6 @@ export function ServerSetupDialog({
   // ---- running job state (polled) ----
   const [job, setJob] = useState<HostSetupJob | null>(null);
   const [jobLines, setJobLines] = useState<{ seq: number; text: string }[]>([]);
-  const [activeStep, setActiveStep] = useState<HostSetupStep | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
@@ -90,8 +90,7 @@ export function ServerSetupDialog({
           ? { sudoPassword }
           : {}),
       }),
-    onSuccess: (res, input) => {
-      setActiveStep(input.step);
+    onSuccess: (res) => {
       setJob(null);
       setJobLines([]);
       beginPolling(res.jobId);
@@ -104,20 +103,6 @@ export function ServerSetupDialog({
   const busy = run.isPending || job?.state === "running";
   const needsSudoSomewhere = steps.some((s) => s.canRun && s.runNeedsSudo);
 
-  // Offer to point the host row at the tunnel address once BOTH ends work:
-  // the Mac's tunnel, and the production host's route to it.
-  const tunnelOk = steps.find((s) => s.id === "tunnel")?.status === "ok";
-  const prodOk = steps.find((s) => s.id === "prodvpn")?.status === "ok";
-  const vpnIp = data?.vpn.macIp ?? null;
-  const suggestVpnIp = !!(data?.reachable && tunnelOk && prodOk && vpnIp && data.hostname !== vpnIp);
-  const useVpnIp = useMutation({
-    mutationFn: () => api.admin.patchHost(hostId, { hostname: vpnIp }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "hosts"] });
-      void status.refetch();
-    },
-  });
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
@@ -127,7 +112,31 @@ export function ServerSetupDialog({
       >
         <DialogHeader>
           <div className="host-setup__heading">
-            <DialogTitle>Server setup</DialogTitle>
+            {/* Count and Validate ride up here so the body is nothing but the
+                two working columns. */}
+            <div className="host-setup__heading-row">
+              <DialogTitle>Server setup</DialogTitle>
+              {data && (
+                <div className="host-setup__heading-actions">
+                  <span className="host-setup__summary-count">
+                    {readyCount} of {steps.length} steps ready
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => status.refetch()}
+                    disabled={status.isFetching || busy}
+                  >
+                    <RefreshCw
+                      size={14}
+                      className={status.isFetching ? "host-setup__spin" : undefined}
+                      aria-hidden
+                    />
+                    Validate
+                  </Button>
+                </div>
+              )}
+            </div>
             <DialogDescription>
               Provision <strong>{hostName}</strong> as a build host. Steps run over SSH from this
               (local) API and are recorded on the Mac in <code>~/.mobileflow/</code> so they can be
@@ -146,22 +155,10 @@ export function ServerSetupDialog({
           )}
 
           {data && (
-            <>
-              <div className="host-setup__summary">
-                <span className="host-setup__summary-count">
-                  {readyCount} of {steps.length} steps ready
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => status.refetch()}
-                  disabled={status.isFetching || busy}
-                >
-                  <RefreshCw size={14} className={status.isFetching ? "host-setup__spin" : undefined} aria-hidden />
-                  Re-check
-                </Button>
-              </div>
-
+            <div className="host-setup__layout">
+              {/* Left: password + the checklist. The list is the only thing in
+                  this column that scrolls. */}
+              <div className="host-setup__pane host-setup__pane--steps">
               {!data.reachable && (
                 <div className="host-setup__banner is-error">
                   <strong>Can't reach the Mac over SSH.</strong> {data.connectError}
@@ -195,18 +192,8 @@ export function ServerSetupDialog({
                     placeholder="Required by steps marked “sudo”"
                     autoComplete="off"
                   />
-                  <p className="host-setup__sudo-hint">
-                    Sent once per step and piped straight to <code>sudo</code> on the Mac — never
-                    stored, never logged.
-                  </p>
                 </div>
               )}
-
-              <VpsAccessPanel
-                hostId={hostId}
-                vpn={data.vpn}
-                onChanged={() => void status.refetch()}
-              />
 
               <div className="host-setup__steps scrollbar">
                 {steps.map((s) => (
@@ -220,67 +207,34 @@ export function ServerSetupDialog({
                 ))}
               </div>
 
-              {suggestVpnIp && (
-                <div className="host-setup__banner is-success">
-                  Tunnel verified end to end. This host still points at <code>{data.hostname}</code>{" "}
-                  — switch it to the VPN address so production can reach it. (Local builds will
-                  then also go through the VPN, so keep your VPN client connected when building
-                  locally.)
-                  <div className="host-setup__banner-action">
-                    <Button size="sm" onClick={() => useVpnIp.mutate()} loading={useVpnIp.isPending}>
-                      Set host address to {vpnIp}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               {run.error && <p className="text-error">{(run.error as Error).message}</p>}
+              </div>
 
-              {(job || run.isPending) && (
-                <div className="host-setup__log">
-                  <div className="host-setup__log-title">
-                    {job?.state === "running" || run.isPending ? (
-                      <Loader2 size={14} className="host-setup__spin" aria-hidden />
-                    ) : job?.state === "succeeded" ? (
-                      <CircleCheckBig size={14} className="status-icon is-success" aria-hidden />
-                    ) : (
-                      <CircleXBig size={14} className="status-icon is-failed" aria-hidden />
-                    )}
-                    {activeStep ? `${job?.revert ? "Revert — " : ""}${activeStep.title}` : "Running…"}
-                    {job && job.state !== "running" && (
-                      <button
-                        type="button"
-                        className="host-setup__log-close"
-                        onClick={() => {
-                          setJob(null);
-                          setJobLines([]);
-                          setActiveStep(null);
-                        }}
-                        aria-label="Hide log"
-                      >
-                        <X size={14} aria-hidden />
-                      </button>
-                    )}
+              {/* Right: VPN access strip over the terminal. The terminal is
+                  always mounted so the column keeps its shape between runs. */}
+              <div className="host-setup__pane host-setup__pane--output">
+                {/* The label earns its keep on layout alone: it gives this
+                    column the same label-then-control rhythm as the password
+                    field opposite, so the two start on the same baseline
+                    instead of a label's height out of step. Only rendered when
+                    the panel itself will render, or the label would head an
+                    empty block. */}
+                {data.vpn.vpsHost && (
+                  <div className="host-setup__vps">
+                    <Label className="host-setup__sudo-label">VPN server</Label>
+                    <VpsAccessPanel
+                      hostId={hostId}
+                      vpn={data.vpn}
+                      onChanged={() => void status.refetch()}
+                    />
                   </div>
-                  <LogPane lines={jobLines} />
-                </div>
-              )}
+                )}
 
-              {data.history.length > 0 && (
-                <div className="host-setup__history">
-                  <button
-                    type="button"
-                    className="host-setup__history-toggle"
-                    onClick={() => setShowHistory((v) => !v)}
-                  >
-                    {showHistory ? "Hide" : "Show"} provisioning history ({data.history.length} entries)
-                  </button>
-                  <Collapse open={showHistory}>
-                    <pre className="host-setup__history-log">{data.history.join("\n")}</pre>
-                  </Collapse>
+                <div className="host-setup__log">
+                  <LogPane lines={jobLines} idle={!job && !run.isPending} />
                 </div>
-              )}
-            </>
+              </div>
+            </div>
           )}
         </DialogBody>
         <DialogFooter>
@@ -340,20 +294,20 @@ function VpsAccessPanel({
     <div className="vps-access">
       <div className="vps-access__title">
         {ok ? (
-          <CircleCheckBig size={16} className="status-icon is-success" aria-hidden />
+          <CheckIcon size={16} className="status-icon is-success" aria-hidden />
         ) : (
           <CircleXBig size={16} className="status-icon is-failed" aria-hidden />
         )}
         <span>
           VPN server access — <code>{vpn.vpsUser}@{vpn.vpsHost}</code>
         </span>
-        {ok ? (
-          <span className="vps-access__detail">connected with the stored key</span>
-        ) : vpn.serverAccess === "unreachable" ? (
+        {/* Nothing trailing on the happy path — the tick already says it. The
+            failure states stay, because each one gates the panel below. */}
+        {ok ? null : vpn.serverAccess === "unreachable" ? (
           <span className="vps-access__detail">server unreachable</span>
         ) : keyAdded ? (
           <span className="vps-access__detail is-added">
-            <CircleCheckBig size={13} aria-hidden />
+            <CheckIcon size={13} aria-hidden />
             Key added — authorize it below
           </span>
         ) : vpn.serverAccess === "no-key" ? (
@@ -443,11 +397,22 @@ function StepRow({
   const [showInfo, setShowInfo] = useState(false);
   const runBlocked = step.runNeedsSudo && !sudoReady;
   const revertBlocked = step.revertNeedsSudo && !sudoReady;
+  // Why a button is dead, surfaced in its tooltip rather than a visible label.
+  const runTitle = !step.canRun
+    ? "This step can't be run from here"
+    : runBlocked
+      ? "Enter the Mac admin password first"
+      : null;
+  const revertTitle = !step.canRevert
+    ? "This step can't be reverted"
+    : revertBlocked
+      ? "Enter the Mac admin password first"
+      : null;
 
   return (
     <div className={`host-setup-step is-${step.status}`}>
       <span className="host-setup-step__icon" aria-hidden>
-        {step.status === "ok" && <CircleCheckBig size={18} className="status-icon is-success" />}
+        {step.status === "ok" && <CheckIcon size={18} className="status-icon is-success" />}
         {step.status === "missing" && <CircleXBig size={18} className="status-icon is-failed" />}
         {(step.status === "unknown" || step.status === "error") && (
           <CircleHelp size={18} className="status-icon is-muted" />
@@ -471,48 +436,52 @@ function StepRow({
           <p className="host-setup-step__description">{step.description}</p>
         </Collapse>
       </div>
+      {/* Icon buttons, not labels — three of them on every row so the column
+          edge stays straight down the list. Run and Revert are always present
+          and disable themselves when the step doesn't support them. */}
       <div className="host-setup-step__actions">
-        <button
-          type="button"
-          className="host-setup-step__info"
-          onClick={() => setShowInfo((v) => !v)}
-          aria-label={`About ${step.title}`}
-        >
-          <CircleHelp size={14} aria-hidden />
-        </button>
-        {step.canRun && step.status !== "ok" && (
-          <Button
-            size="sm"
+        <Tooltip content={`About ${step.title}`}>
+          <IconButton
+            className="host-setup-step__action"
+            onClick={() => setShowInfo((v) => !v)}
+            aria-label={`About ${step.title}`}
+          >
+            <CircleHelp size={14} aria-hidden />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content={runTitle ?? "Run"}>
+          <IconButton
+            className="host-setup-step__action is-run"
             onClick={() => onRun(false)}
-            disabled={busy || runBlocked}
-            title={runBlocked ? "Enter the Mac admin password above first" : undefined}
+            disabled={busy || runBlocked || !step.canRun}
+            aria-label={`Run ${step.title}`}
           >
-            Run
-          </Button>
-        )}
-        {step.canRun && step.status === "ok" && (
-          <Button size="sm" variant="outline" onClick={() => onRun(false)} disabled={busy || runBlocked}>
-            Re-run
-          </Button>
-        )}
-        {step.canRevert && (
-          <Button
-            size="sm"
-            variant="outline"
+            <Play size={14} aria-hidden />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content={revertTitle ?? "Revert"}>
+          <IconButton
+            className="host-setup-step__action"
             onClick={() => onRun(true)}
-            disabled={busy || revertBlocked}
-            title={revertBlocked ? "Enter the Mac admin password above first" : undefined}
+            disabled={busy || revertBlocked || !step.canRevert}
+            aria-label={`Revert ${step.title}`}
           >
-            Revert
-          </Button>
-        )}
+            <RotateCcw size={14} aria-hidden />
+          </IconButton>
+        </Tooltip>
       </div>
     </div>
   );
 }
 
 // Auto-scrolls to the newest line unless the user scrolled up to read.
-function LogPane({ lines }: { lines: { seq: number; text: string }[] }) {
+function LogPane({
+  lines,
+  idle,
+}: {
+  lines: { seq: number; text: string }[];
+  idle?: boolean;
+}) {
   const ref = useRef<HTMLPreElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -520,9 +489,10 @@ function LogPane({ lines }: { lines: { seq: number; text: string }[] }) {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [lines.length]);
+  const body = lines.map((l) => l.text).join("\n");
   return (
     <pre ref={ref} className="host-setup__log-pane">
-      {lines.map((l) => l.text).join("\n") || "…"}
+      {body || (idle ? "Run a step to see its output here." : "…")}
     </pre>
   );
 }

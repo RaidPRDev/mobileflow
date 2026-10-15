@@ -9,6 +9,7 @@ import ssh2, { Client as SshClient } from "ssh2";
 const sshUtils = ssh2.utils;
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { APP_NAME } from "@mobileflow/shared";
 import { requireSuperadmin } from "../auth/middleware.js";
 import { db } from "../db/client.js";
 import { buildHosts } from "../db/schema.js";
@@ -243,7 +244,7 @@ function stepDefs(): StepDef[] {
       id: "connect",
       title: "SSH connection",
       description:
-        "MobileFlow can reach the Mac over SSH with the stored key. On a fresh Mac: System Settings → General → Sharing → enable Remote Login, then add the public key to ~/.ssh/authorized_keys.",
+        `${APP_NAME} can reach the Mac over SSH with the stored key. On a fresh Mac: System Settings → General → Sharing → enable Remote Login, then add the public key to ~/.ssh/authorized_keys.`,
       kind: "manual",
     },
     {
@@ -252,6 +253,43 @@ function stepDefs(): StepDef[] {
       description:
         "Xcode must be installed by hand (App Store needs an Apple ID). After installing: open Xcode once, then run: sudo xcodebuild -license accept",
       kind: "manual",
+    },
+    {
+      id: "xcodesudo",
+      title: "Xcode update handling",
+      description:
+        "Lets builds accept the Xcode license and install first-launch components after an Xcode update, without a password (/etc/sudoers.d/mobileflow-xcode). The rule allows only `xcodebuild -license accept` and `xcodebuild -runFirstLaunch`.",
+      kind: "auto",
+      runNeedsSudo: true,
+      revertNeedsSudo: true,
+      run: `
+# An Xcode update (App Store auto-update included) resets the license
+# acceptance, and every xcodebuild/git call then exits 69 until root accepts
+# it. MacRunner's preflight runs these two commands with \`sudo -n\`; the rule
+# names the exact argv so nothing else gets passwordless root. sudo resets
+# DEVELOPER_DIR, so the runner calls the per-Xcode binary by full path - hence
+# the /Applications glob alongside the /usr/bin shim.
+RULE=/etc/sudoers.d/mobileflow-xcode
+TMPRULE="$(mktemp)"
+U="$(id -un)"
+cat > "$TMPRULE" <<SUEOF
+$U ALL=(root) NOPASSWD: /usr/bin/xcodebuild -license accept, /usr/bin/xcodebuild -runFirstLaunch
+$U ALL=(root) NOPASSWD: /Applications/*.app/Contents/Developer/usr/bin/xcodebuild -license accept, /Applications/*.app/Contents/Developer/usr/bin/xcodebuild -runFirstLaunch
+SUEOF
+if ! sudo_run /usr/sbin/visudo -cf "$TMPRULE" >/dev/null; then
+  rm -f "$TMPRULE"; echo '!! generated sudoers rule failed validation - not installed'; exit 1
+fi
+sudo_run install -m 0440 -o root -g wheel "$TMPRULE" "$RULE"
+rm -f "$TMPRULE"
+mflog "xcodesudo installed $RULE"
+echo "Installed $RULE"
+`,
+      revert: `
+RULE=/etc/sudoers.d/mobileflow-xcode
+sudo_run rm -f "$RULE"
+mflog "xcodesudo removed"
+echo "Removed $RULE"
+`,
     },
     {
       id: "homebrew",
@@ -397,7 +435,7 @@ echo "Done."
       id: "vpndaemon",
       title: "Tunnel autostart (launchd)",
       description:
-        "System daemon that brings wg0 up at boot (/Library/LaunchDaemons/com.mobileflow.wg0.plist) — the tunnel survives reboots with nobody logged in.",
+        "System daemon that brings wg0 up at boot and re-checks it every minute (/Library/LaunchDaemons/com.mobileflow.wg0.plist) — the tunnel survives reboots and drops with nobody logged in.",
       kind: "auto",
       needsVpn: true,
       runNeedsSudo: true,
@@ -410,6 +448,10 @@ WGQUICK="$BREWBIN/wg-quick"
 # macOS system bash is 3.2; wg-quick needs 4+. Make sure brew's bash exists and
 # run wg-quick through it explicitly (shebang env-resolution can't be trusted
 # under launchd/sudo where PATH lacks the brew bin dir).
+# RunAtLoad alone gives up if the network isn't ready at boot or the tunnel
+# drops later, so launchd re-checks every 60s and only runs wg-quick when wg0
+# is down (the check keeps it idempotent). On macOS, wg only knows the utunN
+# name, so resolve it via wg-quick's /var/run/wireguard/wg0.name first.
 "$BREW" list bash >/dev/null 2>&1 || "$BREW" install bash
 BASH5="$BREWBIN/bash"
 [ -x "$BASH5" ] || { echo '!! Homebrew bash not found after install'; exit 1; }
@@ -426,15 +468,15 @@ cat > "$TMPPLIST" <<PLEOF
   <key>ProgramArguments</key>
   <array>
     <string>$BASH5</string>
-    <string>$WGQUICK</string>
-    <string>up</string>
-    <string>wg0</string>
+    <string>-c</string>
+    <string>n=\\$(cat /var/run/wireguard/wg0.name 2&gt;/dev/null) &amp;&amp; $BREWBIN/wg show "\\$n" &gt;/dev/null 2&gt;&amp;1 || exec $WGQUICK up wg0</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>$BREWBIN:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
   <key>StandardOutPath</key><string>/var/log/mobileflow-wg0.log</string>
   <key>StandardErrorPath</key><string>/var/log/mobileflow-wg0.log</string>
 </dict>
@@ -681,6 +723,11 @@ if command -v xcodebuild >/dev/null 2>&1 && XCV="$(xcodebuild -version 2>/dev/nu
 else
   put xcode missing "Xcode not installed, or license not accepted"
 fi
+if sudo -n -l /usr/bin/xcodebuild -license accept >/dev/null 2>&1; then
+  put xcodesudo ok "builds can accept the license after an Xcode update"
+else
+  put xcodesudo missing "Xcode updates will block builds until someone runs sudo xcodebuild -license accept"
+fi
 BREW="$(find_brew || true)"
 if [ -n "$BREW" ]; then
   put homebrew ok "$("$BREW" --version 2>/dev/null | head -1)"
@@ -700,7 +747,9 @@ CONF=""
 [ -n "$BREW" ] && CONF="$("$BREW" --prefix)/etc/wireguard/wg0.conf"
 if [ -n "$CONF" ] && [ -e "$CONF" ]; then put vpnconf ok "$CONF"; else put vpnconf missing "wg0.conf not written"; fi
 PLIST=/Library/LaunchDaemons/com.mobileflow.wg0.plist
-if [ -e "$PLIST" ]; then put vpndaemon ok "installed"; else put vpndaemon missing "autostart daemon not installed"; fi
+if [ ! -e "$PLIST" ]; then put vpndaemon missing "autostart daemon not installed"
+elif ! grep -q StartInterval "$PLIST"; then put vpndaemon missing "outdated daemon (no retry) - run again to update it"
+else put vpndaemon ok "installed"; fi
 SLEEPV="$(pmset -g 2>/dev/null | awk '$1=="sleep"{print $2; exit}')"
 if [ "$SLEEPV" = "0" ]; then put keepawake ok "system sleep disabled"; else put keepawake missing "system sleep=$SLEEPV"; fi
 STEALTH="$(/usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode 2>/dev/null)"
@@ -1017,6 +1066,7 @@ export async function hostSetupRoutes(server: FastifyInstance) {
           return !!prodTarget() && (st?.status === "ok" || st?.detail?.includes("cannot reach Mac") === true);
         }
         case "vpndaemon": return statuses.get("vpndaemon")?.status === "ok";
+        case "xcodesudo": return statuses.get("xcodesudo")?.status === "ok";
         case "keepawake": return state.has("pmset_prev_sleep");
         case "firewall": return state.has("stealth_prev");
         default: return false;

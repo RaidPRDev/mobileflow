@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { CodeBlock } from "@/components/CodeBlock";
 
 export function DeploymentPage() {
@@ -5,7 +6,7 @@ export function DeploymentPage() {
     <div>
       <h1>Deployment</h1>
       <p>
-        MobileFlow can deploy successful builds directly to the App Store,
+        {APP_NAME} can deploy successful builds directly to the App Store,
         TestFlight, and Google Play. Destinations are configured once per app
         and reused across deployments.
       </p>

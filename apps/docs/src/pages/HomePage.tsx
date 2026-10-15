@@ -1,10 +1,11 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { FeatureCard } from "@/components/FeatureCard";
 
 export function HomePage() {
   return (
     <div className="home-page">
       <section className="hero">
-        <div className="hero-pill">MobileFlow v0.0.0</div>
+        <div className="hero-pill">{APP_NAME} v0.0.0</div>
         <h1>Build and deploy mobile apps in the cloud</h1>
         <p className="hero-subtitle">
           A cloud build and deploy platform for Capacitor, Cordova, React Native, iOS Native, and Android Native apps.
@@ -88,7 +89,7 @@ export function HomePage() {
       <section className="status-section">
         <h2>Status Snapshot</h2>
         <p>
-          The MobileFlow alpha is functional end-to-end. Here is what is already working:
+          The {APP_NAME} alpha is functional end-to-end. Here is what is already working:
         </p>
         <ul>
           <li>Monorepo with pnpm workspaces</li>

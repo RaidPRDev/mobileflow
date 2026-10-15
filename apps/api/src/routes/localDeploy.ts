@@ -71,7 +71,7 @@ const TARGETS: DeployTarget[] = [
   {
     id: "live-caimon",
     kind: "production",
-    label: "Caimón — live",
+    label: "Caimón",
     // Kept to one line — the confirm dialog spells out the guarantees (backup,
     // rolling update, auto-rollback) at the moment they actually matter.
     description: "Ships this workspace to the swarm host and rolls the live stack.",

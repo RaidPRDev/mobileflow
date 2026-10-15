@@ -15,7 +15,7 @@ import {
   IconButton,
   Loading,
 } from "@mobileflow/ui";
-import { CircleCheckBig } from "lucide-react";
+import { CheckIcon } from "../components/CheckIcon";
 import { RUNTIME_LABEL } from "@mobileflow/shared";
 import { ApiError, api } from "../api/client";
 import { CircleXBig } from "../components/CircleXBig";
@@ -330,7 +330,7 @@ function OrgBuildRow({ build, appName }: { build: OrgBuild; appName: string }) {
       <div role="cell" className="builds-row__status">
         {status === "success" ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
+            <CheckIcon size={24} className="status-icon is-success" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
           </span>
         ) : status === "failed" ? (

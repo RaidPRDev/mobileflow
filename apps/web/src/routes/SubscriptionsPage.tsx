@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
+import { APP_NAME } from "@mobileflow/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -158,7 +159,7 @@ function PlanRow({
       <div className="settings-row__content">
         <div className="plan-summary">
           <div>
-            <div className="plan-summary__name">MobileFlow {currentPlanName}</div>
+            <div className="plan-summary__name">{APP_NAME} {currentPlanName}</div>
             <div className="plan-summary__price">{formatPrice(currentPlanPriceCents)}</div>
           </div>
           <Button variant="outline" onClick={() => setShowDialog(true)}>

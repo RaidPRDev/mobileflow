@@ -57,7 +57,16 @@ new_line
 
 echo "✅ Deploying stack..."
 new_line
-docker stack deploy -c "$COMPOSE_FILE_PATH" "$STACK_NAME"
+# --resolve-image never: the images are built on this host and used by tag,
+# never pushed (see start_pipeline.sh). Swarm's default is to contact the
+# registry named in the image reference to pin a digest; localhost:5005 has
+# never seen these tags, so every deploy printed "could not be accessed on a
+# registry to record its digest ... possibly leading to different nodes running
+# different versions". On this single-node swarm the node already holds the
+# image locally, so there is nothing to diverge and nothing to resolve.
+# NOTE: if this stack ever grows past one node, drop this flag and start
+# pushing the images instead — then the warning is real.
+docker stack deploy --resolve-image never -c "$COMPOSE_FILE_PATH" "$STACK_NAME"
 new_line
 
 echo "✅ [$STACK_NAME] stack deployed!"

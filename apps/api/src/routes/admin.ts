@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { count, desc, eq, isNull, sql } from "drizzle-orm";
+import { APP_NAME } from "@mobileflow/shared";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import {
@@ -1095,7 +1096,7 @@ export async function adminRoutes(server: FastifyInstance) {
 
     try {
       const result = await adapter.createProductAndPlan({
-        productName: `MobileFlow ${plan.name}`,
+        productName: `${APP_NAME} ${plan.name}`,
         planName: `${plan.name} Monthly`,
         priceCents: plan.priceCents,
         currency: plan.currency,

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import PDFDocument from "pdfkit";
+import { APP_NAME, LEGAL_NAME } from "@mobileflow/shared";
 import SVGtoPDF from "svg-to-pdfkit";
 
 // PAID stamp asset. Resolved relative to this module so the location is
@@ -34,8 +35,8 @@ function loadPaidStamp(): Buffer | null {
 // Brand / seller details. Defaults are used only when the admin hasn't filled
 // in the Company page yet (company_info row missing or fields null).
 const DEFAULT_SELLER: Seller = {
-  name: "MobileFlow",
-  legalName: "MobileFlow, Inc.",
+  name: APP_NAME,
+  legalName: LEGAL_NAME,
   supportEmail: null,
   logo: null,
 };

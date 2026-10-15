@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -8,11 +9,14 @@ import {
   IconButton,
   Loading,
 } from "@mobileflow/ui";
-import { CircleCheckBig } from "lucide-react";
+import { CheckIcon } from "../components/CheckIcon";
 import { api } from "../api/client";
 import { formatFullDate, relativeTime } from "../lib/dates";
 import { CircleXBig } from "../components/CircleXBig";
 import { AndroidIcon } from "../components/AndroidIcon";
+import { useAdaptivePageSize } from "../lib/useAdaptivePageSize";
+import { ListFooter } from "../components/ListFooter";
+import { TableFillerRows, fillerCount } from "../components/TableFillerRows";
 
 type AdminBuildTarget = "ios" | "android" | "web";
 type AdminBuildStatus = "queued" | "running" | "success" | "failed" | "cancelled";
@@ -62,22 +66,66 @@ export function AdminBuildsPage() {
         </div>
       )}
 
-      {!!builds.length && (
-        <div className="data-grid admin-builds-table fade-in" role="table">
-          <div className="data-grid__head" role="row">
-            <span role="columnheader">Build</span>
-            <span role="columnheader">Status</span>
-            <span role="columnheader">Platform</span>
-            <span role="columnheader">Organization</span>
-            <span role="columnheader">Commit</span>
-            <span role="columnheader" aria-label="Actions"></span>
-          </div>
-          {builds.map((b) => (
-            <AdminBuildRow key={b.id} build={b} />
-          ))}
-        </div>
-      )}
+      {!!builds.length && <AdminBuildsTable builds={builds} />}
     </div>
+  );
+}
+
+/**
+ * Split out from the page so the pagination hooks below run unconditionally —
+ * the table itself only renders once there is at least one build.
+ */
+function AdminBuildsTable({ builds }: { builds: AdminBuild[] }) {
+  // Anchor on the data-grid container (not its head, which uses
+  // `display: contents` and reports an unreliable bounding rect). Reserve
+  // covers the column header row + footer + app-content bottom padding.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const pageSize = useAdaptivePageSize({
+    rowHeight: 68,
+    anchorRef: gridRef,
+    reserve: 130,
+    min: 5,
+    max: 30,
+  });
+  const [page, setPage] = useState(0);
+
+  const total = builds.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // Clamped, not stored: the 3s refetch can shrink the list under the cursor.
+  const pageIdx = Math.min(page, pageCount - 1);
+  const visible = builds.slice(pageIdx * pageSize, pageIdx * pageSize + pageSize);
+
+  return (
+    <>
+      <div className="data-grid admin-builds-table fade-in" role="table" ref={gridRef}>
+        <div className="data-grid__head" role="row">
+          <span role="columnheader">Build</span>
+          <span role="columnheader">Status</span>
+          <span role="columnheader">Platform</span>
+          <span role="columnheader">Organization</span>
+          <span role="columnheader">Commit</span>
+          <span role="columnheader" aria-label="Actions"></span>
+        </div>
+        {visible.map((b) => (
+          <AdminBuildRow key={b.id} build={b} />
+        ))}
+        <TableFillerRows
+          gridRef={gridRef}
+          rowSelector=".builds-row"
+          count={fillerCount(pageSize, visible.length, pageCount)}
+          columns={6}
+        />
+      </div>
+      <ListFooter
+        total={total}
+        pageIdx={pageIdx}
+        pageCount={pageCount}
+        unit="build"
+        onPrev={() => setPage((p) => Math.max(0, p - 1))}
+        onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+        onPage={setPage}
+      />
+    </>
   );
 }
 
@@ -127,7 +175,7 @@ function AdminBuildRow({ build }: { build: AdminBuild }) {
       <div role="cell" className="builds-row__status">
         {status === "success" ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
+            <CheckIcon size={24} className="status-icon is-success" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">{STATUS_TOOLTIP.success}</span>
           </span>
         ) : status === "failed" ? (

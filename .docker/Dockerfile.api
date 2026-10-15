@@ -7,7 +7,15 @@ WORKDIR /app
 
 # openssh-client: the build runners shell out to ssh/scp for the Mac + Linux
 # build hosts. ca-certificates: outbound HTTPS (OAuth, Stripe, git providers).
-RUN apt-get update \
+#
+# DEBIAN_FRONTEND is exported inside the RUN rather than set with ENV so it
+# stays scoped to this layer and never leaks into the running container. Without
+# it debconf probes the Dialog frontend, finds no TERM, falls back to Readline,
+# finds no Term/ReadLine.pm in the slim image, and prints a wall of "unable to
+# initialize frontend" warnings before settling on Teletype and installing fine
+# anyway — pure noise in the deploy log.
+RUN export DEBIAN_FRONTEND=noninteractive \
+ && apt-get update \
  && apt-get install -y --no-install-recommends openssh-client ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 

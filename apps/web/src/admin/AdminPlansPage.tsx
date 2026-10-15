@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheckBig, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { CheckIcon } from "../components/CheckIcon";
 import { Loading } from "@mobileflow/ui";
 import { api } from "../api/client";
 import { CircleXBig } from "../components/CircleXBig";
@@ -99,7 +100,7 @@ function PlanRow({ plan }: { plan: Plan }) {
       <div role="cell" className="builds-row__status">
         {plan.canBuild ? (
           <span className="tooltip-wrap" tabIndex={0}>
-            <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
+            <CheckIcon size={24} className="status-icon is-success" aria-hidden />
             <span className="tooltip-bubble" role="tooltip">Builds enabled</span>
           </span>
         ) : (

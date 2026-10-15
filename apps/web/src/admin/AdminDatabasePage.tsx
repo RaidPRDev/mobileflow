@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -128,6 +128,27 @@ export function AdminDatabasePage() {
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["admin-db-rows"] });
     void qc.invalidateQueries({ queryKey: ["admin-db-tables"] });
+  };
+
+  // A warm refetch can settle in a few milliseconds, so driving the icon off
+  // `isFetching` alone often never paints and the click looks like it did
+  // nothing. Hold the spin for one full 900ms turn (the length of `admin-spin`,
+  // so it stops square at 360°) and let `isFetching` carry it further when the
+  // query is genuinely slow.
+  const [spinning, setSpinning] = useState(false);
+  const spinTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (spinTimer.current !== null) window.clearTimeout(spinTimer.current);
+    },
+    [],
+  );
+
+  const refreshRows = () => {
+    setSpinning(true);
+    if (spinTimer.current !== null) window.clearTimeout(spinTimer.current);
+    spinTimer.current = window.setTimeout(() => setSpinning(false), 900);
+    void qc.invalidateQueries({ queryKey: ["admin-db-rows"] });
   };
 
   const update = useMutation({
@@ -432,15 +453,12 @@ export function AdminDatabasePage() {
           {table && (
             <>
               <div className="admin-db-toolbar">
+                {/* Row count lives in the footer (`ListFooter total unit="row"`),
+                    so the toolbar carries only the table name. */}
                 <div className="admin-db-toolbar__title">
                   <code className="plan-card__id">{table}</code>
-                  {data && (
-                    <span className="text-help">
-                      {data.total.toLocaleString()} row{data.total === 1 ? "" : "s"}
-                    </span>
-                  )}
                 </div>
-                <div className="admin-db-search">
+                <div className="admin-db-search admin-db-search--toolbar">
                   <Search size={14} className="admin-db-search__icon" aria-hidden />
                   <input
                     className="admin-db-search__input"
@@ -453,11 +471,11 @@ export function AdminDatabasePage() {
                     aria-label="Search rows"
                   />
                 </div>
-                <IconButton
-                  aria-label="Refresh"
-                  onClick={() => void qc.invalidateQueries({ queryKey: ["admin-db-rows"] })}
-                >
-                  <RefreshCw size={14} className={rowsQ.isFetching ? "is-spinning" : undefined} />
+                <IconButton aria-label="Refresh" onClick={refreshRows}>
+                  <RefreshCw
+                    size={14}
+                    className={cn((spinning || rowsQ.isFetching) && "is-spinning")}
+                  />
                 </IconButton>
               </div>
 

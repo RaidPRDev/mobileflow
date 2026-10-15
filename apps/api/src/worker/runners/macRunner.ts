@@ -1,5 +1,6 @@
 import { and, asc, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { Client } from "ssh2";
+import { APP_NAME } from "@mobileflow/shared";
 import { db } from "../../db/client.js";
 import { apps, buildStacks, builds, certificates, environmentVars, gitConnections } from "../../db/schema.js";
 import { decryptString } from "../../lib/crypto.js";
@@ -188,6 +189,23 @@ export class MacRunner implements Runner {
       // --- preparing ---
       await ctx.step("preparing", "running");
       try {
+        // An Xcode update (App Store auto-update included) resets the license
+        // acceptance; until root accepts it every xcodebuild — and git, which
+        // is Xcode's shim on macOS — exits 69. Accept it here via the
+        // passwordless rule from Server setup ("Xcode update handling"). sudo
+        // drops DEVELOPER_DIR, so call the stack's own xcodebuild by path.
+        const xcb = developerDir ? `${developerDir}/usr/bin/xcodebuild` : "/usr/bin/xcodebuild";
+        await run(`bash -lc ${shq(
+          `${developerDir ? `export DEVELOPER_DIR=${shq(developerDir)}; ` : ""}` +
+          `if ! xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then ` +
+            `echo "Xcode was updated and needs its license accepted — accepting it automatically…"; ` +
+            `if ! sudo -n ${shq(xcb)} -license accept; then ` +
+              `echo "! The build Mac can't accept the Xcode license on its own. Run Admin → Build hosts → Edit → Server setup → “Xcode update handling”, or run on the Mac: sudo xcodebuild -license accept"; exit 69; ` +
+            `fi; ` +
+            `sudo -n ${shq(xcb)} -runFirstLaunch >/dev/null || { echo "! Installing Xcode's first-launch components failed — run on the Mac: sudo xcodebuild -runFirstLaunch"; exit 69; }; ` +
+            `echo "Xcode ready: $(xcodebuild -version | head -1)"; ` +
+          `fi`,
+        )}`);
         await run(`mkdir -p ${shq(remoteDir)}`);
         await ctx.log(`Cloning ${a.gitRepoFullName} @ ${ctx.build.commitSha.slice(0, 7)}`);
         // `-c credential.helper=` clears the helper list for this fetch. On a
@@ -263,6 +281,8 @@ export class MacRunner implements Runner {
           `export MAC_SERVER_IP=${shq(host.host)}`,
           `export MAC_SERVER_PORT=${shq(String(host.port))}`,
           `export MAC_SERVER_PASS=${shq("unused-by-mobileflow")}`,
+          // Product display name for user-facing log lines in the scripts.
+          `export BRAND_NAME=${shq(APP_NAME)}`,
         ].join(" && ");
         // DEVELOPER_DIR comes from the build's stack and picks the Xcode used
         // by xcodebuild/xcrun/pod inside this shell. Declared before user env

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { APP_NAME } from "@mobileflow/shared";
 import {
   Button,
   Card,
@@ -16,8 +17,12 @@ import {
   Input,
   Label,
   Loading,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@mobileflow/ui";
-import { CircleCheckBig, Info, Loader2, XCircle } from "lucide-react";
+import { Info, Loader2, XCircle } from "lucide-react";
+import { CheckIcon } from "../components/CheckIcon";
 import { ApiError, api } from "../api/client";
 import { CircleXBig } from "../components/CircleXBig";
 import { Collapse } from "../components/Collapse";
@@ -59,8 +64,10 @@ const DEFAULTS: Record<Kind, { remoteBase: string; downloadsBase: string; toolsP
   },
 };
 
+// Display only — the stored `kind` stays `linux_docker`, which is what the API
+// and the LINUX_BUILD_* env vars key off.
 const KIND_LABEL: Record<Kind, string> = {
-  linux_docker: "Linux · Docker",
+  linux_docker: "Unix",
   mac: "Mac",
 };
 
@@ -200,81 +207,89 @@ function HostRowItem({ host }: { host: HostRow }) {
   ];
 
   return (
-    <RowContextMenu actions={actions}>
-      <div
-        className="data-grid__row builds-row"
-        role="row"
-        onDoubleClick={(e) => {
-          if (isEnv || isInteractiveTarget(e.target)) return;
-          clearTextSelection();
-          setEditOpen(true);
-        }}
-      >
-        <div role="cell">
-          <span className="builds-row__triggered-name">{host.name}</span>
-        </div>
-        <div role="cell">
-          <code className="plan-card__id">{KIND_LABEL[host.kind]}</code>
-        </div>
-        <div role="cell" className="admin-hosts-row__addr">
-          {host.sshUser}@{host.hostname}:{host.port}
-        </div>
-        <div role="cell" className="admin-plans-row__num">{host.capacity}</div>
-        <div role="cell">
-          <span className={`admin-hosts-row__source admin-hosts-row__source--${host.source}`}>
-            {host.source.toUpperCase()}
-          </span>
-        </div>
-        <div role="cell" className="builds-row__status">
-          {host.online ? (
-            <span className="tooltip-wrap" tabIndex={0}>
-              <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
-              <span className="tooltip-bubble" role="tooltip">Online</span>
+    // The dialogs are siblings of the context-menu trigger, not children of it.
+    // They portal their DOM to <body>, but React events travel the React tree,
+    // so while they were nested inside the row a right-click anywhere in an open
+    // dialog — including its full-screen overlay — bubbled back to the trigger
+    // and popped this row's menu on top of the modal. Nothing is added to the
+    // grid by moving them: every one of them renders through a portal, and
+    // `.data-grid__row` is `display: contents`.
+    <>
+      <RowContextMenu actions={actions}>
+        <div
+          className="data-grid__row builds-row"
+          role="row"
+          onDoubleClick={(e) => {
+            if (isEnv || isInteractiveTarget(e.target)) return;
+            clearTextSelection();
+            setEditOpen(true);
+          }}
+        >
+          <div role="cell">
+            <span className="builds-row__triggered-name">{host.name}</span>
+          </div>
+          <div role="cell">
+            <code className="plan-card__id">{KIND_LABEL[host.kind]}</code>
+          </div>
+          <div role="cell" className="admin-hosts-row__addr">
+            {host.sshUser}@{host.hostname}:{host.port}
+          </div>
+          <div role="cell" className="admin-plans-row__num">{host.capacity}</div>
+          <div role="cell">
+            <span className={`admin-hosts-row__source admin-hosts-row__source--${host.source}`}>
+              {host.source.toUpperCase()}
             </span>
-          ) : (
-            <span className="tooltip-wrap" tabIndex={0}>
-              <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
-              <span className="tooltip-bubble" role="tooltip">Offline</span>
-            </span>
-          )}
+          </div>
+          <div role="cell" className="builds-row__status">
+            {host.online ? (
+              <span className="tooltip-wrap" tabIndex={0}>
+                <CheckIcon size={24} className="status-icon is-success" aria-hidden />
+                <span className="tooltip-bubble" role="tooltip">Online</span>
+              </span>
+            ) : (
+              <span className="tooltip-wrap" tabIndex={0}>
+                <CircleXBig size={24} className="status-icon is-failed" aria-hidden />
+                <span className="tooltip-bubble" role="tooltip">Offline</span>
+              </span>
+            )}
+          </div>
+          <div role="cell" className="builds-row__menu">
+            <RowActionsButton actions={actions} ariaLabel={`Actions for ${host.name}`} />
+          </div>
         </div>
-        <div role="cell" className="builds-row__menu">
-          <RowActionsButton actions={actions} ariaLabel={`Actions for ${host.name}`} />
-        </div>
-        <TestConnectionDialog
-          open={testOpen}
-          onOpenChange={setTestOpen}
-          hostName={host.name}
-          isPending={test.isPending}
-          error={test.error as Error | null}
-          result={test.data ?? null}
-        />
-        {!isEnv && editOpen && (
-          <EditHostDialog host={host} onClose={() => setEditOpen(false)} />
-        )}
-        {host.kind === "mac" && !isEnv && (
-          <PushArtifactKeyDialog
-            open={pushKeyOpen}
-            onOpenChange={setPushKeyOpen}
-            hostId={host.id}
-            hostName={host.name}
-            hasExistingKey={host.hasArtifactKey}
-          />
-        )}
-        <CleanupOrphansDialog
-          open={cleanupOpen}
-          onOpenChange={setCleanupOpen}
+      </RowContextMenu>
+
+      <TestConnectionDialog
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        hostName={host.name}
+        isPending={test.isPending}
+        error={test.error as Error | null}
+        result={test.data ?? null}
+      />
+      {!isEnv && editOpen && <EditHostDialog host={host} onClose={() => setEditOpen(false)} />}
+      {host.kind === "mac" && !isEnv && (
+        <PushArtifactKeyDialog
+          open={pushKeyOpen}
+          onOpenChange={setPushKeyOpen}
           hostId={host.id}
           hostName={host.name}
+          hasExistingKey={host.hasArtifactKey}
         />
-        <HostTerminalPanel
-          open={terminalOpen}
-          onClose={() => setTerminalOpen(false)}
-          hostId={host.id}
-          hostName={host.name}
-        />
-      </div>
-    </RowContextMenu>
+      )}
+      <CleanupOrphansDialog
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        hostId={host.id}
+        hostName={host.name}
+      />
+      <HostTerminalPanel
+        open={terminalOpen}
+        onClose={() => setTerminalOpen(false)}
+        hostId={host.id}
+        hostName={host.name}
+      />
+    </>
   );
 }
 
@@ -513,7 +528,14 @@ function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void 
           </div>
         </DialogHeader>
         <DialogBody>
-          <HostFields mode="edit" kind={kind} onKind={setKind} form={form} setForm={setForm} />
+          <HostFields
+            mode="edit"
+            kind={kind}
+            onKind={setKind}
+            form={form}
+            setForm={setForm}
+            hasArtifactKey={host.hasArtifactKey}
+          />
           {error && <p className="text-error">{error}</p>}
         </DialogBody>
         <DialogFooter>
@@ -562,41 +584,44 @@ function EditHostDialog({ host, onClose }: { host: HostRow; onClose: () => void 
 // In edit mode the kind buttons only switch the kind — they don't re-apply the
 // path defaults, which would clobber whatever the host is actually configured
 // with — and the key fields become optional.
+/**
+ * The Unix/Mac switch. Built on the shared Tabs primitive rather than a pair of
+ * buttons so the two read as one connected control — it picks which *shape* of
+ * host you're describing, not a value among the fields below it.
+ */
+function KindToggle({ kind, onKind }: { kind: Kind; onKind: (kind: Kind) => void }) {
+  return (
+    <Tabs value={kind} onValueChange={(v) => onKind(v as Kind)}>
+      <TabsList>
+        <TabsTrigger value="linux_docker">Unix</TabsTrigger>
+        <TabsTrigger value="mac">Mac</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+}
+
 function HostFields({
   mode,
-  kind,
-  onKind,
   form,
   setForm,
+  hasArtifactKey,
+  kind,
+  onKind,
 }: {
   mode: "create" | "edit";
-  kind: Kind;
-  onKind: (kind: Kind) => void;
   form: HostForm;
   setForm: (form: HostForm) => void;
+  /** Drives the "already uploaded" note on the artifact key field. */
+  hasArtifactKey?: boolean;
+  kind: Kind;
+  onKind: (kind: Kind) => void;
 }) {
   const editing = mode === "edit";
   return (
     <>
+      <KindToggle kind={kind} onKind={onKind} />
+      <hr className="admin-host-form__rule" />
       <div className="plan-card__fields">
-        <Field label="Kind">
-          <div className="row">
-            <Button
-              size="sm"
-              variant={kind === "linux_docker" ? "default" : "outline"}
-              onClick={() => onKind("linux_docker")}
-            >
-              Linux (Docker)
-            </Button>
-            <Button
-              size="sm"
-              variant={kind === "mac" ? "default" : "outline"}
-              onClick={() => onKind("mac")}
-            >
-              Mac
-            </Button>
-          </div>
-        </Field>
         <Field label="Display name">
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
@@ -625,25 +650,33 @@ function HostFields({
           <Input value={form.toolsPath} onChange={(e) => setForm({ ...form, toolsPath: e.target.value })} />
         </Field>
       </div>
-      <Field
+      <KeyField
         label="Private SSH key (PEM)"
-        hint={editing ? "Leave blank to keep the stored key." : undefined}
         info={<SshKeyInfo />}
-      >
-        <PemKeyInput value={form.sshKey} onChange={(v) => setForm({ ...form, sshKey: v })} />
-      </Field>
+        // An existing DB host always has one — it's required to create the row,
+        // and the key is never sent back to the browser.
+        hasStoredKey={editing}
+        storedNote="A key was uploaded previously and is stored encrypted. Add or upload a new one only to replace it."
+        value={form.sshKey}
+        onChange={(v) => setForm({ ...form, sshKey: v })}
+      />
       {kind === "mac" && (
-        <Field
-          label="Artifact-server SSH key (Mac → Linux)"
-          info={<ArtifactKeyInfo />}
-          hint={
-            editing
-              ? "Leave blank to keep the stored key. Replacing it here only updates the stored copy — use “Re-push artifact key” to write it to the Mac."
-              : "Required — pushed to the Mac at ~/.ssh/raidx_linux_key so it can scp build artifacts to the Linux downloads host. Without it, iOS builds will succeed locally but fail at the artifact-upload step."
-          }
-        >
-          <PemKeyInput value={form.artifactKey} onChange={(v) => setForm({ ...form, artifactKey: v })} />
-        </Field>
+        <>
+          <hr className="admin-host-form__rule" />
+          <KeyField
+            label="Artifact-server SSH key (Mac → Linux)"
+            info={<ArtifactKeyInfo />}
+            hasStoredKey={!!hasArtifactKey}
+            storedNote="A key was uploaded previously and is stored encrypted. Replacing it here only updates the stored copy — use “Re-push artifact key” to write it to the Mac."
+            hint={
+              editing || hasArtifactKey
+                ? undefined
+                : "Required — pushed to the Mac at ~/.ssh/raidx_linux_key so it can scp build artifacts to the Linux downloads host. Without it, iOS builds will succeed locally but fail at the artifact-upload step."
+            }
+            value={form.artifactKey}
+            onChange={(v) => setForm({ ...form, artifactKey: v })}
+          />
+        </>
       )}
     </>
   );
@@ -653,30 +686,41 @@ function Field({
   label,
   hint,
   info,
+  actions,
   children,
 }: {
   label: string;
   hint?: React.ReactNode;
-  /** Optional "how do I create this?" panel, toggled by a right-aligned Info button. */
+  /** Optional "how do I create this?" panel, toggled by an Info button that sits
+   *  immediately after the label. */
   info?: React.ReactNode;
+  /** Controls for the field, right-aligned on the label row. */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [showInfo, setShowInfo] = useState(false);
   return (
     <div className="plan-card__field">
-      {info ? (
+      {info || actions ? (
+        // Info hugs the label; the field's own controls take the right edge, so
+        // a field with buttons costs one row instead of two.
         <div className="plan-card__field-label-row">
-          <Label className="plan-card__field-label">{label}</Label>
-          <button
-            type="button"
-            className="field-info-btn"
-            onClick={() => setShowInfo((v) => !v)}
-            aria-expanded={showInfo}
-            aria-label={`How to create: ${label}`}
-          >
-            <Info size={13} aria-hidden />
-            Info
-          </button>
+          <span className="plan-card__field-label-main">
+            <Label className="plan-card__field-label">{label}</Label>
+            {info && (
+              <button
+                type="button"
+                className="field-info-btn"
+                onClick={() => setShowInfo((v) => !v)}
+                aria-expanded={showInfo}
+                aria-label={`How to create: ${label}`}
+              >
+                <Info size={13} aria-hidden />
+                Info
+              </button>
+            )}
+          </span>
+          {actions && <span className="plan-card__field-actions">{actions}</span>}
         </div>
       ) : (
         <Label className="plan-card__field-label">{label}</Label>
@@ -698,7 +742,7 @@ function SshKeyInfo() {
   return (
     <>
       <p>
-        MobileFlow uses this <strong>private</strong> key to SSH into the build host. Create a
+        {APP_NAME} uses this <strong>private</strong> key to SSH into the build host. Create a
         dedicated key pair on any machine:
       </p>
       <pre>{`ssh-keygen -t ed25519 -N "" -C "mobileflow-build" -f mobileflow_build`}</pre>
@@ -735,13 +779,38 @@ function ArtifactKeyInfo() {
   );
 }
 
-// Lets the admin either paste a PEM private key or pick one from disk. The
-// uploaded file's text is loaded into the same textarea so the user can
-// glance at it before saving. Accepts both `.pem` and `id_*` style files
-// (most private keys have no extension), so we don't filter by accept.
-function PemKeyInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/**
+ * A PEM private-key field. Stored keys are never sent back to the browser, so
+ * once one exists there is nothing to show — the textarea would just sit there
+ * empty looking like the key had been lost. Collapse it to a one-line note and
+ * only open the editor when the admin actually means to replace the key, via
+ * "Add Key" (paste) or "Upload Key" (pick a file). Both live on the label row.
+ *
+ * Accepts `.pem` and `id_*` style files alike — most private keys have no
+ * extension — so the picker deliberately sets no `accept` filter.
+ */
+function KeyField({
+  label,
+  info,
+  hint,
+  hasStoredKey,
+  storedNote,
+  value,
+  onChange,
+}: {
+  label: string;
+  info?: React.ReactNode;
+  hint?: React.ReactNode;
+  hasStoredKey: boolean;
+  storedNote: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  // Open by default only when there's no key yet — a new host has to supply one.
+  const [open, setOpen] = useState(!hasStoredKey);
   const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
   const onPick = (file: File | undefined) => {
     if (!file) return;
     setFileName(file.name);
@@ -749,49 +818,79 @@ function PemKeyInput({ value, onChange }: { value: string; onChange: (v: string)
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
       onChange(text);
+      setOpen(true);
     };
     reader.readAsText(file);
   };
+
+  // A pasted or picked key forces the editor open, so the value on its way to
+  // the server is always visible.
+  const editorOpen = open || value.length > 0;
+
   return (
-    <div className="pem-key-input">
-      <textarea
-        className="admin-hosts-form__key"
-        value={value}
-        onChange={(e) => {
-          setFileName(null);
-          onChange(e.target.value);
-        }}
-        placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n…"}
-        spellCheck={false}
-      />
-      <div className="pem-key-input__actions">
-        <input
-          ref={fileRef}
-          type="file"
-          className="pem-key-input__file"
-          onChange={(e) => {
-            onPick(e.target.files?.[0]);
-            // Allow re-picking the same file.
-            e.target.value = "";
-          }}
-        />
-        <Button size="sm" variant="outline" type="button" onClick={() => fileRef.current?.click()}>
-          Upload key file
-        </Button>
-        {fileName && <span className="pem-key-input__filename">{fileName}</span>}
-        {!fileName && value && (
-          <button
+    <Field
+      label={label}
+      info={info}
+      hint={hint}
+      actions={
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            className="pem-key-input__file"
+            onChange={(e) => {
+              onPick(e.target.files?.[0]);
+              // Allow re-picking the same file.
+              e.target.value = "";
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
             type="button"
-            className="pem-key-input__clear"
-            onClick={() => onChange("")}
+            onClick={() => {
+              if (editorOpen) {
+                setFileName(null);
+                onChange("");
+                setOpen(false);
+              } else {
+                setOpen(true);
+              }
+            }}
           >
-            Clear
-          </button>
-        )}
-      </div>
-    </div>
+            {editorOpen && hasStoredKey ? "Cancel" : "Add Key"}
+          </Button>
+          <Button size="sm" variant="outline" type="button" onClick={() => fileRef.current?.click()}>
+            Upload Key
+          </Button>
+        </>
+      }
+    >
+      {editorOpen ? (
+        <div className="pem-key-input">
+          <textarea
+            className="admin-hosts-form__key"
+            value={value}
+            onChange={(e) => {
+              setFileName(null);
+              onChange(e.target.value);
+            }}
+            placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n…"}
+            spellCheck={false}
+          />
+          {fileName && (
+            <div className="pem-key-input__actions">
+              <span className="pem-key-input__filename">{fileName}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="plan-card__field-hint">{storedNote}</p>
+      )}
+    </Field>
   );
 }
+
 
 function PushArtifactKeyDialog({
   open,
@@ -849,14 +948,13 @@ function PushArtifactKeyDialog({
         </DialogHeader>
         <DialogBody>
           {status === "idle" && (
-            <div className="plan-card__field">
-              <Label className="plan-card__field-label">
-                {hasExistingKey
-                  ? "Paste a new key (optional — leave blank to re-push the stored key)"
-                  : "Paste the Mac → Linux private key (PEM)"}
-              </Label>
-              <PemKeyInput value={newKey} onChange={setNewKey} />
-            </div>
+            <KeyField
+              label={hasExistingKey ? "Replacement key (optional)" : "Mac → Linux private key (PEM)"}
+              hasStoredKey={hasExistingKey}
+              storedNote="A key was uploaded previously and is stored encrypted. Push it as is, or add/upload a new one to replace it."
+              value={newKey}
+              onChange={setNewKey}
+            />
           )}
           {status !== "idle" && (
             <div className="ssh-test">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { APP_NAME } from "@mobileflow/shared";
 import { ThemeToggle } from "./ThemeToggle";
 
 interface TopNavProps {
@@ -48,7 +49,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
             </svg>
           </button>
           <a href="/" className="topnav-brand">
-            <span className="topnav-logo">MobileFlow</span>
+            <span className="topnav-logo">{APP_NAME}</span>
             <span className="topnav-badge">Docs</span>
           </a>
         </div>

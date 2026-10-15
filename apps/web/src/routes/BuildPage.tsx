@@ -90,7 +90,12 @@ export function BuildPage() {
   const pollQ = useQuery<BuildDetail>({
     queryKey: ["build", buildId, "poll"],
     queryFn: async () => {
-      const res = await api.getBuild(buildId!, offsetRef.current);
+      const from = offsetRef.current;
+      const res = await api.getBuild(buildId!, from);
+      // The WS can connect while this request is in flight; its snapshot (or
+      // log events) then already moved the cursor past what we fetched, and
+      // appending our tail would print those lines twice.
+      if (offsetRef.current !== from) return res;
       // Track the server's raw length, not the tail we received — the tail is
       // masked on the way out and can be shorter than the bytes it covers.
       offsetRef.current = res.log.length;
@@ -137,6 +142,9 @@ export function BuildPage() {
         setLogBuf(evt.log);
         offsetRef.current = rawLength;
       } else if (evt.type === "log") {
+        // `offset` is the raw log length after this line was appended, so a
+        // line at or below the cursor is already in the buffer.
+        if (evt.offset <= offsetRef.current) return;
         setLogBuf((prev) => prev + evt.line);
         offsetRef.current = evt.offset;
       } else if (evt.type === "step") {

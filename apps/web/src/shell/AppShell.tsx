@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import { ChevronDown, LayoutGrid, Settings, ShieldCheck } from "lucide-react";
+import { APP_MONOGRAM, APP_NAME } from "@mobileflow/shared";
 import { cn } from "@mobileflow/ui";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
@@ -39,11 +40,11 @@ function OuterRail({ orgId, isSuperadmin }: { orgId: string; isSuperadmin: boole
       <Link
         to={`/org/${orgId}/apps`}
         className="app-rail-brand tooltip-wrap"
-        aria-label="MobileFlow"
+        aria-label={APP_NAME}
       >
-        MF
+        {APP_MONOGRAM}
         <span className="tooltip-bubble tooltip-bubble--right" role="tooltip">
-          MobileFlow
+          {APP_NAME}
         </span>
       </Link>
       <div className="app-rail-icons">

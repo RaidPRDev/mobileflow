@@ -1,9 +1,11 @@
+import { APP_NAME } from "@mobileflow/shared";
+
 export function PlansPage() {
   return (
     <div>
       <h1>Subscription Plans</h1>
       <p>
-        MobileFlow uses Stripe for billing. Each organization subscribes to a
+        {APP_NAME} uses Stripe for billing. Each organization subscribes to a
         plan that controls app limits, seats, and concurrent build capacity.
       </p>
 

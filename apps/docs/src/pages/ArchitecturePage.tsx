@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { CodeBlock } from "@/components/CodeBlock";
 
 export function ArchitecturePage() {
@@ -5,7 +6,7 @@ export function ArchitecturePage() {
     <div>
       <h1>Architecture</h1>
       <p>
-        MobileFlow is a monorepo split into apps, packages, and infrastructure.
+        {APP_NAME} is a monorepo split into apps, packages, and infrastructure.
         The frontend is a React SPA served by RSPack. The backend is a Fastify
         API with Postgres. Builds are orchestrated by a worker that delegates to
         Docker and SSH runners.

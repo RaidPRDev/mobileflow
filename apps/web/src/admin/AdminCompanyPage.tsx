@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { APP_NAME, LEGAL_NAME } from "@mobileflow/shared";
 import { Button, Input, Label, Loading, cn } from "@mobileflow/ui";
 import { Upload, Trash2 } from "lucide-react";
 import { ApiError, api } from "../api/client";
@@ -71,7 +72,7 @@ export function AdminCompanyPage() {
             <Input
               value={form.name}
               onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
-              placeholder="MobileFlow"
+              placeholder={APP_NAME}
             />
             <p className="text-help">Shown above the invoice address block.</p>
           </div>
@@ -80,7 +81,7 @@ export function AdminCompanyPage() {
             <Input
               value={form.legalName}
               onChange={(e) => setForm((s) => ({ ...s, legalName: e.target.value }))}
-              placeholder="MobileFlow, Inc."
+              placeholder={LEGAL_NAME}
             />
           </div>
           <div className="row gap-md">

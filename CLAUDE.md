@@ -9,6 +9,18 @@ This project's pnpm scripts are run from WSL, not Windows.
 - **pnpm:** the `pnpm` binary on PATH is a **corepack shim** that reads `packageManager` in `package.json` (currently `pnpm@8.15.6`). The corepack bundled with node 22.4.0 has **stale signing keys** and fails with `Cannot find matching keyid` — update it with `npm install -g corepack@latest` before first use.
   - Plain `wsl bash ...` from Git Bash on Windows hits Git Bash, **not** WSL. Always use `wsl.exe` explicitly.
 
+# Branding
+
+The product display name lives in **`packages/shared/brand.json`** (`productName`,
+`legalName`) — the single source of truth. TS/TSX code imports `APP_NAME`,
+`LEGAL_NAME`, and `APP_MONOGRAM` from `@mobileflow/shared`; the rspack configs
+`require()` the JSON directly for the HTML `<title>`; the build worker exports it
+to pipeline scripts as `BRAND_NAME`. `infra/scripts/sync-brand.mjs` (runs as
+`predev`/`prebuild` in `apps/desktop`) copies it into `tauri.conf.json`.
+Not covered (rename manually if ever rebranding): `@mobileflow/*` package names,
+the `mobileflow` Postgres DB, docker image/stack names, `com.raidpr.mobileflow`
+bundle id, and desktop Cargo.toml metadata.
+
 # Production deploy (Caimón)
 
 Production is the Docker Swarm stack **`caimon`** at **https://caimon.raidpr.com**
@@ -16,7 +28,7 @@ Production is the Docker Swarm stack **`caimon`** at **https://caimon.raidpr.com
 
 - `./start.sh prod` — the whole pipeline: zip the workspace → scp → build the
   web + API images on the host → pg_dump → rolling `docker stack deploy`.
-- **Admin → Deploy → “Caimón — live”** runs that same script from the API and
+- **Admin → Deploy → “Caimón”** runs that same script from the API and
   streams the log into the page. Superadmin only, and disabled when the API
   itself runs in production.
 - Secrets live in `.env.production` at the workspace root (gitignored; template

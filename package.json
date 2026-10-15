@@ -1,8 +1,8 @@
 {
   "name": "mobileflow",
   "version": "0.0.0",
-  "buildNumber": 6,
-  "buildDate": "2026-08-07T06:38:02.880Z",
+  "buildNumber": 9,
+  "buildDate": "2026-08-07T12:41:25.192Z",
   "buildType": "beta",
   "private": true,
   "packageManager": "pnpm@8.15.6",
@@ -34,5 +34,11 @@
   "devDependencies": {
     "rimraf": "^5.0.5",
     "typescript": "^5.4.5"
+  },
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "cpu-features",
+      "ssh2"
+    ]
   }
 }

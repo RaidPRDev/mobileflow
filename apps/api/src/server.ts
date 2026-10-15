@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { APP_NAME } from "@mobileflow/shared";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
@@ -112,7 +113,7 @@ if (isMain) {
   buildServer()
     .then((app) =>
       app.listen({ port: env.PORT, host: env.HOST }).then(() => {
-        app.log.info(`MobileFlow API listening on http://${env.HOST}:${env.PORT}`);
+        app.log.info(`${APP_NAME} API listening on http://${env.HOST}:${env.PORT}`);
         startWorker();
         startDeployWorker();
         app.log.info("Build + deploy workers started");

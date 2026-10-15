@@ -8,24 +8,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconButton,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
+  Tooltip,
   cn,
   Loading,
 } from "@mobileflow/ui";
 import {
   Check,
-  CircleCheck,
-  CircleX,
+  CircleStop,
   Copy,
   Globe,
   Info,
   Loader2,
   Play,
   Server,
-  StopCircle,
   Terminal,
 } from "lucide-react";
 import {
@@ -36,6 +36,8 @@ import {
   type DeployLogLine,
   type DeployTargetRow,
 } from "../api/client";
+import { CheckIcon } from "../components/CheckIcon";
+import { CircleXBig } from "../components/CircleXBig";
 import { LogView } from "../components/LogView";
 import { formatFullDate, relativeTime } from "../lib/dates";
 
@@ -100,13 +102,24 @@ export function AdminDeployPage() {
   const runningJob = runningId ? jobs.find((j) => j.id === runningId) : undefined;
   const runningTab = runningJob ? tabOf(runningJob.targetId) : null;
 
+  // A run we just started is not in `jobs` until the next refetch lands. Hold
+  // the selection on it until it shows up: otherwise the effect below sees an
+  // id it doesn't recognise, falls back to tabJobs[0] — the *previous* run —
+  // and that stale id then looks valid forever, so the new run never gets
+  // focus and the panel keeps streaming the old log.
+  const [pendingSelectId, setPendingSelectId] = useState<string | null>(null);
+
   // Default the selection to whatever is running in this tab, else its newest
   // run. Switching tabs re-runs this and picks that tab's own selection.
   useEffect(() => {
+    if (pendingSelectId) {
+      if (jobs.some((j) => j.id === pendingSelectId)) setPendingSelectId(null);
+      return;
+    }
     if (selectedId && tabJobs.some((j) => j.id === selectedId)) return;
     const runningHere = runningTab === tab ? runningId : null;
     setSelectedId(runningHere ?? tabJobs[0]?.id ?? null);
-  }, [tabJobs, runningId, runningTab, tab, selectedId]);
+  }, [tabJobs, jobs, runningId, runningTab, tab, selectedId, pendingSelectId]);
 
   const run = useMutation({
     mutationFn: (target: DeployTargetRow) =>
@@ -114,7 +127,11 @@ export function AdminDeployPage() {
     onSuccess: (job) => {
       setError(null);
       setConfirmTarget(null);
+      // Focus the run we just started: switch to the tab that owns it, select
+      // it, and pin that selection until the refetch confirms it exists.
+      setTab(tabOf(job.targetId));
       setSelectedId(job.id);
+      setPendingSelectId(job.id);
       void qc.invalidateQueries({ queryKey: ["admin-deploy-jobs"] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Could not start deploy"),
@@ -167,18 +184,12 @@ export function AdminDeployPage() {
             <span className="admin-deploy-tab">
               <Globe size={14} aria-hidden />
               Server
-              {runningTab === "server" && (
-                <Loader2 size={12} className="is-spinning" aria-label="Deploy running" />
-              )}
             </span>
           </TabsTrigger>
           <TabsTrigger value="tooling">
             <span className="admin-deploy-tab">
               <Server size={14} aria-hidden />
               Build tools
-              {runningTab === "tooling" && (
-                <Loader2 size={12} className="is-spinning" aria-label="Deploy running" />
-              )}
             </span>
           </TabsTrigger>
         </TabsList>
@@ -222,7 +233,12 @@ export function AdminDeployPage() {
                 key={j.id}
                 type="button"
                 className={cn("admin-deploy-run", selectedId === j.id && "is-active")}
-                onClick={() => setSelectedId(j.id)}
+                onClick={() => {
+                  // An explicit pick always wins, and releases the pin so a
+                  // run that never lands can't freeze auto-selection.
+                  setPendingSelectId(null);
+                  setSelectedId(j.id);
+                }}
               >
                 <StateIcon state={j.state} />
                 <span className="admin-deploy-run__main">
@@ -345,22 +361,9 @@ function TargetCard({
           {target.label}
           {isProduction && <span className="admin-deploy-target__tag">production</span>}
         </div>
-        {/* Description and exact argv live in the info tooltip; the card face
-            keeps only what identifies the destination. */}
-        {(target.stack || target.url) && (
-          <div className="admin-deploy-target__meta">
-            {target.stack && (
-              <span>
-                stack <code>{target.stack}</code>
-              </span>
-            )}
-            {target.url && (
-              <a href={target.url} target="_blank" rel="noreferrer">
-                {target.url}
-              </a>
-            )}
-          </div>
-        )}
+        {/* The card face carries only the target's name. Description and exact
+            argv are in the info tooltip; the stack name and URL are no longer
+            surfaced here at all. */}
         {!target.available && (
           <p className="text-error">Script not found in this checkout — nothing to run.</p>
         )}
@@ -603,15 +606,7 @@ function JobPanel({
         <StateIcon state={job.state} />
         <div className="admin-deploy-log__meta">
           <span className="admin-deploy-log__title">{job.targetLabel}</span>
-          <code className="admin-deploy-target__cmd">{job.command}</code>
         </div>
-        <span className="text-help">
-          {job.state === "running"
-            ? wsConnected
-              ? "streaming"
-              : "polling"
-            : `${job.state}${job.exitCode != null ? ` · exit ${job.exitCode}` : ""}`}
-        </span>
         <div className="admin-deploy-log__tools">
           <button
             type="button"
@@ -630,10 +625,16 @@ function JobPanel({
           </span>
         </div>
         {job.state === "running" && (
-          <Button variant="outline" className="btn-danger-outline" onClick={onCancel} loading={canceling}>
-            <StopCircle size={14} aria-hidden />
-            Cancel
-          </Button>
+          <Tooltip content="Cancel Deployment">
+            <IconButton
+              className="btn-danger-outline"
+              onClick={onCancel}
+              disabled={canceling}
+              aria-label="Cancel Deployment"
+            >
+              <CircleStop size={16} aria-hidden />
+            </IconButton>
+          </Tooltip>
         )}
       </div>
 
@@ -660,10 +661,10 @@ function StateIcon({ state }: { state: DeployJobState }) {
     return <Loader2 size={14} className="is-spinning status-icon" aria-label="Running" />;
   }
   if (state === "succeeded") {
-    return <CircleCheck size={14} className="status-icon is-success" aria-label="Succeeded" />;
+    return <CheckIcon size={14} className="status-icon is-success" aria-label="Succeeded" />;
   }
   return (
-    <CircleX
+    <CircleXBig
       size={14}
       className="status-icon is-error"
       aria-label={state === "canceled" ? "Canceled" : "Failed"}

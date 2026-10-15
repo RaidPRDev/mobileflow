@@ -1,15 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
-  Loading,
-} from "@mobileflow/ui";
-import { CircleCheckBig } from "lucide-react";
+import { Button, Loading } from "@mobileflow/ui";
+import { CheckIcon } from "../components/CheckIcon";
+import { RowActionsButton, RowContextMenu, type RowAction } from "../components/RowActions";
+import { clearTextSelection, isInteractiveTarget } from "../lib/rowInteractions";
 import { ApiError, api, type BuildTarget } from "../api/client";
 
 interface Stack {
@@ -91,52 +85,62 @@ function StackRow({ stack }: { stack: Stack }) {
     onError: (err) => alert(err instanceof ApiError ? err.message : (err as Error).message),
   });
 
+  // One array drives both the ⋮ button and the right-click menu, so the two
+  // can't drift apart.
+  const actions: RowAction[] = [
+    { label: "Edit", onSelect: goToEdit },
+    {
+      label: "Delete",
+      destructive: true,
+      disabled: remove.isPending,
+      onSelect: () => {
+        if (
+          confirm(
+            `Delete stack "${stack.label}"? Refused if any historical build still references it.`,
+          )
+        ) {
+          remove.mutate();
+        }
+      },
+    },
+  ];
+
   return (
-    <div className="data-grid__row builds-row is-clickable" role="row" onClick={goToEdit}>
-      <div role="cell">
-        <div className="plan-card__title-block">
-          <span className="builds-row__triggered-name">{stack.label}</span>
-          <code className="plan-card__id">{stack.id}</code>
+    <RowContextMenu actions={actions}>
+      <div
+        className="data-grid__row builds-row"
+        role="row"
+        onDoubleClick={(e) => {
+          // Ignore double-clicks that land on the ⋮ button or a link, and drop
+          // the text selection the second click would otherwise leave behind.
+          if (isInteractiveTarget(e.target)) return;
+          clearTextSelection();
+          goToEdit();
+        }}
+      >
+        <div role="cell">
+          <div className="plan-card__title-block">
+            <span className="builds-row__triggered-name">{stack.label}</span>
+            <code className="plan-card__id">{stack.id}</code>
+          </div>
+        </div>
+        <div role="cell">
+          <span className="builds-row__platform-label">{PLATFORM_LABEL[stack.platform]}</span>
+        </div>
+        <div role="cell" className="admin-hosts-row__addr">
+          {stack.image ?? "—"}
+        </div>
+        <div role="cell" className="builds-row__status">
+          {stack.isDefault ? (
+            <CheckIcon size={24} className="status-icon is-success" aria-hidden />
+          ) : (
+            <span className="builds-row__deployment-empty">—</span>
+          )}
+        </div>
+        <div role="cell" className="builds-row__menu">
+          <RowActionsButton actions={actions} ariaLabel={`Actions for ${stack.label}`} />
         </div>
       </div>
-      <div role="cell">
-        <span className="builds-row__platform-label">{PLATFORM_LABEL[stack.platform]}</span>
-      </div>
-      <div role="cell" className="admin-hosts-row__addr">
-        {stack.image ?? "—"}
-      </div>
-      <div role="cell" className="builds-row__status">
-        {stack.isDefault ? (
-          <CircleCheckBig size={24} className="status-icon is-success" aria-hidden />
-        ) : (
-          <span className="builds-row__deployment-empty">—</span>
-        )}
-      </div>
-      <div role="cell" className="builds-row__menu" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton variant="menu" aria-label={`Actions for ${stack.label}`} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={goToEdit}>Edit</DropdownMenuItem>
-            <DropdownMenuItem
-              destructive
-              disabled={remove.isPending}
-              onSelect={() => {
-                if (
-                  confirm(
-                    `Delete stack "${stack.label}"? Refused if any historical build still references it.`,
-                  )
-                ) {
-                  remove.mutate();
-                }
-              }}
-            >
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+    </RowContextMenu>
   );
 }

@@ -219,6 +219,24 @@ export async function buildsRoutes(app: FastifyInstance) {
         socket.close(4401);
         return;
       }
+      // Subscribe before the snapshot queries below: lines the worker appends
+      // while they run would otherwise land in neither the snapshot nor the
+      // stream. Events are held until the snapshot is sent; the client drops
+      // any log event whose offset the snapshot already covers.
+      let pending: unknown[] | null = [];
+      const forward = (e: unknown) => {
+        try {
+          socket.send(JSON.stringify(e));
+        } catch {
+          /* socket may be closing */
+        }
+      };
+      const off = buildBus.on(req.params.buildId, (e) => {
+        if (pending) pending.push(e);
+        else forward(e);
+      });
+      socket.on("close", () => off());
+      socket.on("error", () => off());
       // Join users so the snapshot carries triggeredByName/Email — the build-
       // detail page renders these and would clobber its initial REST data with
       // an empty "Triggered By" field if we sent the bare build row here.
@@ -233,6 +251,7 @@ export async function buildsRoutes(app: FastifyInstance) {
         .where(eq(builds.id, req.params.buildId))
         .limit(1);
       if (!row) {
+        off();
         socket.send(JSON.stringify({ type: "error", message: "not found" }));
         socket.close(4404);
         return;
@@ -240,6 +259,7 @@ export async function buildsRoutes(app: FastifyInstance) {
       const b = row.build;
       const [a] = await db.select({ orgId: apps.orgId }).from(apps).where(eq(apps.id, b.appId)).limit(1);
       if (!a) {
+        off();
         socket.close(4404);
         return;
       }
@@ -277,15 +297,9 @@ export async function buildsRoutes(app: FastifyInstance) {
         }),
       );
 
-      const off = buildBus.on(b.id, (e) => {
-        try {
-          socket.send(JSON.stringify(e));
-        } catch {
-          /* socket may be closing */
-        }
-      });
-      socket.on("close", () => off());
-      socket.on("error", () => off());
+      const held = pending;
+      pending = null;
+      held.forEach(forward);
     },
   );
 

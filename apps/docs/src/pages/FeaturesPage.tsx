@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { FeatureCard } from "@/components/FeatureCard";
 
 export function FeaturesPage() {
@@ -5,7 +6,7 @@ export function FeaturesPage() {
     <div>
       <h1>Features</h1>
       <p>
-        MobileFlow is designed to handle the entire mobile CI/CD lifecycle from
+        {APP_NAME} is designed to handle the entire mobile CI/CD lifecycle from
         git connection to store deployment.
       </p>
 

@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { CodeBlock } from "@/components/CodeBlock";
 
 export function GettingStartedPage() {
@@ -6,7 +7,7 @@ export function GettingStartedPage() {
       <h1>Getting Started</h1>
       <p>
         This guide walks you through creating your first app, connecting a git
-        repository, and running a build on MobileFlow.
+        repository, and running a build on {APP_NAME}.
       </p>
 
       <h2>1. Create an account</h2>
@@ -30,7 +31,7 @@ export function GettingStartedPage() {
       <h2>3. Connect your git host</h2>
       <p>
         If you have not connected a git provider yet, go to the app&apos;s{" "}
-        <strong>Git</strong> tab and complete the OAuth flow. MobileFlow stores
+        <strong>Git</strong> tab and complete the OAuth flow. {APP_NAME} stores
         the access token securely and uses it to list repos and clone code during
         builds.
       </p>
@@ -102,7 +103,7 @@ export function GettingStartedPage() {
       </ul>
       <p>
         Then create a deployment by picking a successful build and a destination.
-        MobileFlow handles the upload and track assignment automatically.
+        {APP_NAME} handles the upload and track assignment automatically.
       </p>
     </div>
   );

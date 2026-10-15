@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
+import { APP_NAME } from "@mobileflow/shared";
 import { db } from "./client.js";
 import { buildStacks, organizations, orgMembers, plans, subscriptions, users } from "./schema.js";
 import { hashPassword } from "../auth/password.js";
 import { env } from "../env.js";
 
 const ADMIN_ORG_SLUG = "mf-admin";
-const ADMIN_ORG_NAME = "MobileFlow Admin";
+const ADMIN_ORG_NAME = `${APP_NAME} Admin`;
 
 const seedPlans = [
   { id: "naboria", name: "Naboria", priceCents: 0, maxApps: 0, maxSeats: 1, maxConcurrentBuilds: 0, canBuild: false, isInternal: false, sortOrder: 0 },

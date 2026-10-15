@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { CodeBlock } from "@/components/CodeBlock";
 
 export function InstallationPage() {
@@ -5,7 +6,7 @@ export function InstallationPage() {
     <div>
       <h1>Installation</h1>
       <p>
-        MobileFlow is a pnpm monorepo. The following steps will get the web app,
+        {APP_NAME} is a pnpm monorepo. The following steps will get the web app,
         API, and database running on your local machine.
       </p>
 

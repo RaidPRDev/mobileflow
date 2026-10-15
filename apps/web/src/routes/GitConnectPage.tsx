@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { APP_NAME } from "@mobileflow/shared";
 import { Button, Card, CardContent, CardHeader, CardTitle, Loading } from "@mobileflow/ui";
 import { ApiError, api, type GitProvider } from "../api/client";
 
@@ -73,7 +74,7 @@ export function GitConnectPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             <p className="text-sm text-muted-foreground">
-              Authorize MobileFlow to access your repositories.
+              Authorize {APP_NAME} to access your repositories.
             </p>
             <Button
               onClick={() => {

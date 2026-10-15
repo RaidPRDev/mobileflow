@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../../infra/scripts/sync-brand.mjs",
     "dev": "tauri dev",
+    "prebuild": "node ../../infra/scripts/sync-brand.mjs",
     "build": "tauri build",
     "tauri": "tauri"
   },

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { APP_NAME } from "@mobileflow/shared";
 import { Upload } from "lucide-react";
 import {
   Button,
@@ -194,7 +195,7 @@ function PasswordUserAccount({
           <strong>Basic info</strong>
           <p className="settings-row__hint">
             Changing this information will also affect your name and appearance on all other
-            MobileFlow websites.
+            {APP_NAME} websites.
           </p>
         </div>
         <form className="settings-row__content" onSubmit={submitBasic}>
@@ -414,7 +415,7 @@ function SsoUserAccount({
           <strong>Username</strong>
           <p className="settings-row__hint">
             Changing your username will also affect your name and appearance on all other
-            MobileFlow websites.
+            {APP_NAME} websites.
           </p>
         </div>
         <form className="settings-row__content" onSubmit={submit}>
@@ -518,7 +519,7 @@ function DeleteAccountSection({
         <div className="settings-row__label">
           <strong>Delete account</strong>
           <p className="settings-row__hint">
-            If you delete your MobileFlow account, your data and access to organizations will be
+            If you delete your {APP_NAME} account, your data and access to organizations will be
             gone forever.
           </p>
         </div>

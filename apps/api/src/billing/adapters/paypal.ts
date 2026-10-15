@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { APP_NAME } from "@mobileflow/shared";
 import type {
   AdapterFieldSchema,
   CheckoutInput,
@@ -321,7 +322,7 @@ export class PayPalAdapter implements PaymentAdapter {
       plan_id: planId,
       custom_id: input.orgId,
       application_context: {
-        brand_name: "MobileFlow",
+        brand_name: APP_NAME,
         user_action: "SUBSCRIBE_NOW",
         return_url: input.successUrl,
         cancel_url: input.cancelUrl,

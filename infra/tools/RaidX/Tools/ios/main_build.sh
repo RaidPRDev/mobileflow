@@ -134,6 +134,6 @@ case "$(printf '%s' "${UPLOAD_AFTER_BUILD:-}" | tr '[:upper:]' '[:lower:]')" in
     EXIT_CODE=$?
     ;;
   *)
-    echo "ℹ️  Skipping App Store upload (UPLOAD_AFTER_BUILD='${UPLOAD_AFTER_BUILD}'). MobileFlow handles uploads via the deploy worker when a destination is configured."
+    echo "ℹ️  Skipping App Store upload (UPLOAD_AFTER_BUILD='${UPLOAD_AFTER_BUILD}'). ${BRAND_NAME:-MobileFlow} handles uploads via the deploy worker when a destination is configured."
     ;;
 esac

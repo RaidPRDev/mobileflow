@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { APP_MONOGRAM, APP_NAME } from "@mobileflow/shared";
 import { Button, Input, Label } from "@mobileflow/ui";
 import { ApiError, api } from "../api/client";
 import { appBuildLabel } from "../build";
@@ -114,8 +115,8 @@ export function LoginPage() {
   const card = (
     <div className="login-card">
         <div className="login-brand">
-          <span className="login-brand-mark">MF</span>
-          <span className="section-title">MobileFlow</span>
+          <span className="login-brand-mark">{APP_MONOGRAM}</span>
+          <span className="section-title">{APP_NAME}</span>
         </div>
         <div>
           <div className="login-title">

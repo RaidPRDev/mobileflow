@@ -1,3 +1,4 @@
+import { APP_NAME } from "@mobileflow/shared";
 import { CodeBlock } from "@/components/CodeBlock";
 
 export function DataModelPage() {
@@ -5,7 +6,7 @@ export function DataModelPage() {
     <div>
       <h1>Data Model</h1>
       <p>
-        MobileFlow uses Postgres with Drizzle ORM. The schema is organized around
+        {APP_NAME} uses Postgres with Drizzle ORM. The schema is organized around
         organizations, apps, builds, and billing.
       </p>
 

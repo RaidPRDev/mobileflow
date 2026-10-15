@@ -57,3 +57,34 @@ end
 ' "$PODFILE"
 
 echo "🎉 Podfile patched!"
+
+# ================================
+# Raise deployment targets below what this Xcode supports
+# ================================
+# Each Xcode drops old iOS versions (Xcode 27: 15.0 minimum), and a project
+# still targeting one fails with "IPHONEOS_DEPLOYMENT_TARGET is set to 14.0,
+# but the range of supported deployment target versions is 15.0 to …".
+# CocoaPods already ran inside `cap sync`, so the Podfile above can't fix
+# this - patch the generated projects xcodebuild reads next instead. Only
+# values below the SDK's minimum change; higher targets are left alone.
+SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
+MIN_IOS="$(plutil -extract SupportedTargets.iphoneos.MinimumDeploymentTarget raw "$SDK_PATH/SDKSettings.plist" 2>/dev/null || true)"
+if [[ ! "$MIN_IOS" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "⚠️ Could not read the iOS SDK's minimum deployment target - leaving deployment targets as-is."
+else
+  APP_IOS_DIR="$RAIDX_CLIENTS_PATH/$CLIENT_ID/$BUILD_ID/ios/App"
+  for PBXPROJ in "$APP_IOS_DIR/Pods/Pods.xcodeproj/project.pbxproj" "$APP_IOS_DIR/App.xcodeproj/project.pbxproj"; do
+    [[ -f "$PBXPROJ" ]] || continue
+    RAISED="$(MIN_IOS="$MIN_IOS" perl -pi -e '
+      BEGIN { ($m1, $m2) = split /\./, $ENV{MIN_IOS}; $m2 //= 0; $n = 0 }
+      s{(IPHONEOS_DEPLOYMENT_TARGET = )"?(\d+)(?:\.(\d+))?"?;}{
+        my ($maj, $min) = ($2, $3 // 0);
+        ($maj < $m1 || ($maj == $m1 && $min < $m2)) ? do { $n++; "$1$ENV{MIN_IOS};" } : $&
+      }ge;
+      END { print STDERR $n }
+    ' "$PBXPROJ" 2>&1 >/dev/null)"
+    if [[ "${RAISED:-0}" != "0" ]]; then
+      echo "⚠️ Raised $RAISED iOS deployment target setting(s) to $MIN_IOS in $(basename "$(dirname "$PBXPROJ")") - this Xcode can't build for older iOS versions."
+    fi
+  done
+fi

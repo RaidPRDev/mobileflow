@@ -13,6 +13,9 @@ const rootPkg = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")
 );
 
+// Product display name — single source of truth for branding.
+const { productName } = require("../../packages/shared/brand.json");
+
 function isWsl() {
   if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
   try {
@@ -34,6 +37,19 @@ module.exports = {
     publicPath: "/",
     clean: true,
   },
+  // The stock 244 KiB budget is a mobile-first heuristic for public landing
+  // pages; this is an authenticated single-entry admin SPA served from the same
+  // host, so it warned on every production build (~1.5 MiB entrypoint) and the
+  // noise buried real errors in the deploy log. Budget raised rather than
+  // switched off, so a genuine regression still surfaces. Off in dev, where the
+  // unminified bundle blows past any threshold and the number means nothing.
+  performance: isDev
+    ? false
+    : {
+        hints: "warning",
+        maxAssetSize: 2 * 1024 * 1024,
+        maxEntrypointSize: 2 * 1024 * 1024,
+      },
   resolve: {
     extensions: ["...", ".ts", ".tsx"],
     extensionAlias: {
@@ -97,7 +113,7 @@ module.exports = {
     }),
     new rspack.HtmlRspackPlugin({
       template: "./public/index.html",
-      title: "MobileFlow",
+      title: productName,
     }),
     isDev && new ReactRefreshPlugin(),
   ].filter(Boolean),
